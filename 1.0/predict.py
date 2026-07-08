@@ -1,7 +1,7 @@
 # _*_coding:UTF-8_*_
 # 开发者: NBT
 # 文件名: predict.py
-# 开发时间: 2026-07-07
+# 开发时间: 2026-07-08
 # 文件名: predict.py
 # 功能说明: 加载训练好的MLP模型并预测四轴无人机飞行电功率和区间电能
 # 版本号：1.0
@@ -13,7 +13,8 @@ import pandas as pd
 import torch
 
 from config import ExperimentConfig, ensure_directories
-from data_utils import load_json, prepare_prediction_frame
+from data_utils import load_json
+from data_utils import prepare_prediction_frame
 from model import build_model
 
 
@@ -21,7 +22,7 @@ def resolve_prediction_device(device_name: str) -> torch.device:
     """功能: 选择预测设备。
     参数: device_name为命令行指定设备。
     返回: torch.device设备对象。
-    调用位置: predict_from_csv。
+    调用位置: predict_from_csv、visualize.py。
     """
 
     if device_name == "auto":
@@ -29,17 +30,33 @@ def resolve_prediction_device(device_name: str) -> torch.device:
     return torch.device(device_name)
 
 
+def resolve_scaler_path(cfg: ExperimentConfig, checkpoint: dict) -> Path:
+    """功能: 查找当前或旧版标准化参数文件。
+    参数: cfg为实验配置对象，checkpoint为模型权重字典。
+    返回: 可读取的scaler路径。
+    调用位置: load_trained_model。
+    """
+
+    candidates = [cfg.scaler_json]
+    checkpoint_path = checkpoint.get("scaler_path")
+    if checkpoint_path:
+        candidates.append(Path(checkpoint_path))
+    candidates.append(cfg.save_dir / "scaler_1.0.json")
+    for path in candidates:
+        if path.exists():
+            return path
+    raise FileNotFoundError(f"未找到标准化参数: {cfg.scaler_json}")
+
+
 def load_trained_model(cfg: ExperimentConfig, device: torch.device) -> tuple[torch.nn.Module, dict, dict]:
     """功能: 加载模型权重和标准化参数。
     参数: cfg为实验配置对象，device为加载设备。
     返回: 模型、checkpoint字典和scaler字典。
-    调用位置: predict_from_csv、evaluate.py。
+    调用位置: predict_from_csv、evaluate.py、visualize.py。
     """
 
     if not cfg.best_model_file.exists():
         raise FileNotFoundError(f"未找到模型权重: {cfg.best_model_file}")
-    if not cfg.scaler_json.exists():
-        raise FileNotFoundError(f"未找到标准化参数: {cfg.scaler_json}")
     checkpoint = torch.load(cfg.best_model_file, map_location=device, weights_only=False)
     model = build_model(
         input_dim=int(checkpoint["input_dim"]),
@@ -49,7 +66,7 @@ def load_trained_model(cfg: ExperimentConfig, device: torch.device) -> tuple[tor
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    scaler = load_json(cfg.scaler_json)
+    scaler = load_json(resolve_scaler_path(cfg, checkpoint))
     return model, checkpoint, scaler
 
 
@@ -71,7 +88,7 @@ def predict_array(model: torch.nn.Module, x: np.ndarray, scaler: dict, device: t
     """功能: 对标准化前的特征矩阵进行批量预测并反标准化。
     参数: model为模型，x为原始特征矩阵，scaler为标准化参数，device为设备，batch_size为批量大小。
     返回: 反标准化后的功率预测数组。
-    调用位置: predict_from_csv、evaluate.py。
+    调用位置: predict_from_csv、evaluate.py、visualize.py。
     """
 
     x_mean = np.asarray(scaler["x_mean"], dtype=np.float32)
