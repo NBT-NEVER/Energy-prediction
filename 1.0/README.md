@@ -142,7 +142,7 @@ python main.py custom --custom-csv path/to/custom_conditions.csv
 ## 建模逻辑
 
 目标变量为瞬时电功率：
-![alt text](out/figures/prediction/power_prediction_scatter.png)
+
 $$
 P = \max(U \times I, 0)
 $$
