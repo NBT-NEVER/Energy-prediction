@@ -1,0 +1,19 @@
+{
+  "figure_count": 13,
+  "figures": [
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\training\\training_loss_history.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\training\\learning_rate_schedule.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\training\\hyperparameter_ranking.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\training\\candidate_validation_wape.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\results\\evaluation_metrics.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\results\\flight_energy_actual_vs_predicted.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\results\\flight_energy_error.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\results\\power_bin_mae.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\prediction\\power_prediction_scatter.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\prediction\\power_residual_histogram.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\prediction\\flight_8_power_timeseries.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\prediction\\flight_76_power_timeseries.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\prediction\\flight_80_power_timeseries.png"
+  ],
+  "out_dir": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out"
+}

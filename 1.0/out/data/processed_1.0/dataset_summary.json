@@ -1,0 +1,29 @@
+{
+  "_文件说明": "本文件汇总实验1.0的数据来源、清洗结果、数据集划分规模、模型输入维度和预测目标。rows表示采样记录数，flights表示按flight字段统计的不重复飞行次数。",
+  "_字段说明": {
+    "source_repo_url": "原始无人机飞行数据集的公开仓库地址。",
+    "raw_rows": "从原始flights.csv读取并保留建模所需字段后的采样记录总数；此时尚未执行缺失值清理和航线筛选，单位为行。",
+    "processed_rows": "完成数值转换、缺失值删除、R/H类航线筛选、特征工程及无穷值清理后保留的有效采样记录总数，单位为行。",
+    "processed_flights": "清洗后有效数据中不同flight编号的数量，即参与后续划分的有效飞行任务总数，单位为次。",
+    "train_rows": "训练集包含的采样记录数。模型使用这些记录拟合网络参数，单位为行。",
+    "val_rows": "验证集包含的采样记录数。该集合用于候选模型比较、学习率调整和早停判断，不直接更新网络参数，单位为行。",
+    "test_rows": "测试集包含的采样记录数。该集合仅用于最终预测和性能评估，单位为行。",
+    "train_flights": "训练集包含的不重复飞行任务数量。数据按完整flight分组划分，同一次飞行不会同时出现在其他数据集中，单位为次。",
+    "val_flights": "验证集包含的不重复飞行任务数量，单位为次。",
+    "test_flights": "测试集包含的不重复飞行任务数量，单位为次。",
+    "feature_count": "每条样本输入模型的特征数量，包括实测工况、派生特征、代理特征、飞行进度和航线独热编码，本实验为28维。",
+    "target_column": "监督学习的目标字段名。power_w表示由非负放电电流与电池电压相乘得到的瞬时功率，单位为瓦特（W）。"
+  },
+  "source_repo_url": "https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git",
+  "raw_rows": 257896,
+  "processed_rows": 249210,
+  "processed_flights": 198,
+  "train_rows": 174653,
+  "val_rows": 34796,
+  "test_rows": 39761,
+  "train_flights": 138,
+  "val_flights": 30,
+  "test_flights": 30,
+  "feature_count": 28,
+  "target_column": "power_w"
+}

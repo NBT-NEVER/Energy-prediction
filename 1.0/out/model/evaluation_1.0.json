@@ -1,0 +1,17 @@
+{
+  "sample_power_w_mae": 36.45610651193889,
+  "sample_power_w_rmse": 67.31304313245124,
+  "sample_power_w_r2": 0.9195748377167983,
+  "sample_power_w_mape_percent": 588.5532407817798,
+  "sample_power_w_wape_percent": 9.246596511251106,
+  "flight_energy_wh_mae": 0.6297975340148743,
+  "flight_energy_wh_rmse": 1.1022545775251604,
+  "flight_energy_wh_r2": 0.9597336160887155,
+  "flight_energy_wh_mape_percent": 3.0176337086864695,
+  "flight_energy_wh_wape_percent": 2.8921749108768506,
+  "test_rows": 39761,
+  "test_flights": 30,
+  "prediction_file": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\predictions\\test_predictions_1.0.csv",
+  "flight_energy_summary_file": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\model\\flight_energy_summary_1.0.csv",
+  "power_bin_evaluation_file": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\model\\power_bin_evaluation_1.0.csv"
+}

@@ -1,0 +1,9 @@
+{
+  "custom_prediction_csv": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\custom\\custom_predictions_1.0.csv",
+  "custom_power_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\custom\\custom_power_timeseries.png",
+  "custom_energy_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\1.0\\out\\figures\\custom\\custom_cumulative_energy.png",
+  "rows": 181,
+  "mean_predicted_power_w": 529.0956420898438,
+  "max_predicted_power_w": 655.72998046875,
+  "total_predicted_energy_wh": 26.601750988430446
+}
