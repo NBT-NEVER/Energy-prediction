@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from config import ExperimentConfig, ensure_directories
+from progress import TerminalProgress
 
 
 RAW_COLUMNS = [
@@ -329,13 +330,20 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
     ensure_directories(cfg)
     expected = [cfg.clean_data_csv, cfg.train_csv, cfg.val_csv, cfg.test_csv, cfg.feature_meta_json]
     if not force and all(path.exists() for path in expected):
+        print("已检测到处理后的数据文件，跳过数据准备。")
         return load_json(cfg.dataset_summary_json) if cfg.dataset_summary_json.exists() else {}
 
+    progress = TerminalProgress("数据准备", 6)
     download_source_dataset(cfg)
+    progress.update(1, "原始数据已就绪")
     extract_source_zip(cfg)
+    progress.update(2, "原始文件已解压")
     raw = load_raw_flights(cfg)
+    progress.update(3, f"已读取 {len(raw)} 条原始记录")
     feature_frame, feature_columns = add_derived_features(raw)
+    progress.update(4, f"已构造 {len(feature_columns)} 个特征")
     splits = split_by_flight(feature_frame, cfg)
+    progress.update(5, "训练集、验证集和测试集已划分")
 
     feature_frame.to_csv(cfg.clean_data_csv, index=False, encoding="utf-8")
     splits["train"].to_csv(cfg.train_csv, index=False, encoding="utf-8")
@@ -382,6 +390,7 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
         "target_column": cfg.target_column,
     }
     save_json(cfg.dataset_summary_json, summary)
+    progress.finish(f"已保存 {summary['processed_rows']} 条有效记录")
     return summary
 
 

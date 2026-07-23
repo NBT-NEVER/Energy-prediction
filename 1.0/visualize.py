@@ -17,7 +17,9 @@ import pandas as pd
 
 from config import ExperimentConfig, ensure_directories
 from data_utils import load_json
-from predict import load_trained_model, predict_array, resolve_prediction_device
+from device_utils import describe_cuda_device, select_cuda_device
+from predict import load_trained_model, predict_array
+from progress import TerminalProgress
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -361,7 +363,8 @@ def predict_custom_scenario(
         )
         custom_frame.to_csv(cfg.custom_scenario_csv, index=False, encoding="utf-8")
 
-    device = resolve_prediction_device(cfg.device)
+    device = select_cuda_device(cfg.device)
+    print(f"自定义工况推理设备: {describe_cuda_device(device)}")
     model, _, scaler = load_trained_model(cfg, device)
     feature_columns = scaler["feature_columns"]
     for column in feature_columns:
@@ -410,9 +413,13 @@ def generate_all_visualizations(cfg: ExperimentConfig) -> dict[str, Any]:
 
     ensure_directories(cfg)
     outputs = []
+    progress = TerminalProgress("生成图表", 3)
     outputs.extend(plot_training_history(cfg))
+    progress.update(1, "训练过程图表已生成")
     outputs.extend(plot_result_summary(cfg))
+    progress.update(2, "评估结果图表已生成")
     outputs.extend(plot_prediction_outputs(cfg))
+    progress.finish("预测结果图表已生成")
     summary = {
         "figure_count": len(outputs),
         "figures": [str(path) for path in outputs],

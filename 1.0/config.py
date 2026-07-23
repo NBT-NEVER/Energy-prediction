@@ -78,8 +78,7 @@ TUNE_EPOCHS = 14
 LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 1e-4
 PATIENCE = 10
-DEFAULT_DEVICE = "auto"
-REQUIRE_GPU = True
+DEFAULT_DEVICE = "cuda"
 
 
 @dataclass(frozen=True)
@@ -143,7 +142,6 @@ class ExperimentConfig:
     weight_decay: float = WEIGHT_DECAY
     patience: int = PATIENCE
     device: str = DEFAULT_DEVICE
-    require_gpu: bool = REQUIRE_GPU
 
 
 def build_config(**overrides: object) -> ExperimentConfig:

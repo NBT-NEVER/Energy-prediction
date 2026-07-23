@@ -12,6 +12,7 @@ import pandas as pd
 from config import ExperimentConfig, ensure_directories
 from data_utils import save_json
 from predict import predict_from_csv
+from progress import TerminalProgress
 
 
 def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray, prefix: str) -> dict:
@@ -106,16 +107,20 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     """
 
     ensure_directories(cfg)
+    progress = TerminalProgress("模型评估", 4)
     prediction_path = predict_from_csv(cfg, cfg.test_csv, cfg.prediction_csv)
+    progress.update(1, "测试集预测文件已生成")
     predictions = pd.read_csv(prediction_path)
     sample_metrics = regression_metrics(
         predictions["power_w"].to_numpy(),
         predictions["predicted_power_w"].to_numpy(),
         "sample_power_w",
     )
+    progress.update(2, "已计算样本级功率误差")
 
     flight_summary = build_flight_energy_summary(predictions)
     power_bin_summary = build_power_bin_summary(predictions)
+    progress.update(3, "已汇总飞行级能耗和功率分段误差")
     flight_metrics = regression_metrics(
         flight_summary["actual_energy_wh"].to_numpy(),
         flight_summary["predicted_energy_wh"].to_numpy(),
@@ -135,4 +140,5 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     flight_summary.to_csv(cfg.flight_energy_summary_csv, index=False, encoding="utf-8")
     power_bin_summary.to_csv(cfg.power_bin_evaluation_csv, index=False, encoding="utf-8")
     save_json(cfg.evaluation_json, metrics)
+    progress.finish("评估结果已保存")
     return metrics

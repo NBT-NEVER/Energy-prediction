@@ -15,7 +15,9 @@ import torch
 from config import ExperimentConfig, ensure_directories
 from data_utils import load_json
 from data_utils import prepare_prediction_frame
+from device_utils import describe_cuda_device, select_cuda_device
 from model import build_model
+from progress import TerminalProgress
 
 
 def resolve_prediction_device(device_name: str) -> torch.device:
@@ -25,9 +27,7 @@ def resolve_prediction_device(device_name: str) -> torch.device:
     调用位置: predict_from_csv、visualize.py。
     """
 
-    if device_name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device_name)
+    return select_cuda_device(device_name)
 
 
 def resolve_scaler_path(cfg: ExperimentConfig, checkpoint: dict) -> Path:
@@ -84,7 +84,14 @@ def inverse_target_transform(values: np.ndarray, target_transform: str) -> np.nd
     raise ValueError(f"不支持的目标反变换: {target_transform}")
 
 
-def predict_array(model: torch.nn.Module, x: np.ndarray, scaler: dict, device: torch.device, batch_size: int) -> np.ndarray:
+def predict_array(
+    model: torch.nn.Module,
+    x: np.ndarray,
+    scaler: dict,
+    device: torch.device,
+    batch_size: int,
+    progress_label: str = "批量预测",
+) -> np.ndarray:
     """功能: 对标准化前的特征矩阵进行批量预测并反标准化。
     参数: model为模型，x为原始特征矩阵，scaler为标准化参数，device为设备，batch_size为批量大小。
     返回: 反标准化后的功率预测数组。
@@ -95,13 +102,17 @@ def predict_array(model: torch.nn.Module, x: np.ndarray, scaler: dict, device: t
     x_std = np.asarray(scaler["x_std"], dtype=np.float32)
     x_scaled = ((x.astype(np.float32) - x_mean) / x_std).astype(np.float32)
     predictions: list[np.ndarray] = []
+    batch_count = max((len(x_scaled) + batch_size - 1) // batch_size, 1)
+    progress = TerminalProgress(progress_label, batch_count)
     with torch.no_grad():
-        for start in range(0, len(x_scaled), batch_size):
+        for batch_index, start in enumerate(range(0, len(x_scaled), batch_size), start=1):
             batch = torch.from_numpy(x_scaled[start : start + batch_size]).to(device)
             pred_scaled = model(batch).detach().cpu().numpy()
             pred_target = pred_scaled * float(scaler["y_std"]) + float(scaler["y_mean"])
             pred = inverse_target_transform(pred_target, scaler.get("target_transform", "none"))
             predictions.append(pred)
+            progress.update(batch_index, f"已处理 {min(start + batch_size, len(x_scaled))}/{len(x_scaled)} 条记录")
+    progress.finish("预测完成")
     return np.maximum(np.concatenate(predictions), 0.0)
 
 
@@ -115,14 +126,16 @@ def predict_from_csv(cfg: ExperimentConfig, input_csv: Path | None = None, outpu
     ensure_directories(cfg)
     input_csv = input_csv or cfg.test_csv
     output_csv = output_csv or cfg.prediction_csv
-    device = resolve_prediction_device(cfg.device)
+    device = select_cuda_device(cfg.device)
+    print(f"推理设备: {describe_cuda_device(device)}")
     model, _, scaler = load_trained_model(cfg, device)
     frame, feature_columns = prepare_prediction_frame(input_csv, cfg)
     for column in scaler["feature_columns"]:
         if column not in frame.columns:
             frame[column] = 0.0
     x = frame[feature_columns].to_numpy(dtype=np.float32)
-    pred_power = predict_array(model, x, scaler, device, cfg.batch_size)
+    print(f"开始预测：共 {len(frame)} 条记录，批大小为 {cfg.batch_size}。")
+    pred_power = predict_array(model, x, scaler, device, cfg.batch_size, "测试集预测")
 
     output = frame.copy()
     output["predicted_power_w"] = pred_power

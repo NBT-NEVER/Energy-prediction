@@ -19,7 +19,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from config import ExperimentConfig, ensure_directories
 from data_utils import load_json, save_json
+from device_utils import describe_cuda_device, select_cuda_device
 from model import build_model
+from progress import TerminalProgress
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -45,13 +47,7 @@ def select_device(device_name: str, require_gpu: bool) -> torch.device:
     调用位置: train_model。
     """
 
-    if device_name == "auto":
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(device_name)
-    if require_gpu and device.type != "cuda":
-        raise RuntimeError("当前配置要求GPU训练，但PyTorch未检测到CUDA设备。")
-    return device
+    return select_cuda_device(device_name)
 
 
 def load_split_data(cfg: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
@@ -293,6 +289,7 @@ def run_training_loop(
     best_val = float("inf")
     stale_epochs = 0
     logs: list[dict] = []
+    epoch_progress = TerminalProgress(f"训练 {params['name']}", epochs)
     for epoch in range(1, epochs + 1):
         train_loss = run_epoch(model, train_loader, criterion, optimizer, device)
         val_loss = run_epoch(model, val_loader, criterion, None, device)
@@ -308,6 +305,7 @@ def run_training_loop(
                 "model_type": params["model_type"],
             }
         )
+        epoch_progress.update(epoch, f"train={train_loss:.5f}, val={val_loss:.5f}, lr={lr_now:.2e}")
         if val_loss < best_val:
             best_val = val_loss
             best_state = deepcopy(model.state_dict())
@@ -315,7 +313,10 @@ def run_training_loop(
         else:
             stale_epochs += 1
         if stale_epochs >= cfg.patience:
+            epoch_progress.finish(f"早停，最佳验证损失={best_val:.5f}", completed=False)
             break
+    else:
+        epoch_progress.finish(f"最佳验证损失={best_val:.5f}")
     model.load_state_dict(best_state)
     return model, logs, best_val
 
@@ -406,7 +407,8 @@ def train_model(cfg: ExperimentConfig) -> dict:
 
     ensure_directories(cfg)
     set_random_seed(cfg.random_seed)
-    device = select_device(cfg.device, cfg.require_gpu)
+    device = select_cuda_device(cfg.device)
+    print(f"训练设备: {describe_cuda_device(device)}")
     train_df, val_df, feature_columns = load_split_data(cfg)
     scaler = build_scaler(train_df, feature_columns, cfg.target_column, cfg.target_transform)
     save_json(cfg.scaler_json, scaler)
@@ -416,7 +418,10 @@ def train_model(cfg: ExperimentConfig) -> dict:
     tuning_rows = []
     best_params = None
     best_selection_score = float("inf")
-    for params in candidate_grid(cfg):
+    candidates = candidate_grid(cfg)
+    print(f"开始调参：共 {len(candidates)} 个候选模型，每个候选模型最多训练 {cfg.tune_epochs} 轮。")
+    candidate_progress = TerminalProgress("候选模型调参", len(candidates))
+    for candidate_index, params in enumerate(candidates, start=1):
         tune_model, tune_logs, tune_loss = run_training_loop(
             train_x,
             train_y,
@@ -447,9 +452,15 @@ def train_model(cfg: ExperimentConfig) -> dict:
         if selection_metrics["selection_score"] < best_selection_score:
             best_selection_score = selection_metrics["selection_score"]
             best_params = params
+        candidate_progress.update(
+            candidate_index,
+            f"{params['name']}，综合分数={selection_metrics['selection_score']:.4f}",
+        )
+    candidate_progress.finish(f"最优候选={best_params['name'] if best_params else '无'}")
     if best_params is None:
         raise RuntimeError("调参未得到可用候选模型。")
 
+    print(f"开始最终训练：{best_params['name']}，最多训练 {cfg.epochs} 轮。")
     final_model, logs, best_val_loss = run_training_loop(
         train_x,
         train_y,
