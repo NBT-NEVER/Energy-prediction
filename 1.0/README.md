@@ -55,6 +55,20 @@ D:/Python-files/Energy-prediction/model
 python main.py all
 ```
 
+## 程序运行过程与终端进度
+
+`main.py` 会在启动时说明当前模式和即将执行的工作。`all` 模式依次完成数据准备、候选模型调参与最终训练、测试集评估、图表生成四个阶段；单独执行某个模式时，只显示对应阶段。
+
+数据准备、候选模型调参、每轮训练、批量预测、模型评估和图表生成均会在终端显示进度条。训练进度会同步显示训练损失、验证损失和当前学习率；预测进度会显示已处理记录数。进度条仅使用 Python 标准库，不需要新增依赖。
+
+终端显示示例：
+
+```text
+[2/4 模型训练] 调参后训练并保存最优网络。
+候选模型调参 [#################-----------]  60.0% (3/5) residual_128_64_32，综合分数=4.0195
+训练 residual_256_128_64 [#####################-------]  76.4% (42/55) 早停，最佳验证损失=0.02596
+```
+
 常用分步命令：
 
 ```bash
@@ -65,7 +79,7 @@ python main.py evaluate
 python main.py visualize
 ```
 
-默认要求 CUDA GPU 训练。若只是调试流程且允许 CPU，可追加 `--allow-cpu`。
+模型训练、验证前向计算和预测推理均强制使用 CUDA GPU。默认设备为 `cuda`；可通过 `--device cuda:0` 指定 GPU。未检测到可用 CUDA GPU 时，程序会立即报错，不会回退到 CPU。
 
 生成测试集预测：
 
@@ -128,7 +142,7 @@ python main.py custom --custom-csv path/to/custom_conditions.csv
 ## 建模逻辑
 
 目标变量为瞬时电功率：
-
+![alt text](out/figures/prediction/power_prediction_scatter.png)
 $$
 P = \max(U \times I, 0)
 $$
