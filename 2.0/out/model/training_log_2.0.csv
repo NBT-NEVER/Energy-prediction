@@ -1,0 +1,2 @@
+epoch,train_loss,val_loss,learning_rate,candidate,model_type,window_seconds,window_steps
+1,0.26492367674509065,0.32921696610081563,0.0003,tcn_rls_window_0.6s,tcn_rls,0.6,5

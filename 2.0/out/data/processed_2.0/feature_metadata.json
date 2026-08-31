@@ -1,0 +1,52 @@
+{
+  "feature_columns": [
+    "time",
+    "flight_progress",
+    "wind_speed",
+    "wind_sin",
+    "wind_cos",
+    "programmed_speed_mps",
+    "actual_speed_mps",
+    "horizontal_speed_mps",
+    "vertical_speed_mps",
+    "vertical_speed_abs_mps",
+    "relative_air_speed_mps",
+    "wind_alignment",
+    "wind_cross_component_mps",
+    "payload_kg",
+    "altitude_m",
+    "dynamic_accel_norm",
+    "angular_rate_norm",
+    "obstacle_agility_index",
+    "thermal_load_proxy",
+    "vision_energy_proxy_w",
+    "communication_energy_proxy_w",
+    "route_H",
+    "route_R1",
+    "route_R2",
+    "route_R3",
+    "route_R4",
+    "route_R5",
+    "route_R6"
+  ],
+  "target_column": "power_w",
+  "measured_features": [
+    "wind_speed",
+    "wind_angle",
+    "velocity_x/y/z",
+    "angular_x/y/z",
+    "linear_acceleration_x/y/z",
+    "speed",
+    "payload",
+    "altitude",
+    "route"
+  ],
+  "proxy_features": [
+    "obstacle_agility_index",
+    "thermal_load_proxy",
+    "vision_energy_proxy_w",
+    "communication_energy_proxy_w"
+  ],
+  "target_definition": "power_w = max(battery_voltage * battery_current, 0)",
+  "split_method": "按flight分组随机切分，避免同一飞行泄漏到多个集合。"
+}
