@@ -163,6 +163,36 @@ def make_loader(x: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool, de
     return DataLoader(TensorDataset(torch.from_numpy(x), torch.from_numpy(y)), batch_size=batch_size, shuffle=shuffle, num_workers=0, pin_memory=device.type == "cuda")
 
 
+class BalancedHuberLoss(nn.Module):
+    """功能: 对低功率和高功率样本提高损失权重，减轻预测向主流平台收缩。
+    参数: target_mean为目标均值，target_std为目标标准差，delta为Huber阈值。
+    返回: 每个样本加权后的平均Huber损失。
+    调用位置: run_training_loop。
+    """
+
+    def __init__(self, target_mean: float, target_std: float, delta: float) -> None:
+        super().__init__()
+        self.target_mean = float(target_mean)
+        self.target_std = max(float(target_std), 1e-6)
+        self.delta = float(delta)
+
+    def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """功能: 计算按功率区间平衡的Huber损失。
+        参数: prediction为模型输出，target为标准化目标。
+        返回: 标量损失。
+        调用位置: run_epoch。
+        """
+
+        error = prediction - target
+        absolute = error.abs()
+        huber = torch.where(absolute <= self.delta, 0.5 * error.square(), self.delta * (absolute - 0.5 * self.delta))
+        raw_power = target * self.target_std + self.target_mean
+        weights = torch.ones_like(raw_power)
+        weights = torch.where(raw_power < 100.0, weights * 1.8, weights)
+        weights = torch.where(raw_power > 650.0, weights * 1.5, weights)
+        return (huber * weights).mean()
+
+
 def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module, optimizer: torch.optim.Optimizer | None, device: torch.device) -> float:
     """功能: 执行一个TCN训练或验证epoch。
     参数: model为模型，loader为数据加载器，criterion为损失函数，optimizer为空时执行验证，device为设备。
@@ -200,7 +230,7 @@ def run_training_loop(train_x: np.ndarray, train_y: np.ndarray, val_x: np.ndarra
     model = build_model(train_x.shape[2], tuple(params["channels"]), float(params["dropout"]), int(params["kernel_size"])).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(params["learning_rate"]), weight_decay=float(params["weight_decay"]))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
-    criterion = nn.HuberLoss(delta=float(params["huber_delta"]))
+    criterion = BalancedHuberLoss(float(params.get("target_mean", 0.0)), float(params.get("target_std", 1.0)), float(params["huber_delta"]))
     train_loader = make_loader(train_x, train_y, cfg.batch_size, True, device)
     val_loader = make_loader(val_x, val_y, cfg.batch_size, False, device)
     best_state = deepcopy(model.state_dict())
@@ -255,21 +285,31 @@ def apply_rls_correction(base_power: np.ndarray, frame: pd.DataFrame, scaler: di
     调用位置: train_model、predict.py。
     """
 
-    corrector = RLSCorrector(cfg.rls_forgetting_factor, cfg.rls_initial_covariance, scaler["power_scale"])
-    if initial_theta is not None:
-        corrector.theta = torch.tensor(initial_theta, dtype=torch.float64)
+    corrector = RLSCorrector(cfg.rls_forgetting_factor, cfg.rls_initial_covariance, scaler["power_scale"], initial_theta)
     corrected = np.empty(len(frame), dtype=np.float64)
     previous_flight = None
     actual_values = frame[cfg.target_column].to_numpy(dtype=float) if update and cfg.target_column in frame.columns else None
     flights = frame["flight"].to_numpy() if "flight" in frame.columns else np.zeros(len(frame), dtype=int)
     for index, (flight, base) in enumerate(zip(flights, base_power)):
         if previous_flight is None or flight != previous_flight:
-            corrector.reset_covariance()
+            corrector.reset()
             previous_flight = flight
         corrected[index] = corrector.predict(float(base))
         if actual_values is not None:
             corrector.update(float(base), float(actual_values[index]))
     return corrected.astype(np.float32), corrector.theta.tolist()
+
+
+def estimate_rls_initial_theta(base_power: np.ndarray, actual_power: np.ndarray, power_scale: float) -> list[float]:
+    """功能: 用训练集TCN输出和实测功率估计RLS的全局仿射初值。
+    参数: base_power为TCN功率数组，actual_power为实测功率数组，power_scale为功率尺度。
+    返回: [偏置, 比例]形式的初始参数。
+    调用位置: train_model。
+    """
+
+    phi = np.column_stack([np.ones(len(base_power)), base_power / max(float(power_scale), 1.0)])
+    theta, *_ = np.linalg.lstsq(phi, actual_power / max(float(power_scale), 1.0), rcond=None)
+    return [float(np.clip(theta[0], -1.0, 1.0)), float(np.clip(theta[1], 0.0, 2.0))]
 
 
 def selection_metrics(base_power: np.ndarray, corrected_power: np.ndarray, frame: pd.DataFrame, cfg: ExperimentConfig) -> dict:
@@ -348,6 +388,9 @@ def train_model(cfg: ExperimentConfig) -> dict:
     best_params = None
     best_score = float("inf")
     candidates = candidate_grid(cfg, sample_interval)
+    for candidate in candidates:
+        candidate["target_mean"] = scaler["y_mean"]
+        candidate["target_std"] = scaler["y_std"]
     print(f"开始短时间窗调参：共 {len(candidates)} 个候选，每个候选最多训练 {cfg.tune_epochs} 轮。")
     candidate_progress = TerminalProgress("TCN时间窗调参", len(candidates))
     for index, params in enumerate(candidates, start=1):
@@ -355,9 +398,9 @@ def train_model(cfg: ExperimentConfig) -> dict:
         val_x, val_y = build_sequence_arrays(val_df, scaler, params["window_steps"])
         model, logs, val_loss = run_training_loop(train_x, train_y, val_x, val_y, cfg, params, device, max(1, cfg.tune_epochs))
         train_base = predict_original_power(model, train_x, scaler, device, cfg.batch_size)
-        _, rls_theta = apply_rls_correction(train_base, train_df, scaler, cfg, None, update=True)
+        rls_theta = estimate_rls_initial_theta(train_base, train_df[cfg.target_column].to_numpy(dtype=float), scaler["power_scale"])
         val_base = predict_original_power(model, val_x, scaler, device, cfg.batch_size)
-        val_corrected, _ = apply_rls_correction(val_base, val_df, scaler, cfg, None, update=True)
+        val_corrected, _ = apply_rls_correction(val_base, val_df, scaler, cfg, rls_theta, update=True)
         metrics = selection_metrics(val_base, val_corrected, val_df, cfg)
         tuning_rows.append({"candidate": params["name"], **params, "channels": str(params["channels"]), "best_val_loss": val_loss, **metrics, "epochs_run": len(logs)})
         if metrics["selection_score"] < best_score:
@@ -375,7 +418,7 @@ def train_model(cfg: ExperimentConfig) -> dict:
     print(f"开始最终训练：窗口 {best_params['window_seconds']:g}s（{best_params['window_steps']}步），最多 {cfg.epochs} 轮。")
     final_model, logs, best_val_loss = run_training_loop(train_x, train_y, val_x, val_y, cfg, best_params, device, max(1, cfg.epochs))
     train_base = predict_original_power(final_model, train_x, scaler, device, cfg.batch_size)
-    _, rls_theta = apply_rls_correction(train_base, train_df, scaler, cfg)
+    rls_theta = estimate_rls_initial_theta(train_base, train_df[cfg.target_column].to_numpy(dtype=float), scaler["power_scale"])
 
     pd.DataFrame(tuning_rows).to_csv(cfg.tuning_results_csv, index=False, encoding="utf-8")
     pd.DataFrame(logs).to_csv(cfg.training_log_csv, index=False, encoding="utf-8")

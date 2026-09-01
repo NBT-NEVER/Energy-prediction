@@ -46,11 +46,11 @@ class TCNBlock(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             CausalConv1d(in_channels, out_channels, kernel_size, dilation),
-            nn.BatchNorm1d(out_channels),
+            nn.GroupNorm(1, out_channels),
             nn.SiLU(),
             nn.Dropout(dropout),
             CausalConv1d(out_channels, out_channels, kernel_size, dilation),
-            nn.BatchNorm1d(out_channels),
+            nn.GroupNorm(1, out_channels),
             nn.SiLU(),
             nn.Dropout(dropout),
         )
@@ -81,7 +81,9 @@ class TemporalConvNet(nn.Module):
             layers.append(TCNBlock(last, channel, kernel_size, 2**index, dropout))
             last = channel
         self.network = nn.Sequential(*layers)
+        self.input_skip = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, last // 2), nn.SiLU())
         self.head = nn.Sequential(nn.Linear(last, last // 2), nn.SiLU(), nn.Dropout(dropout), nn.Linear(last // 2, 1))
+        self.skip_head = nn.Linear(last // 2, 1)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         """功能: 执行一批短时间窗的TCN前向推理。
@@ -91,7 +93,9 @@ class TemporalConvNet(nn.Module):
         """
 
         encoded = self.network(features.transpose(1, 2))
-        return self.head(encoded[:, :, -1]).squeeze(-1)
+        last_features = encoded[:, :, -1]
+        skip_features = self.input_skip(features[:, -1, :])
+        return (self.head(last_features) + self.skip_head(skip_features)).squeeze(-1)
 
 
 def build_model(input_dim: int, channels: tuple[int, ...], dropout: float, kernel_size: int = 3) -> nn.Module:
@@ -105,27 +109,28 @@ def build_model(input_dim: int, channels: tuple[int, ...], dropout: float, kerne
 
 
 class RLSCorrector:
-    """功能: 用递推最小二乘在线估计TCN功率残差的仿射校正参数。
+    """功能: 用递推最小二乘在线估计TCN功率到实测功率的仿射映射。
     参数: forgetting_factor为遗忘因子，initial_covariance为初始协方差大小，power_scale为功率归一化尺度。
     返回: 无，调用predict和update获得校正值并更新状态。
     调用位置: train.py、predict.py、evaluate.py。
     """
 
-    def __init__(self, forgetting_factor: float = 0.995, initial_covariance: float = 1000.0, power_scale: float = 100.0) -> None:
+    def __init__(self, forgetting_factor: float = 0.995, initial_covariance: float = 1000.0, power_scale: float = 100.0, initial_theta: list[float] | None = None) -> None:
         self.forgetting_factor = float(forgetting_factor)
         self.initial_covariance = float(initial_covariance)
         self.power_scale = max(float(power_scale), 1.0)
-        self.bias_limit = self.power_scale
-        self.theta = torch.zeros(2, dtype=torch.float64)
+        self.initial_theta = torch.tensor(initial_theta or [0.0, 1.0], dtype=torch.float64)
+        self.theta = self.initial_theta.clone()
         self.covariance = torch.eye(2, dtype=torch.float64) * self.initial_covariance
 
-    def reset_covariance(self) -> None:
-        """功能: 为一段新的独立飞行重置参数协方差。
+    def reset(self) -> None:
+        """功能: 为一段新的独立飞行重置校正参数和协方差。
         参数: 无。
         返回: None。
         调用位置: apply_rls_correction。
         """
 
+        self.theta = self.initial_theta.clone()
         self.covariance = torch.eye(2, dtype=torch.float64) * self.initial_covariance
 
     def predict(self, base_power: float) -> float:
@@ -136,8 +141,8 @@ class RLSCorrector:
         """
 
         phi = torch.tensor([1.0, float(base_power) / self.power_scale], dtype=torch.float64)
-        correction = float(torch.dot(phi, self.theta).clamp(-0.25 * self.power_scale, 0.25 * self.power_scale))
-        return max(float(base_power) + correction, 0.0)
+        prediction = float(torch.dot(phi, self.theta) * self.power_scale)
+        return max(prediction, 0.0)
 
     def update(self, base_power: float, actual_power: float) -> None:
         """功能: 用当前已观测功率更新递推最小二乘状态。
@@ -149,8 +154,9 @@ class RLSCorrector:
         phi = torch.tensor([1.0, float(base_power) / self.power_scale], dtype=torch.float64)
         gain_denominator = self.forgetting_factor + phi @ self.covariance @ phi
         gain = self.covariance @ phi / max(float(gain_denominator), 1e-12)
-        residual = float(actual_power) - float(base_power) - float(phi @ self.theta)
+        target = float(actual_power) / self.power_scale
+        residual = target - float(phi @ self.theta)
         self.theta = self.theta + gain * residual
-        self.theta[0] = self.theta[0].clamp(-self.bias_limit, self.bias_limit)
-        self.theta[1] = self.theta[1].clamp(-1.0, 1.0)
+        self.theta[0] = self.theta[0].clamp(-1.0, 1.0)
+        self.theta[1] = self.theta[1].clamp(0.0, 2.0)
         self.covariance = (self.covariance - torch.outer(gain, phi) @ self.covariance) / self.forgetting_factor
