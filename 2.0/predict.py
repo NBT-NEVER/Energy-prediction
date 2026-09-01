@@ -96,19 +96,24 @@ def predict_from_csv(cfg: ExperimentConfig, input_csv: Path | None = None, outpu
     output_csv = output_csv or cfg.prediction_csv
     device = resolve_prediction_device(cfg.device)
     print(f"推理设备: {describe_cuda_device(device)}")
+    workflow_progress = TerminalProgress("批量预测总流程", 5)
     model, checkpoint, scaler = load_trained_model(cfg, device)
+    workflow_progress.update(1, f"已加载 {len(checkpoint['channels'])}块TCN，窗口 {checkpoint['window_seconds']:g}s")
     frame, _ = prepare_prediction_frame(input_csv, cfg)
     frame = frame.sort_values(["flight", "time"], kind="stable").reset_index(drop=True)
+    workflow_progress.update(2, f"已读取 {len(frame)} 条记录、{frame['flight'].nunique()} 个flight")
     for column in scaler["feature_columns"]:
         if column not in frame.columns:
             frame[column] = 0.0
     window_steps = int(checkpoint["window_steps"])
-    sequences, _ = build_sequence_arrays(frame, scaler, window_steps)
+    sequences, _ = build_sequence_arrays(frame, scaler, window_steps, "预测序列构造")
+    workflow_progress.update(3, f"已构造 {len(sequences)} 条 {window_steps} 步序列")
     base_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
     if online_update is None:
         online_update = cfg.target_column in frame.columns
     initial_theta = None if online_update else checkpoint.get("rls_theta")
-    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update))
+    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正")
+    workflow_progress.update(4, f"RLS校正完成，在线更新={'开启' if online_update else '关闭'}")
     output = frame.copy()
     output["tcn_predicted_power_w"] = base_power
     output["rls_corrected_power_w"] = corrected_power
@@ -124,4 +129,5 @@ def predict_from_csv(cfg: ExperimentConfig, input_csv: Path | None = None, outpu
     output["rls_final_theta_1"] = float(theta[1])
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(output_csv, index=False, encoding="utf-8")
+    workflow_progress.finish(f"预测文件已保存：{output_csv.name}")
     return output_csv

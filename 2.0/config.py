@@ -74,8 +74,8 @@ RANDOM_SEED = 42
 TEST_RATIO = 0.15
 VAL_RATIO = 0.15
 BATCH_SIZE = 2048
-EPOCHS = 55
-TUNE_EPOCHS = 14
+EPOCHS = 80
+TUNE_EPOCHS = 20
 LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 1e-4
 PATIENCE = 10
@@ -83,6 +83,8 @@ DEFAULT_DEVICE = "cuda"
 # TCN/RLS短时间窗候选值，单位为秒；训练时会折算为采样步数并写入调参结果。
 WINDOW_SECONDS_CANDIDATES = (0.6, 1.0, 1.5, 2.0, 3.0)
 DEFAULT_WINDOW_SECONDS = 1.5
+# TCN残差块通道；4个块对应更深的时间特征提取网络
+TCN_CHANNELS = (64, 64, 64, 32)
 RLS_FORGETTING_FACTOR = 0.995
 RLS_INITIAL_COVARIANCE = 1000.0
 
@@ -150,6 +152,7 @@ class ExperimentConfig:
     device: str = DEFAULT_DEVICE
     window_seconds_candidates: tuple[float, ...] = WINDOW_SECONDS_CANDIDATES
     default_window_seconds: float = DEFAULT_WINDOW_SECONDS
+    tcn_channels: tuple[int, ...] = TCN_CHANNELS
     rls_forgetting_factor: float = RLS_FORGETTING_FACTOR
     rls_initial_covariance: float = RLS_INITIAL_COVARIANCE
     custom_prediction_summary_json: Path = CUSTOM_PREDICTION_SUMMARY_JSON

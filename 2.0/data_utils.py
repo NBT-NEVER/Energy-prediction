@@ -330,8 +330,10 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
     ensure_directories(cfg)
     expected = [cfg.clean_data_csv, cfg.train_csv, cfg.val_csv, cfg.test_csv, cfg.feature_meta_json]
     if not force and all(path.exists() for path in expected):
-        print("已检测到处理后的数据文件，跳过数据准备。")
-        return load_json(cfg.dataset_summary_json) if cfg.dataset_summary_json.exists() else {}
+        progress = TerminalProgress("数据准备", 1)
+        summary = load_json(cfg.dataset_summary_json) if cfg.dataset_summary_json.exists() else {}
+        progress.finish(f"已检测到处理后数据，跳过重建（{summary.get('processed_rows', '未知')} 条）")
+        return summary
 
     progress = TerminalProgress("数据准备", 6)
     download_source_dataset(cfg)

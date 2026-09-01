@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 
 class TerminalProgress:
@@ -26,6 +27,8 @@ class TerminalProgress:
         self.width = max(int(width), 10)
         self.current = 0
         self._finished = False
+        self.started_at = time.perf_counter()
+        self.last_render_at = self.started_at
         self._render("")
 
     def update(self, current: int, detail: str = "") -> None:
@@ -58,8 +61,14 @@ class TerminalProgress:
         ratio = self.current / self.total
         filled = int(round(self.width * ratio))
         bar = "#" * filled + "-" * (self.width - filled)
-        suffix = f" {detail}" if detail else ""
+        elapsed = max(time.perf_counter() - self.started_at, 1e-6)
+        rate = self.current / elapsed
+        remaining = (self.total - self.current) / rate if rate > 1e-9 else float("inf")
+        eta = "--:--" if not remaining < 86400 else time.strftime("%M:%S", time.gmtime(max(remaining, 0)))
+        elapsed_text = time.strftime("%M:%S", time.gmtime(elapsed))
+        suffix = f" | {detail}" if detail else ""
         sys.stdout.write(
-            f"\r{self.label} [{bar}] {ratio:>6.1%} ({self.current}/{self.total}){suffix}"
+            f"\r{self.label} [{bar}] {ratio:>6.1%} ({self.current}/{self.total}) "
+            f"耗时 {elapsed_text} ETA {eta}{suffix}"
         )
         sys.stdout.flush()

@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None, help="随机种子。")
     parser.add_argument("--device", default=None, help="训练或预测使用的 CUDA 设备，默认cuda。")
     parser.add_argument("--window-candidates", default=None, help="覆盖时间窗候选秒数，逗号分隔，例如0.6,1.0,1.5。")
+    parser.add_argument("--tcn-channels", default=None, help="覆盖TCN通道深度，逗号分隔，例如64,64,64,32。")
     parser.add_argument("--force-prepare", action="store_true", help="强制重新生成处理后数据和切分文件。")
     parser.add_argument("--input-csv", type=Path, default=None, help="predict模式的输入CSV。")
     parser.add_argument("--output-csv", type=Path, default=None, help="predict模式的输出CSV。")
@@ -121,9 +122,14 @@ def main() -> None:
         random_seed=args.seed,
         device=args.device,
         window_seconds_candidates=tuple(float(item) for item in args.window_candidates.split(",")) if args.window_candidates else None,
+        tcn_channels=tuple(int(item) for item in args.tcn_channels.split(",")) if args.tcn_channels else None,
     )
     ensure_directories(cfg)
     print_process_intro(args.mode)
+    print(
+        f"训练配置: TCN深度={len(cfg.tcn_channels)}块，通道={list(cfg.tcn_channels)}，"
+        f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}"
+    )
 
     if args.mode == "download":
         print("\n[下载数据] 检查公开数据仓库和原始压缩包。")

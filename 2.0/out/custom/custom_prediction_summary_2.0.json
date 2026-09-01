@@ -3,7 +3,7 @@
   "custom_power_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\custom\\custom_power_timeseries.png",
   "custom_energy_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\custom\\custom_cumulative_energy.png",
   "rows": 16,
-  "mean_predicted_power_w": 526.7811279296875,
-  "max_predicted_power_w": 582.1537475585938,
-  "total_predicted_energy_wh": 0.46824991522894965
+  "mean_predicted_power_w": 431.15655517578125,
+  "max_predicted_power_w": 594.1182250976562,
+  "total_predicted_energy_wh": 0.38325025600857204
 }

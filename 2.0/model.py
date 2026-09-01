@@ -73,7 +73,7 @@ class TemporalConvNet(nn.Module):
     调用位置: train.py、predict.py、evaluate.py。
     """
 
-    def __init__(self, input_dim: int, channels: tuple[int, ...] = (64, 64, 32), kernel_size: int = 3, dropout: float = 0.08) -> None:
+    def __init__(self, input_dim: int, channels: tuple[int, ...] = (64, 64, 64, 32), kernel_size: int = 3, dropout: float = 0.08) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         last = input_dim

@@ -1,6 +1,6 @@
 # 四轴无人机飞行能耗预测模型 2.0：TCN + RLS 实时矫正
 
-本实验沿用 1.0 的 DJI Matrice 100 数据、特征工程、flight 分组切分、评估口径和输出目录结构，将预测模型替换为因果 TCN，并在前向推理后使用递推最小二乘（RLS）实时校正功率。TCN 只读取当前样本及历史短窗；RLS 在当前预测输出后使用当前已观测功率更新，因此适用于在线矫正。
+本实验沿用 1.0 的 DJI Matrice 100 数据、特征工程、flight 分组切分、评估口径和输出目录结构，将预测模型替换为 4 个残差块的因果 TCN，并在前向推理后使用递推最小二乘（RLS）实时校正功率。TCN 只读取当前样本及历史短窗；RLS 在当前预测输出后使用当前已观测功率更新，因此适用于在线矫正。
 
 ## 数据与路径
 
@@ -42,6 +42,8 @@ python main.py visualize
 python main.py custom --wind-speed 5 --flight-speed 8 --payload-g 250 --altitude 50 --duration-s 180
 ```
 
+默认训练深度为 4 个 TCN 残差块，通道为 `64,64,64,32`，调参训练 20 轮、最终训练 80 轮。可通过 `--epochs`、`--tune-epochs` 和 `--tcn-channels` 覆盖；终端会显示总流程、时间窗、epoch、批次、耗时和 ETA。
+
 时间窗候选以秒为单位，默认测试 `0.6, 1.0, 1.5, 2.0, 3.0` 秒；可覆盖候选，例如：
 
 ```bash
@@ -64,16 +66,16 @@ $f_{\theta}$：TCN网络及其参数。
 $X_{t-L+1:t}$：从当前时刻向前的输入窗口。
 $L$：窗口采样步数。
 
-RLS 对 TCN 预测和偏差项建立线性校正器。实时输出先使用当前参数校正，再用当前实测功率更新参数：
+TCN 由 4 个残差卷积块组成，通道为 `[64,64,64,32]`，膨胀率为 1、2、4、8。RLS 对 TCN 预测和偏差项建立仿射校正器。实时输出先使用当前参数校正，再用当前实测功率更新参数：
 
 当输入 CSV 包含 `power_w` 时，程序按“先输出、后更新”执行在线校正；没有 `power_w` 的部署输入只执行 TCN 前向和已有 RLS 参数校正，不会伪造观测值。
 
 $$
-\tilde{P}_t=\hat{P}^{\mathrm{TCN}}_t+\boldsymbol{\phi}_t^{\mathsf{T}}\boldsymbol{\theta}_{t-1}
+\tilde{P}_t=s_P\boldsymbol{\phi}_t^{\mathsf{T}}\boldsymbol{\theta}_{t-1}
 $$
 
 $$
-\boldsymbol{\theta}_t=\boldsymbol{\theta}_{t-1}+\mathbf{K}_t\left(P_t-\hat{P}^{\mathrm{TCN}}_t-\boldsymbol{\phi}_t^{\mathsf{T}}\boldsymbol{\theta}_{t-1}\right)
+\boldsymbol{\theta}_t=\boldsymbol{\theta}_{t-1}+\mathbf{K}_t\left(P_t/s_P-\boldsymbol{\phi}_t^{\mathsf{T}}\boldsymbol{\theta}_{t-1}\right)
 $$
 
 其中：

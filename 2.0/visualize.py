@@ -366,23 +366,29 @@ def predict_custom_scenario(
         )
         custom_frame.to_csv(cfg.custom_scenario_csv, index=False, encoding="utf-8")
 
+    progress = TerminalProgress("自定义工况总流程", 6)
+    progress.update(1, f"已准备 {len(custom_frame)} 条自定义工况记录")
     device = select_cuda_device(cfg.device)
     print(f"自定义工况推理设备: {describe_cuda_device(device)}")
     model, checkpoint, scaler = load_trained_model(cfg, device)
+    progress.update(2, f"已加载 {len(checkpoint['channels'])}块TCN，窗口 {checkpoint['window_seconds']:g}s")
     feature_columns = scaler["feature_columns"]
     for column in feature_columns:
         if column not in custom_frame.columns:
             custom_frame[column] = 0.0
     custom_frame = custom_frame.sort_values(["flight", "time"], kind="stable").reset_index(drop=True)
-    sequences, _ = build_sequence_arrays(custom_frame, scaler, int(checkpoint["window_steps"]))
+    sequences, _ = build_sequence_arrays(custom_frame, scaler, int(checkpoint["window_steps"]), "自定义序列构造")
+    progress.update(3, f"已构造 {len(sequences)} 条输入序列")
     tcn_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
-    corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False)
+    progress.update(4, "TCN前向推理完成")
+    corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正")
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power
     custom_frame["predicted_power_w"] = corrected_power
     custom_frame["predicted_energy_wh"] = custom_frame["predicted_power_w"] * custom_frame["dt_seconds"] / 3600.0
     custom_frame["cumulative_energy_wh"] = custom_frame["predicted_energy_wh"].cumsum()
     custom_frame.to_csv(cfg.custom_prediction_csv, index=False, encoding="utf-8")
+    progress.update(5, f"RLS校正和预测文件已保存：{cfg.custom_prediction_csv.name}")
 
     set_plot_style()
     plt.figure(figsize=(10, 5))
@@ -409,6 +415,7 @@ def predict_custom_scenario(
         "total_predicted_energy_wh": float(custom_frame["predicted_energy_wh"].sum()),
     }
     save_json(cfg.custom_prediction_summary_json, summary)
+    progress.finish(f"图表和摘要已保存，累计能耗={summary['total_predicted_energy_wh']:.5f} Wh")
     return summary
 
 
@@ -421,13 +428,13 @@ def generate_all_visualizations(cfg: ExperimentConfig) -> dict[str, Any]:
 
     ensure_directories(cfg)
     outputs = []
-    progress = TerminalProgress("生成图表", 3)
+    progress = TerminalProgress("生成图表总流程", 3)
     outputs.extend(plot_training_history(cfg))
-    progress.update(1, "训练过程图表已生成")
+    progress.update(1, f"训练过程图表已生成（累计 {len(outputs)} 张）")
     outputs.extend(plot_result_summary(cfg))
-    progress.update(2, "评估结果图表已生成")
+    progress.update(2, f"评估结果图表已生成（累计 {len(outputs)} 张）")
     outputs.extend(plot_prediction_outputs(cfg))
-    progress.finish("预测结果图表已生成")
+    progress.finish(f"预测结果图表已生成，共 {len(outputs)} 张")
     summary = {
         "figure_count": len(outputs),
         "figures": [str(path) for path in outputs],
