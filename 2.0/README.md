@@ -1,10 +1,12 @@
 # 四轴无人机飞行能耗预测模型 2.0：TCN + RLS 实时矫正
 
-本实验沿用 1.0 的 DJI Matrice 100 数据、特征工程、flight 分组切分、评估口径和输出目录结构，将预测模型替换为 4 个残差块的因果 TCN，并在前向推理后使用递推最小二乘（RLS）实时校正功率。TCN 只读取当前样本及历史短窗；RLS 在当前预测输出后使用当前已观测功率更新，因此适用于在线矫正。
+本实验沿用 1.0 的 DJI Matrice 100 数据、特征工程、flight 分组切分、评估口径和输出目录结构，将预测模型替换为 4 个残差块的因果 TCN，并在前向推理后使用递推最小二乘（RLS）实时校正功率。2.0 仅保留 R1 航线进行训练、验证和测试；其他航线原始记录不会写回 D 盘，而是筛选后保存到项目内 `out/data/processed_2.0/excluded_routes_2.0.csv`。TCN 只读取当前样本及历史短窗；RLS 在当前预测输出后使用当前已观测功率更新，因此适用于在线矫正。
 
 ## 数据与路径
 
 数据源仍为 `https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git`，原始数据默认位于 `D:/Python-files/Energy-prediction/data`。处理数据、日志、评估表、预测表和图表写入 `2.0/out`，模型权重写入 `D:/Python-files/Energy-prediction/model`。所有路径和文件名集中在 `config.py`。
+
+本次实际数据摘要为：原始读取 257896 条，筛除非 R1 航线 30345 条，保留 R1 有效记录 227551 条、182 个 flight；train/val/test 分别为 158625/32820/36106 条，对应 126/28/28 个 flight。模型输入为 22 维，完整变量含义见 `out/data/processed_2.0/feature_metadata.json`。
 
 ## 目录结构
 
@@ -22,7 +24,7 @@
 ├── uncertainty.py     # 保序残差校准和即时功率/能耗区间
 ├── device_utils.py    # CUDA设备检查
 ├── requirements.txt   # Python依赖
-└── out                 # 2.0独立输出目录
+└── out                 # 2.0独立输出目录（含R1处理数据和排除航线记录）
 ```
 
 ## 运行方式
@@ -110,7 +112,7 @@ $\mathrm{WAPE}_{\mathrm{sample}}$：采样点功率加权绝对百分比误差�
 
 ## 输出与对比关系
 
-- `out/data/processed_2.0/`：与 1.0 同字段的特征表、train/val/test 切分和元数据。
+- `out/data/processed_2.0/`：仅含 R1 的特征表、train/val/test 切分、逐变量元数据，以及 `excluded_routes_2.0.csv` 排除记录。
 - `out/model/scaler_2.0.json`：TCN输入标准化、目标标准化、典型采样周期和RLS功率尺度。
 - `out/model/tuning_results_2.0.csv`：每个时间窗的秒数、采样步数、TCN基线 WAPE、RLS校正 WAPE 和选择分数；这是窗口优劣的主对比表。
 - `out/model/training_log_2.0.csv`：最终窗口每轮训练损失、验证损失、学习率和窗口信息。

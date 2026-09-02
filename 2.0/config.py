@@ -36,6 +36,7 @@ RAW_README_FILE = RAW_DATA_DIR / "README.txt"
 # 处理后数据和数据切分文件
 PROCESSED_DIR = OUT_DATA_DIR / "processed_2.0"
 CLEAN_DATA_CSV = PROCESSED_DIR / "uav_energy_features.csv"
+EXCLUDED_ROUTES_CSV = PROCESSED_DIR / "excluded_routes_2.0.csv"
 TRAIN_CSV = PROCESSED_DIR / "train.csv"
 VAL_CSV = PROCESSED_DIR / "val.csv"
 TEST_CSV = PROCESSED_DIR / "test.csv"
@@ -71,6 +72,7 @@ VISUALIZATION_SUMMARY_JSON = OUT_DIR / "visualization_summary_2.0.json"
 
 # 训练和切分默认参数
 TARGET_COLUMN = "power_w"
+TRAINING_ROUTE = "R1"
 TARGET_TRANSFORM = "none"
 RANDOM_SEED = 42
 TEST_RATIO = 0.15
@@ -118,6 +120,7 @@ class ExperimentConfig:
     raw_readme_file: Path = RAW_README_FILE
     processed_dir: Path = PROCESSED_DIR
     clean_data_csv: Path = CLEAN_DATA_CSV
+    excluded_routes_csv: Path = EXCLUDED_ROUTES_CSV
     train_csv: Path = TRAIN_CSV
     val_csv: Path = VAL_CSV
     test_csv: Path = TEST_CSV
@@ -144,6 +147,7 @@ class ExperimentConfig:
     custom_prediction_csv: Path = CUSTOM_PREDICTION_CSV
     visualization_summary_json: Path = VISUALIZATION_SUMMARY_JSON
     target_column: str = TARGET_COLUMN
+    training_route: str = TRAINING_ROUTE
     target_transform: str = TARGET_TRANSFORM
     random_seed: int = RANDOM_SEED
     test_ratio: float = TEST_RATIO
@@ -207,6 +211,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("custom_dir", custom_dir)
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
+        normalized.setdefault("excluded_routes_csv", processed_dir / "excluded_routes_2.0.csv")
         normalized.setdefault("train_csv", processed_dir / "train.csv")
         normalized.setdefault("val_csv", processed_dir / "val.csv")
         normalized.setdefault("test_csv", processed_dir / "test.csv")

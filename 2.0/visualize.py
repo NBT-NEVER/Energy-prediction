@@ -339,7 +339,12 @@ def normalize_custom_input(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.Dat
     if "flight" not in frame.columns:
         frame["flight"] = 999001
     if "route" not in frame.columns:
-        frame["route"] = "R1"
+        frame["route"] = cfg.training_route
+    routes = frame["route"].astype(str).str.strip()
+    invalid_routes = sorted(set(routes) - {cfg.training_route})
+    if invalid_routes:
+        raise ValueError(f"实验2.0自定义工况仅支持{cfg.training_route}航线，输入包含: {invalid_routes}")
+    frame["route"] = cfg.training_route
     for column in feature_columns:
         if column.startswith("route_"):
             route_name = column.replace("route_", "", 1)
