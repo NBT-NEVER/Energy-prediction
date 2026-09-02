@@ -1,0 +1,9 @@
+{
+  "method": "split_conformal_absolute_residual",
+  "default_confidence": 0.95,
+  "online_samples": 34796,
+  "static_samples": 34796,
+  "online_default_radius_w": 100.36619567871094,
+  "static_default_radius_w": 102.79244232177734,
+  "npz_file": "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\model\\uncertainty_calibration_2.0.npz"
+}

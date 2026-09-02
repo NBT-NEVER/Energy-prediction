@@ -12,7 +12,7 @@ from pathlib import Path
 from config import build_config, ensure_directories  # 构建实验配置并创建路径目录
 from data_utils import download_source_dataset, extract_source_zip, prepare_dataset  # 下载、解包和切分数据
 from evaluate import evaluate_model  # 生成模型评估指标
-from predict import predict_from_csv  # 执行模型预测
+from predict import calibrate_uncertainty, predict_from_csv, recalculate_prediction_intervals  # 执行预测和置信区间处理
 from train import train_model  # 执行GPU训练和调参
 from visualize import generate_all_visualizations, predict_custom_scenario  # 生成图表并预测自定义工况
 
@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="all",
-        choices=["download", "prepare", "train", "predict", "evaluate", "visualize", "custom", "all"],
+        choices=["download", "prepare", "train", "calibrate", "predict", "interval", "evaluate", "visualize", "custom", "all"],
         help="运行模式，all会依次完成数据处理、训练、评估和可视化。",
     )
     parser.add_argument("--data-dir", type=Path, default=None, help="覆盖原始数据目录。")
@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force-prepare", action="store_true", help="强制重新生成处理后数据和切分文件。")
     parser.add_argument("--input-csv", type=Path, default=None, help="predict模式的输入CSV。")
     parser.add_argument("--output-csv", type=Path, default=None, help="predict模式的输出CSV。")
+    parser.add_argument("--confidence", type=float, default=None, help="置信度，取0到1之间，例如0.95；interval模式可即时修改。")
 
     parser.add_argument("--custom-csv", type=Path, default=None, help="custom模式的自定义工况CSV。")
     parser.add_argument("--duration-s", type=float, default=180.0, help="默认自定义工况总时长，单位s。")
@@ -85,7 +86,9 @@ def print_process_intro(mode: str) -> None:
         "download": "下载公开数据仓库并解压建模所需 CSV 文件。",
         "prepare": "清洗飞行记录，构造特征，并按 flight 划分训练、验证和测试集。",
         "train": "标准化训练数据，比较候选网络，训练并保存最优模型。",
+        "calibrate": "使用验证集残差生成在线RLS和固定RLS的置信区间校准文件。",
         "predict": "加载最优模型，对输入 CSV 逐批预测功率和区间能耗。",
+        "interval": "读取已有预测 CSV，只重算指定置信度下的功率和累计能耗区间。",
         "evaluate": "生成测试集预测，统计逐点功率和整次飞行能耗误差。",
         "visualize": "读取训练和评估输出，生成损失、误差及预测曲线。",
         "custom": "构造或读取自定义工况，预测功率与累计能耗。",
@@ -123,12 +126,13 @@ def main() -> None:
         device=args.device,
         window_seconds_candidates=tuple(float(item) for item in args.window_candidates.split(",")) if args.window_candidates else None,
         tcn_channels=tuple(int(item) for item in args.tcn_channels.split(",")) if args.tcn_channels else None,
+        default_confidence=args.confidence,
     )
     ensure_directories(cfg)
     print_process_intro(args.mode)
     print(
         f"训练配置: TCN深度={len(cfg.tcn_channels)}块，通道={list(cfg.tcn_channels)}，"
-        f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}"
+        f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}，默认置信度={cfg.default_confidence:.1%}"
     )
 
     if args.mode == "download":
@@ -146,8 +150,16 @@ def main() -> None:
         print_dict("train", summary)
     elif args.mode == "predict":
         print("\n[批量预测] 加载模型并输出预测 CSV。")
-        output_path = predict_from_csv(cfg, args.input_csv, args.output_csv)
+        output_path = predict_from_csv(cfg, args.input_csv, args.output_csv, confidence=args.confidence)
         print_dict("predict", {"prediction_file": str(output_path)})
+    elif args.mode == "calibrate":
+        print("\n[置信区间校准] 使用验证集误差建立可调置信度校准文件。")
+        summary = calibrate_uncertainty(cfg)
+        print_dict("calibrate", summary)
+    elif args.mode == "interval":
+        print("\n[即时区间] 不重新运行模型，只更新已有预测的置信度区间。")
+        output_path, summary = recalculate_prediction_intervals(cfg, args.input_csv, args.output_csv, args.confidence)
+        print_dict("interval", {"prediction_file": str(output_path), **summary})
     elif args.mode == "evaluate":
         print("\n[模型评估] 生成测试预测并计算误差指标。")
         metrics = evaluate_model(cfg)
@@ -169,6 +181,7 @@ def main() -> None:
             args.payload_g,
             args.altitude,
             args.route,
+            confidence=args.confidence,
         )
         print_dict("custom", summary)
     elif args.mode == "all":

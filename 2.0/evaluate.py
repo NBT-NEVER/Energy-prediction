@@ -67,6 +67,12 @@ def build_flight_energy_summary(prediction_frame: pd.DataFrame) -> pd.DataFrame:
         payload_kg=("payload_kg", "median"),
         altitude_m=("altitude_m", "median"),
     ).reset_index()
+    if {"predicted_energy_lower_wh", "predicted_energy_upper_wh"}.issubset(prediction_frame.columns):
+        interval = grouped.agg(
+            predicted_energy_lower_wh=("predicted_energy_lower_wh", "sum"),
+            predicted_energy_upper_wh=("predicted_energy_upper_wh", "sum"),
+        ).reset_index()
+        summary = summary.merge(interval, on="flight", how="left")
     summary["energy_error_wh"] = summary["predicted_energy_wh"] - summary["actual_energy_wh"]
     summary["energy_abs_error_wh"] = summary["energy_error_wh"].abs()
     summary["energy_abs_percent_error"] = (
@@ -138,11 +144,33 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         flight_summary["tcn_predicted_energy_wh"].to_numpy(),
         "tcn_flight_energy_wh",
     )
+    interval_metrics = {}
+    if {"predicted_power_lower_w", "predicted_power_upper_w"}.issubset(predictions.columns):
+        actual_power = predictions["power_w"].to_numpy(dtype=float)
+        lower_power = predictions["predicted_power_lower_w"].to_numpy(dtype=float)
+        upper_power = predictions["predicted_power_upper_w"].to_numpy(dtype=float)
+        interval_metrics = {
+            "confidence_level": float(predictions["confidence_level"].iloc[0]),
+            "power_interval_radius_w": float(predictions["power_interval_radius_w"].iloc[0]),
+            "sample_power_interval_coverage_percent": float(np.mean((actual_power >= lower_power) & (actual_power <= upper_power)) * 100.0),
+            "sample_power_interval_mean_width_w": float(np.mean(upper_power - lower_power)),
+        }
+        if {"predicted_energy_lower_wh", "predicted_energy_upper_wh"}.issubset(flight_summary.columns):
+            actual_energy = flight_summary["actual_energy_wh"].to_numpy(dtype=float)
+            lower_energy = flight_summary["predicted_energy_lower_wh"].to_numpy(dtype=float)
+            upper_energy = flight_summary["predicted_energy_upper_wh"].to_numpy(dtype=float)
+            interval_metrics.update(
+                {
+                    "flight_energy_interval_coverage_percent": float(np.mean((actual_energy >= lower_energy) & (actual_energy <= upper_energy)) * 100.0),
+                    "flight_energy_interval_mean_width_wh": float(np.mean(upper_energy - lower_energy)),
+                }
+            )
     metrics = {
         **sample_metrics,
         **tcn_sample_metrics,
         **flight_metrics,
         **tcn_flight_metrics,
+        **interval_metrics,
         "test_rows": int(len(predictions)),
         "test_flights": int(flight_summary["flight"].nunique()),
         "prediction_file": str(prediction_path),

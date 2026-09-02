@@ -19,6 +19,7 @@
 ├── visualize.py       # 训练、评估、预测、自定义工况图表
 ├── main.py            # 统一命令行入口
 ├── progress.py        # 轻量级终端进度条
+├── uncertainty.py     # 保序残差校准和即时功率/能耗区间
 ├── device_utils.py    # CUDA设备检查
 ├── requirements.txt   # Python依赖
 └── out                 # 2.0独立输出目录
@@ -40,9 +41,19 @@ python main.py train
 python main.py evaluate
 python main.py visualize
 python main.py custom --wind-speed 5 --flight-speed 8 --payload-g 250 --altitude 50 --duration-s 180
+python main.py interval --confidence 0.90
 ```
 
 默认训练深度为 4 个 TCN 残差块，通道为 `64,64,64,32`，调参训练 20 轮、最终训练 80 轮。可通过 `--epochs`、`--tune-epochs` 和 `--tcn-channels` 覆盖；终端会显示总流程、时间窗、epoch、批次、耗时和 ETA。
+
+首次训练会使用验证集绝对残差生成在线 RLS 和固定 RLS 两套置信区间校准文件，默认置信度为 `0.95`。预测 CSV 会同时保存 `predicted_power_w`、`cumulative_energy_wh`，以及功率和累计能耗的上下限。预测完成后只需运行 `interval` 修改置信度，程序只读取已有 CSV 并即时重算，不会重新执行 TCN：
+
+```bash
+python main.py interval --confidence 0.90
+python main.py interval --confidence 0.99 --input-csv out/predictions/test_predictions_2.0.csv
+```
+
+若需单独重建校准残差，可运行 `python main.py calibrate`。区间采用 split conformal 绝对残差分位数；累计能耗上下限由功率上下限按 `dt_seconds` 积分并逐 flight 累加得到。
 
 时间窗候选以秒为单位，默认测试 `0.6, 1.0, 1.5, 2.0, 3.0` 秒；可覆盖候选，例如：
 
@@ -107,6 +118,8 @@ $\mathrm{WAPE}_{\mathrm{sample}}$：采样点功率加权绝对百分比误差�
 - `out/model/flight_energy_summary_2.0.csv`：同时保存 `tcn_predicted_energy_wh` 与 `predicted_energy_wh`，可逐 flight 对比校正前后能耗。
 - `out/model/power_bin_evaluation_2.0.csv`：按真实功率区间统计 RLS 校正结果，字段与 1.0 对齐。
 - `out/predictions/test_predictions_2.0.csv`：包含 `tcn_predicted_power_w`、`rls_corrected_power_w`、`predicted_power_w`、校正量和对应能耗字段。
+- `out/model/uncertainty_calibration_2.0.npz/json`：在线 RLS、固定 RLS 的验证集绝对残差和校准摘要。
+- 预测 CSV 还包含 `confidence_level`、`power_interval_radius_w`、功率上下限、单步能耗上下限和累计能耗上下限。
 - `D:/Python-files/Energy-prediction/model/best_energy_tcn_rls_2.0.pt`、`final_energy_tcn_rls_2.0.pt`：TCN权重、最优窗口、采样周期和RLS初始参数。
 
 ## 图表输出
@@ -115,4 +128,4 @@ $\mathrm{WAPE}_{\mathrm{sample}}$：采样点功率加权绝对百分比误差�
 
 ## 文件调用关系
 
-`main.py` 调用 `data_utils.prepare_dataset()`、`train.train_model()`、`evaluate.evaluate_model()` 和 `visualize.generate_all_visualizations()`。`train.py` 调用 `model.build_model()` 训练 TCN，调用 `apply_rls_correction()` 在验证集上比较窗口。`predict.py` 读取 checkpoint 的 `window_steps`，调用 `build_sequence_arrays()` 做因果短窗，调用 `predict_array()` 得到 TCN 前向结果，再按 flight 和时间顺序调用 RLS。`evaluate.py` 读取预测 CSV，同时计算 TCN 基线和 RLS 校正误差，因此每一项结果都能与 1.0 的同名产物直接对照。
+`main.py` 调用 `data_utils.prepare_dataset()`、`train.train_model()`、`evaluate.evaluate_model()` 和 `visualize.generate_all_visualizations()`。`train.py` 调用 `model.build_model()` 训练 TCN，调用 `apply_rls_correction()` 在验证集上比较窗口，并调用 `uncertainty.save_calibration()` 保存残差校准数据。`predict.py` 读取 checkpoint 的 `window_steps`，调用 `build_sequence_arrays()` 做因果短窗，调用 `predict_array()` 得到 TCN 前向结果，再按 flight 和时间顺序调用 RLS；`uncertainty.py` 为预测表添加功率和累计能耗区间。`interval` 模式只读取已有预测 CSV，因此修改置信度不会重复模型推理。`evaluate.py` 读取预测 CSV，同时计算 TCN 基线、RLS 校正误差和区间覆盖率，因此每一项结果都能与 1.0 的同名产物直接对照。

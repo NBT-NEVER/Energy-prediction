@@ -21,6 +21,7 @@ from data_utils import load_json, save_json
 from device_utils import describe_cuda_device, select_cuda_device
 from model import RLSCorrector, build_model
 from progress import TerminalProgress
+from uncertainty import save_calibration
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -457,11 +458,25 @@ def train_model(cfg: ExperimentConfig) -> dict:
     rls_theta = estimate_rls_initial_theta(train_base, train_df[cfg.target_column].to_numpy(dtype=float), scaler["power_scale"])
     workflow_progress.update(4, f"最终模型训练完成，最佳验证损失={best_val_loss:.5f}")
 
+    # 用独立验证集残差校准两种RLS运行状态，后续修改置信度时无需重新执行TCN。
+    val_base = predict_original_power(final_model, val_x, scaler, device, cfg.batch_size, "置信区间校准推理")
+    val_online, _ = apply_rls_correction(val_base, val_df, scaler, cfg, None, update=True, progress_label="在线RLS校准残差")
+    val_static, _ = apply_rls_correction(val_base, val_df, scaler, cfg, rls_theta, update=False, progress_label="固定RLS校准残差")
+    actual_val = val_df[cfg.target_column].to_numpy(dtype=float)
+    calibration = save_calibration(
+        cfg.uncertainty_calibration_npz,
+        cfg.uncertainty_calibration_json,
+        np.abs(val_online - actual_val),
+        np.abs(val_static - actual_val),
+        cfg.default_confidence,
+    )
+    workflow_progress.update(5, f"置信区间校准完成，默认置信度={cfg.default_confidence:.0%}，在线半径={calibration['online_default_radius_w']:.2f}W")
+
     pd.DataFrame(tuning_rows).to_csv(cfg.tuning_results_csv, index=False, encoding="utf-8")
     pd.DataFrame(logs).to_csv(cfg.training_log_csv, index=False, encoding="utf-8")
     save_loss_curve(logs, cfg.loss_curve_file)
-    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "tcn_rls", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": cfg.rls_forgetting_factor, "rls_initial_covariance": cfg.rls_initial_covariance, "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "device_used": str(device), "best_val_loss": best_val_loss, "selection_score": best_score}
+    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "tcn_rls", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": cfg.rls_forgetting_factor, "rls_initial_covariance": cfg.rls_initial_covariance, "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "uncertainty_calibration_npz": str(cfg.uncertainty_calibration_npz), "uncertainty_calibration_json": str(cfg.uncertainty_calibration_json), "device_used": str(device), "best_val_loss": best_val_loss, "selection_score": best_score}
     torch.save(checkpoint, cfg.best_model_file)
     torch.save(checkpoint, cfg.final_model_file)
-    workflow_progress.finish(f"权重、日志和调参结果已保存；深度={len(best_params['channels'])}块")
-    return {"device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0), "best_candidate": best_params["name"], "best_model_type": "tcn_rls", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": cfg.rls_forgetting_factor, "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_selection_score": best_score, "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json)}
+    workflow_progress.finish(f"权重、日志和置信区间校准已保存；深度={len(best_params['channels'])}块")
+    return {"device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0), "best_candidate": best_params["name"], "best_model_type": "tcn_rls", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": cfg.rls_forgetting_factor, "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_selection_score": best_score, "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json), "uncertainty_calibration_file": str(cfg.uncertainty_calibration_npz)}

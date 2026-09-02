@@ -21,6 +21,7 @@ from device_utils import describe_cuda_device, select_cuda_device
 from predict import load_trained_model, predict_array
 from train import apply_rls_correction, build_sequence_arrays
 from progress import TerminalProgress
+from uncertainty import add_prediction_intervals, load_calibration_scores
 
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
@@ -226,6 +227,15 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             if "power_w" in flight_frame.columns:
                 plt.plot(flight_frame["time"], flight_frame["power_w"], label="Actual power", linewidth=1.8)
             plt.plot(flight_frame["time"], flight_frame["predicted_power_w"], label="Predicted power", linewidth=1.8)
+            if {"predicted_power_lower_w", "predicted_power_upper_w"}.issubset(flight_frame.columns):
+                plt.fill_between(
+                    flight_frame["time"].to_numpy(),
+                    flight_frame["predicted_power_lower_w"].to_numpy(),
+                    flight_frame["predicted_power_upper_w"].to_numpy(),
+                    color="#4c78a8",
+                    alpha=0.16,
+                    label=f"{float(flight_frame['confidence_level'].iloc[0]):.0%} interval",
+                )
             plt.xlabel("Time (s)")
             plt.ylabel("Power (W)")
             plt.title(f"Flight {flight_id} Power Prediction")
@@ -350,9 +360,10 @@ def predict_custom_scenario(
     payload_g: float,
     altitude_m: float,
     route: str,
+    confidence: float | None = None,
 ) -> dict[str, Any]:
     """功能: 调取训练模型预测自定义工况能耗并生成图表。
-    参数: cfg为实验配置对象，custom_csv为可选自定义输入CSV，其余为默认工况参数。
+    参数: cfg为实验配置对象，custom_csv为可选自定义输入CSV，其余为默认工况参数，confidence为置信度。
     返回: 自定义预测摘要字典。
     调用位置: main.py。
     """
@@ -385,24 +396,30 @@ def predict_custom_scenario(
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power
     custom_frame["predicted_power_w"] = corrected_power
-    custom_frame["predicted_energy_wh"] = custom_frame["predicted_power_w"] * custom_frame["dt_seconds"] / 3600.0
-    custom_frame["cumulative_energy_wh"] = custom_frame["predicted_energy_wh"].cumsum()
+    custom_frame["rls_update_enabled"] = False
+    confidence = cfg.default_confidence if confidence is None else float(confidence)
+    scores = load_calibration_scores(cfg.uncertainty_calibration_npz, online_update=False)
+    custom_frame, radius = add_prediction_intervals(custom_frame, scores, confidence)
     custom_frame.to_csv(cfg.custom_prediction_csv, index=False, encoding="utf-8")
     progress.update(5, f"RLS校正和预测文件已保存：{cfg.custom_prediction_csv.name}")
 
     set_plot_style()
     plt.figure(figsize=(10, 5))
-    plt.plot(custom_frame["time"], custom_frame["predicted_power_w"], color="#4c78a8", linewidth=2)
+    plt.plot(custom_frame["time"], custom_frame["predicted_power_w"], color="#4c78a8", linewidth=2, label="Predicted power")
+    plt.fill_between(custom_frame["time"], custom_frame["predicted_power_lower_w"], custom_frame["predicted_power_upper_w"], color="#4c78a8", alpha=0.16, label=f"{confidence:.0%} interval")
     plt.xlabel("Time (s)")
     plt.ylabel("Predicted power (W)")
     plt.title("Custom Scenario Predicted Power")
+    plt.legend()
     power_chart = save_figure(cfg.custom_vis_dir / "custom_power_timeseries.png")
 
     plt.figure(figsize=(10, 5))
-    plt.plot(custom_frame["time"], custom_frame["cumulative_energy_wh"], color="#54a24b", linewidth=2)
+    plt.plot(custom_frame["time"], custom_frame["cumulative_energy_wh"], color="#54a24b", linewidth=2, label="Predicted cumulative energy")
+    plt.fill_between(custom_frame["time"], custom_frame["cumulative_energy_lower_wh"], custom_frame["cumulative_energy_upper_wh"], color="#54a24b", alpha=0.16, label=f"{confidence:.0%} interval")
     plt.xlabel("Time (s)")
     plt.ylabel("Cumulative energy (Wh)")
     plt.title("Custom Scenario Cumulative Energy")
+    plt.legend()
     energy_chart = save_figure(cfg.custom_vis_dir / "custom_cumulative_energy.png")
 
     summary = {
@@ -413,6 +430,10 @@ def predict_custom_scenario(
         "mean_predicted_power_w": float(custom_frame["predicted_power_w"].mean()),
         "max_predicted_power_w": float(custom_frame["predicted_power_w"].max()),
         "total_predicted_energy_wh": float(custom_frame["predicted_energy_wh"].sum()),
+        "confidence_level": confidence,
+        "power_interval_radius_w": radius,
+        "total_predicted_energy_lower_wh": float(custom_frame["predicted_energy_lower_wh"].sum()),
+        "total_predicted_energy_upper_wh": float(custom_frame["predicted_energy_upper_wh"].sum()),
     }
     save_json(cfg.custom_prediction_summary_json, summary)
     progress.finish(f"图表和摘要已保存，累计能耗={summary['total_predicted_energy_wh']:.5f} Wh")
