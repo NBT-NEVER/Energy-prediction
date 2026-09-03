@@ -3,8 +3,8 @@
 # 文件名: data_utils.py
 # 开发时间: 2026-07-07
 # 文件名: data_utils.py
-# 功能说明: 下载无人机公开数据集并完成实验2.0的能耗特征工程、数据清洗和数据切分
-# 版本号：2.0
+# 功能说明: 下载无人机公开数据集并完成实验2.1的能耗特征工程、数据清洗和数据切分
+# 版本号：2.1
 
 import json
 import math
@@ -443,7 +443,7 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
 
     summary = {
         "_文件说明": (
-            "本文件汇总实验2.0的数据来源、清洗结果、数据集划分规模、模型输入维度和预测目标。"
+            "本文件汇总实验2.1的数据来源、清洗结果、数据集划分规模、模型输入维度和预测目标。"
             "rows表示采样记录数，flights表示按flight字段统计的不重复飞行次数。"
         ),
         "_字段说明": {
@@ -519,12 +519,12 @@ def prepare_prediction_frame(input_csv: Path, cfg: ExperimentConfig) -> tuple[pd
         routes = frame["route"].astype(str).str.strip()
         invalid_routes = sorted(set(routes) - {cfg.training_route})
         if invalid_routes:
-            raise ValueError(f"实验2.0仅支持{cfg.training_route}航线，输入文件包含: {invalid_routes}")
+            raise ValueError(f"实验2.1仅支持{cfg.training_route}航线，输入文件包含: {invalid_routes}")
     else:
         dummy_columns = [column for column in frame.columns if column.startswith("route_") and column != f"route_{cfg.training_route}"]
         active_dummies = [column for column in dummy_columns if pd.to_numeric(frame[column], errors="coerce").fillna(0).abs().gt(1e-8).any()]
         if active_dummies:
-            raise ValueError(f"实验2.0仅支持{cfg.training_route}航线，输入特征包含其他航线独热编码: {active_dummies}")
+            raise ValueError(f"实验2.1仅支持{cfg.training_route}航线，输入特征包含其他航线独热编码: {active_dummies}")
     if all(column in frame.columns for column in feature_columns):
         return frame, feature_columns
     missing_raw = sorted(set(RAW_COLUMNS) - set(frame.columns))

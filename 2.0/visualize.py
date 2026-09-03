@@ -3,7 +3,7 @@
 # 文件名: visualize.py
 # 开发时间: 2026-07-08
 # 文件名: visualize.py
-# 功能说明: 生成实验2.0的TCN、RLS评估和自定义工况可视化图表
+# 功能说明: 生成实验2.1的TCN、RLS评估和自定义工况可视化图表
 # 版本号：2.0
 
 import json
@@ -102,7 +102,7 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
 
     if cfg.tuning_results_csv.exists():
         tuning = pd.read_csv(cfg.tuning_results_csv)
-        score_column = "selection_score" if "selection_score" in tuning.columns else "best_val_loss"
+        score_column = "tcn_selection_score" if "tcn_selection_score" in tuning.columns else "best_val_loss"
         tuning = tuning.sort_values(score_column)
         plt.figure(figsize=(10, 5))
         plt.bar(tuning["candidate"], tuning[score_column], color="#4c78a8")
@@ -111,7 +111,7 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
         plt.title("Hyperparameter Candidate Ranking")
         outputs.append(save_figure(cfg.training_vis_dir / "hyperparameter_ranking.png"))
 
-        available = [col for col in ["val_sample_power_wape", "val_flight_energy_wape"] if col in tuning.columns]
+        available = [col for col in ["val_tcn_sample_power_wape", "val_tcn_flight_energy_wape"] if col in tuning.columns]
         if available:
             x = np.arange(len(tuning))
             width = 0.35
@@ -343,7 +343,7 @@ def normalize_custom_input(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.Dat
     routes = frame["route"].astype(str).str.strip()
     invalid_routes = sorted(set(routes) - {cfg.training_route})
     if invalid_routes:
-        raise ValueError(f"实验2.0自定义工况仅支持{cfg.training_route}航线，输入包含: {invalid_routes}")
+        raise ValueError(f"实验2.1自定义工况仅支持{cfg.training_route}航线，输入包含: {invalid_routes}")
     frame["route"] = cfg.training_route
     for column in feature_columns:
         if column.startswith("route_"):
@@ -397,7 +397,8 @@ def predict_custom_scenario(
     progress.update(3, f"已构造 {len(sequences)} 条输入序列")
     tcn_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
     progress.update(4, "TCN前向推理完成")
-    corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正")
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
+    corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正", rls_params=rls_params)
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power
     custom_frame["predicted_power_w"] = corrected_power

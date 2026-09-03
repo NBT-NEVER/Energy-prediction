@@ -3,8 +3,8 @@
 # 文件名: model.py
 # 开发时间: 2026-08-31
 # 文件名: model.py
-# 功能说明: 定义实验2.0的因果TCN瞬时功率预测模型
-# 版本号：2.0
+# 功能说明: 定义实验2.1的因果TCN瞬时功率预测模型和RLS校正器
+# 版本号：2.1
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ class TemporalConvNet(nn.Module):
 
 
 def build_model(input_dim: int, channels: tuple[int, ...], dropout: float, kernel_size: int = 3) -> nn.Module:
-    """功能: 构建实验2.0的TCN模型。
+    """功能: 构建实验2.1的TCN模型。
     参数: input_dim为输入特征数，channels为TCN通道宽度，dropout为丢弃率，kernel_size为卷积核宽度。
     返回: TemporalConvNet模型实例。
     调用位置: train.py、predict.py。

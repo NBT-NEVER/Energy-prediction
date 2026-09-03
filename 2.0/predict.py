@@ -3,8 +3,8 @@
 # 文件名: predict.py
 # 开发时间: 2026-08-31
 # 文件名: predict.py
-# 功能说明: 执行实验2.0的TCN前向推理和RLS实时功率校正
-# 版本号：2.0
+# 功能说明: 执行实验2.1的TCN前向推理和RLS实时功率校正
+# 版本号：2.1
 
 from pathlib import Path
 
@@ -37,7 +37,7 @@ def resolve_prediction_device(device_name: str) -> torch.device:
 
 
 def resolve_scaler_path(cfg: ExperimentConfig, checkpoint: dict) -> Path:
-    """功能: 查找实验2.0标准化参数文件。
+    """功能: 查找实验2.1标准化参数文件。
     参数: cfg为实验配置对象，checkpoint为模型权重字典。
     返回: 可读取的标准化参数路径。
     调用位置: load_trained_model。
@@ -124,7 +124,8 @@ def predict_from_csv(
     if online_update is None:
         online_update = cfg.target_column in frame.columns
     initial_theta = None if online_update else checkpoint.get("rls_theta")
-    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正")
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
+    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正", rls_params=rls_params)
     workflow_progress.update(4, f"RLS校正完成，在线更新={'开启' if online_update else '关闭'}")
     output = frame.copy()
     output["tcn_predicted_power_w"] = base_power
@@ -209,8 +210,9 @@ def calibrate_uncertainty(cfg: ExperimentConfig) -> dict:
     base_power = predict_array(model, sequences, scaler, device, cfg.batch_size, "校准TCN前向")
     progress.update(3, "TCN校准预测已完成")
     actual = val_frame[cfg.target_column].to_numpy(dtype=float)
-    online, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, None, update=True, progress_label="在线RLS校准")
-    static, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="固定RLS校准")
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
+    online, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, None, update=True, progress_label="在线RLS校准", rls_params=rls_params)
+    static, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="固定RLS校准", rls_params=rls_params)
     progress.update(4, "在线和固定RLS残差已计算")
     summary = save_calibration(
         cfg.uncertainty_calibration_npz,

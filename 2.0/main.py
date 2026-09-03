@@ -3,8 +3,8 @@
 # 文件名: main.py
 # 开发时间: 2026-07-08
 # 文件名: main.py
-# 功能说明: 统一调度实验2.0的TCN前向、RLS在线校正、训练、评估和可视化流程
-# 版本号：2.0
+# 功能说明: 统一调度实验2.1的TCN前向、RLS在线校正、训练、评估和可视化流程
+# 版本号：2.1
 
 import argparse
 from pathlib import Path
@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     调用位置: main。
     """
 
-    parser = argparse.ArgumentParser(description="四轴无人机飞行能耗预测实验2.0：TCN + RLS实时矫正")
+    parser = argparse.ArgumentParser(description="四轴无人机飞行能耗预测实验2.1：两阶段TCN + RLS选择")
     parser.add_argument(
         "mode",
         nargs="?",
@@ -96,7 +96,7 @@ def print_process_intro(mode: str) -> None:
         "all": "依次执行数据准备、模型训练、测试评估和结果可视化。",
     }
     print("\n" + "=" * 72)
-    print("四轴无人机飞行能耗预测实验 2.0：TCN + RLS实时矫正")
+    print("四轴无人机飞行能耗预测实验 2.1：两阶段TCN + RLS选择")
     print(f"当前模式: {mode}")
     print(f"运行内容: {descriptions[mode]}")
     if mode == "all":
@@ -105,7 +105,7 @@ def print_process_intro(mode: str) -> None:
 
 
 def run_mode(args: argparse.Namespace, cfg) -> None:
-    """功能: 根据命令行模式执行实验2.0的具体流程。
+    """功能: 根据命令行模式执行实验2.1的具体流程。
     参数: args为命令行参数，cfg为实验配置对象。
     返回: None。
     调用位置: main。

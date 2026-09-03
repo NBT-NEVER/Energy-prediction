@@ -47,6 +47,15 @@ output/
 # 2.0 需要保留非R1航线筛选结果用于数据追溯
 !2.0/out/data/processed_2.0/excluded_routes_2.0.csv
 
+# 纳入实验2.1代码运行后的可复核小型结果，排除逐采样数据和预测大文件
+!2.0/out/
+!2.0/out/**/
+!2.0/out/**/*
+2.0/out/data/processed_2.1/*.csv
+2.0/out/predictions/*.csv
+2.0/out/logs/*.log
+2.0/out/data/processed_2.0/*.csv
+
 # 大型或自动生成的数据文件
 *.zip
 *.7z

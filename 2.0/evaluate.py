@@ -3,8 +3,8 @@
 # 文件名: evaluate.py
 # 开发时间: 2026-07-07
 # 文件名: evaluate.py
-# 功能说明: 评估实验2.0的TCN基线和RLS校正样本级功率、飞行级能量误差
-# 版本号：2.0
+# 功能说明: 评估实验2.1的TCN基线和RLS校正样本级功率、飞行级能量误差
+# 版本号：2.1
 
 import numpy as np
 import pandas as pd

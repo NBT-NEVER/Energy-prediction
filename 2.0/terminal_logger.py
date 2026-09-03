@@ -3,8 +3,8 @@
 # 文件名: terminal_logger.py
 # 开发时间: 2026-09-03
 # 文件名: terminal_logger.py
-# 功能说明: 将实验2.0的终端标准输出和异常信息同步追加到日志文件
-# 版本号：2.0
+# 功能说明: 将实验2.1的终端标准输出和异常信息同步追加到日志文件
+# 版本号：2.1
 
 from __future__ import annotations
 
