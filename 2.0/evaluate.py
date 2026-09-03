@@ -107,6 +107,48 @@ def build_power_bin_summary(prediction_frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def evaluation_field_descriptions() -> dict[str, str]:
+    """功能: 返回evaluation JSON中各指标字段的含义说明。
+    参数: 无。
+    返回: 指标字段名到中文说明的映射字典。
+    调用位置: evaluate_model。
+    """
+
+    return {
+        "sample_power_w_mae": "RLS校正后样本级瞬时功率平均绝对误差，单位W，越小越好。",
+        "sample_power_w_rmse": "RLS校正后样本级瞬时功率均方根误差，单位W，越小越好；对大误差更敏感。",
+        "sample_power_w_r2": "RLS校正后样本级瞬时功率决定系数，无量纲，越接近1越好。",
+        "sample_power_w_mape_percent": "RLS校正后样本级瞬时功率平均绝对百分比误差，单位%，真实功率接近0的样本被排除。",
+        "sample_power_w_wape_percent": "RLS校正后样本级瞬时功率加权绝对百分比误差，单位%，越小越好。",
+        "tcn_sample_power_w_mae": "TCN原始输出的样本级瞬时功率平均绝对误差，未经过RLS校正，单位W。",
+        "tcn_sample_power_w_rmse": "TCN原始输出的样本级瞬时功率均方根误差，未经过RLS校正，单位W。",
+        "tcn_sample_power_w_r2": "TCN原始输出的样本级瞬时功率决定系数，未经过RLS校正，无量纲。",
+        "tcn_sample_power_w_mape_percent": "TCN原始输出的样本级瞬时功率平均绝对百分比误差，单位%，真实功率接近0的样本被排除。",
+        "tcn_sample_power_w_wape_percent": "TCN原始输出的样本级瞬时功率加权绝对百分比误差，单位%。",
+        "flight_energy_wh_mae": "RLS校正后按flight汇总的能耗平均绝对误差，单位Wh。",
+        "flight_energy_wh_rmse": "RLS校正后按flight汇总的能耗均方根误差，单位Wh。",
+        "flight_energy_wh_r2": "RLS校正后按flight汇总的能耗决定系数，无量纲。",
+        "flight_energy_wh_mape_percent": "RLS校正后按flight汇总的能耗平均绝对百分比误差，单位%。",
+        "flight_energy_wh_wape_percent": "RLS校正后按flight汇总的能耗加权绝对百分比误差，单位%。",
+        "tcn_flight_energy_wh_mae": "TCN原始输出按flight汇总的能耗平均绝对误差，未经过RLS校正，单位Wh。",
+        "tcn_flight_energy_wh_rmse": "TCN原始输出按flight汇总的能耗均方根误差，未经过RLS校正，单位Wh。",
+        "tcn_flight_energy_wh_r2": "TCN原始输出按flight汇总的能耗决定系数，未经过RLS校正，无量纲。",
+        "tcn_flight_energy_wh_mape_percent": "TCN原始输出按flight汇总的能耗平均绝对百分比误差，单位%。",
+        "tcn_flight_energy_wh_wape_percent": "TCN原始输出按flight汇总的能耗加权绝对百分比误差，单位%。",
+        "confidence_level": "预测区间的置信度，例如0.95表示95%置信度。",
+        "power_interval_radius_w": "样本级功率预测区间的半径，实际区间为预测功率加减该值，单位W。",
+        "sample_power_interval_coverage_percent": "测试集真实功率落入样本级预测区间的比例，单位%。",
+        "sample_power_interval_mean_width_w": "测试集样本级功率预测区间平均宽度，单位W。",
+        "flight_energy_interval_coverage_percent": "flight级真实能耗落入预测区间的比例，单位%。",
+        "flight_energy_interval_mean_width_wh": "flight级能耗预测区间平均宽度，单位Wh。",
+        "test_rows": "参与最终测试评估的采样记录数，单位为行。",
+        "test_flights": "参与最终测试评估的不重复flight数量，单位为次。",
+        "prediction_file": "测试集逐样本预测结果CSV文件路径。",
+        "flight_energy_summary_file": "按flight汇总的能耗评估CSV文件路径。",
+        "power_bin_evaluation_file": "按真实功率区间汇总的误差评估CSV文件路径。",
+    }
+
+
 def evaluate_model(cfg: ExperimentConfig) -> dict:
     """功能: 生成预测文件并保存模型评估结果。
     参数: cfg为实验配置对象。
@@ -182,6 +224,11 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     pd.DataFrame([metrics]).to_csv(cfg.evaluation_csv, index=False, encoding="utf-8")
     flight_summary.to_csv(cfg.flight_energy_summary_csv, index=False, encoding="utf-8")
     power_bin_summary.to_csv(cfg.power_bin_evaluation_csv, index=False, encoding="utf-8")
-    save_json(cfg.evaluation_json, metrics)
+    evaluation_json = {
+        "_文件说明": "本文件汇总实验2.1测试集上的TCN原始输出、RLS校正结果、预测区间覆盖率及相关输出文件路径。功率指标单位为W，能耗指标单位为Wh，百分比指标单位为%。",
+        "_字段说明": evaluation_field_descriptions(),
+        **metrics,
+    }
+    save_json(cfg.evaluation_json, evaluation_json)
     progress.finish(f"评估结果已保存：{cfg.evaluation_json.name}")
     return metrics

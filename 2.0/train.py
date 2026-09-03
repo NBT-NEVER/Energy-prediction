@@ -280,11 +280,22 @@ def run_training_loop(train_x: np.ndarray, train_y: np.ndarray, val_x: np.ndarra
     logs: list[dict] = []
     progress = TerminalProgress(f"训练 {params['name']}", epochs)
     for epoch in range(1, epochs + 1):
-        train_loss = run_epoch(model, train_loader, criterion, optimizer, device, grad_scaler, f"E{epoch:02d}/{epochs} 训练批次")
-        val_loss = run_epoch(model, val_loader, criterion, None, device, grad_scaler, f"E{epoch:02d}/{epochs} 验证批次")
+        # 调参和最终训练均只显示epoch级进度，避免训练批次与候选进度重复刷新。
+        train_loss = run_epoch(model, train_loader, criterion, optimizer, device, grad_scaler)
+        val_loss = run_epoch(model, val_loader, criterion, None, device, grad_scaler)
         scheduler.step(val_loss)
         lr_now = optimizer.param_groups[0]["lr"]
-        logs.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "learning_rate": lr_now, "candidate": params["name"], "model_type": "tcn_rls", "window_seconds": params["window_seconds"], "window_steps": params["window_steps"]})
+        logs.append({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "learning_rate": lr_now,
+            "candidate": params["name"],
+            "model_type": "tcn_rls",
+            "window_seconds": params["window_seconds"],
+            "window_steps": params["window_steps"],
+            "phase": "training",
+        })
         progress.update(epoch, f"train={train_loss:.5f}, val={val_loss:.5f}, lr={lr_now:.2e}")
         if val_loss < best_val:
             best_val = val_loss
