@@ -84,15 +84,10 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
     outputs: list[Path] = []
     if cfg.training_log_csv.exists():
         log_frame = pd.read_csv(cfg.training_log_csv)
-        plt.figure(figsize=(9, 5))
-        plt.plot(log_frame["epoch"], log_frame["train_loss"], label="Train loss", linewidth=2)
-        plt.plot(log_frame["epoch"], log_frame["val_loss"], label="Validation loss", linewidth=2)
-        plt.xlabel("Epoch")
-        plt.ylabel("Huber loss")
-        plt.title("Training and Validation Loss")
-        plt.legend()
-        outputs.append(save_figure(cfg.training_vis_dir / "training_loss_history.png"))
-
+        # 阶段一和最终训练的epoch都会从1开始，学习率图只展示最终训练序列。
+        if "phase" in log_frame.columns:
+            log_frame = log_frame[log_frame["phase"] == "final_tcn"].copy()
+        log_frame = log_frame.sort_values("epoch")
         plt.figure(figsize=(9, 4))
         plt.plot(log_frame["epoch"], log_frame["learning_rate"], color="#2f6fbb", linewidth=2)
         plt.xlabel("Epoch")

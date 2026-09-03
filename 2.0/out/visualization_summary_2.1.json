@@ -1,7 +1,6 @@
 {
-  "figure_count": 13,
+  "figure_count": 12,
   "figures": [
-    "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\training_loss_history.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\learning_rate_schedule.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\hyperparameter_ranking.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\candidate_validation_wape.png",
