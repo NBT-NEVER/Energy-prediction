@@ -1,0 +1,107 @@
+
+========================================================================
+终端记录开始: 2026-09-03T16:26:24+08:00 | 模式: all
+日志文件: I:\STUDY\python\project\Energy-prediction\2.0\out\logs\terminal_2.0.log
+
+========================================================================
+四轴无人机飞行能耗预测实验 2.0：TCN + RLS实时矫正
+当前模式: all
+运行内容: 依次执行数据准备、模型训练、测试评估和结果可视化。
+执行顺序: 数据准备 -> 调参与最终训练 -> 测试评估 -> 图表生成
+========================================================================
+训练配置: TCN深度=4块，通道=[64, 64, 64, 32]，调参轮数=20，最终轮数=80，批大小=1048，默认置信度=95.0%
+
+[1/4 数据准备] 清洗记录、构造特征并划分数据集。
+
+[2/4 模型训练] 调参后训练并保存最优网络。
+训练设备: cuda:0 (NVIDIA GeForce RTX 3060 Laptop GPU)
+开始短时间窗调参：共 5 个候选，每个候选最多训练 20 轮。
+开始最终训练：窗口 1s（8步），最多 80 轮。
+
+[3/4 测试评估] 生成测试预测并计算误差指标。
+推理设备: cuda:0 (NVIDIA GeForce RTX 3060 Laptop GPU)
+
+[4/4 结果可视化] 生成训练、评估和预测图表。
+
+[prepare]
+_文件说明: 本文件汇总实验2.0的数据来源、清洗结果、数据集划分规模、模型输入维度和预测目标。rows表示采样记录数，flights表示按flight字段统计的不重复飞行次数。
+_字段说明: {'source_repo_url': '原始无人机飞行数据集的公开仓库地址。', 'raw_rows': '从原始flights.csv读取并保留建模所需字段后的采样记录总数；此时尚未执行缺失值清理和航线筛选，单位为行。', 'processed_rows': '完成数值转换、缺失值删除、仅保留R1航线、特征工程及无穷值清理后保留的有效采样记录总数，单位为行。', 'processed_flights': '清洗后有效数据中不同flight编号的数量，即参与后续划分的有效飞行任务总数，单位为次。', 'train_rows': '训练集包含的采样记录数。模型使用这些记录拟合网络参数，单位为行。', 'val_rows': '验证集包含的采样记录数。该集合用于候选模型比较、学习率调整和早停判断，不直接更新网络参数，单位为行。', 'test_rows': '测试集包含的采样记录数。该集合仅用于最终预测和性能评估，单位为行。', 'train_flights': '训练集包含的不重复飞行任务数量。数据按完整flight分组划分，同一次飞行不会同时出现在其他数据集中，单位为次。', 'val_flights': '验证集包含的不重复飞行任务数量，单位为次。', 'test_flights': '测试集包含的不重复飞行任务数量，单位为次。', 'feature_count': '每条样本输入模型的特征数量，包括实测工况、派生特征、代理特征、飞行进度和航线独热编码；具体维度以feature_count为准。', 'target_column': '监督学习的目标字段名。power_w表示由非负放电电流与电池电压相乘得到的瞬时功率，单位为瓦特（W）。'}
+source_repo_url: https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git
+raw_rows: 257896
+processed_rows: 227551
+processed_flights: 182
+train_rows: 158625
+val_rows: 32820
+test_rows: 36106
+train_flights: 126
+val_flights: 28
+test_flights: 28
+feature_count: 22
+target_column: power_w
+training_route: R1
+excluded_rows: 30345
+excluded_routes_file: I:\STUDY\python\project\Energy-prediction\2.0\out\data\processed_2.0\excluded_routes_2.0.csv
+route_distribution_before_filter: {'A1': 2078, 'A2': 1693, 'A3': 2730, 'H': 3794, 'R1': 227551, 'R2': 1445, 'R3': 1364, 'R4': 1197, 'R5': 5490, 'R6': 8369, 'R7': 2185}
+route_distribution_after_filter: {'R1': 227551}
+
+[train]
+device: cuda:0
+cuda_device_name: NVIDIA GeForce RTX 3060 Laptop GPU
+best_candidate: tcn_rls_window_1s
+best_model_type: tcn_rls
+best_window_seconds: 1.0
+best_window_steps: 8
+sample_interval_seconds: 0.1200000000000045
+best_channels: [64, 64, 64, 32]
+best_dropout: 0.08
+best_learning_rate: 0.0003
+best_weight_decay: 0.0001
+rls_forgetting_factor: 0.995
+rls_initial_theta: [0.003976317117844897, 0.9956726466368996]
+target_transform: none
+best_val_loss_standardized: 0.019003165514185107
+best_selection_score: 1.7993513534627343
+epochs_run: 51
+model_file: D:\Python-files\Energy-prediction\model\best_energy_tcn_rls_2.0.pt
+scaler_file: I:\STUDY\python\project\Energy-prediction\2.0\out\model\scaler_2.0.json
+uncertainty_calibration_file: I:\STUDY\python\project\Energy-prediction\2.0\out\model\uncertainty_calibration_2.0.npz
+
+[evaluate]
+sample_power_w_mae: 31.19363824306704
+sample_power_w_rmse: 48.04435379683257
+sample_power_w_r2: 0.9542444690766753
+sample_power_w_mape_percent: 110.1097741902735
+sample_power_w_wape_percent: 7.678302714868209
+tcn_sample_power_w_mae: 32.86275062881134
+tcn_sample_power_w_rmse: 50.57916460123937
+tcn_sample_power_w_r2: 0.9492889982047923
+tcn_sample_power_w_mape_percent: 104.5880227243704
+tcn_sample_power_w_wape_percent: 8.089154121908841
+flight_energy_wh_mae: 0.11561598849820541
+flight_energy_wh_rmse: 0.14339598474685605
+flight_energy_wh_r2: 0.999065720886787
+flight_energy_wh_mape_percent: 0.5692986293665084
+flight_energy_wh_wape_percent: 0.5284232638381527
+tcn_flight_energy_wh_mae: 0.5000994821680129
+tcn_flight_energy_wh_rmse: 0.6992644683639571
+tcn_flight_energy_wh_r2: 0.9777829915380566
+tcn_flight_energy_wh_mape_percent: 2.3085373384204946
+tcn_flight_energy_wh_wape_percent: 2.2857063633123147
+confidence_level: 0.95
+power_interval_radius_w: 86.60237884521484
+sample_power_interval_coverage_percent: 93.31413061541018
+sample_power_interval_mean_width_w: 156.57671165043266
+flight_energy_interval_coverage_percent: 100.0
+flight_energy_interval_mean_width_wh: 8.431028380435947
+test_rows: 36106
+test_flights: 28
+prediction_file: I:\STUDY\python\project\Energy-prediction\2.0\out\predictions\test_predictions_2.0.csv
+flight_energy_summary_file: I:\STUDY\python\project\Energy-prediction\2.0\out\model\flight_energy_summary_2.0.csv
+power_bin_evaluation_file: I:\STUDY\python\project\Energy-prediction\2.0\out\model\power_bin_evaluation_2.0.csv
+
+[visualize]
+figure_count: 13
+figures: ['I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\training_loss_history.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\learning_rate_schedule.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\hyperparameter_ranking.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\training\\candidate_validation_wape.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\results\\evaluation_metrics.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\results\\flight_energy_actual_vs_predicted.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\results\\flight_energy_error.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\results\\power_bin_mae.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\prediction\\power_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\prediction\\power_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\prediction\\flight_18_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\prediction\\flight_23_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\2.0\\out\\figures\\prediction\\flight_83_power_timeseries.png']
+out_dir: I:\STUDY\python\project\Energy-prediction\2.0\out
+终端记录结束: 2026-09-03T16:48:34+08:00 | 状态: 完成
+========================================================================
