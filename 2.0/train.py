@@ -27,6 +27,13 @@ matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 
 
+# CUDA训练启用TF32，降低矩阵计算耗时；不影响CPU运行路径。
+if torch.cuda.is_available():
+    torch.set_float32_matmul_precision("high")
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
+
 def set_random_seed(seed: int) -> None:
     """功能: 固定Python、NumPy和PyTorch随机种子。
     参数: seed为随机种子。
@@ -201,9 +208,17 @@ class BalancedHuberLoss(nn.Module):
         return (huber * weights).mean()
 
 
-def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module, optimizer: torch.optim.Optimizer | None, device: torch.device, progress_label: str | None = None) -> float:
+def run_epoch(
+    model: nn.Module,
+    loader: DataLoader,
+    criterion: nn.Module,
+    optimizer: torch.optim.Optimizer | None,
+    device: torch.device,
+    grad_scaler: torch.amp.GradScaler | None = None,
+    progress_label: str | None = None,
+) -> float:
     """功能: 执行一个TCN训练或验证epoch。
-    参数: model为模型，loader为数据加载器，criterion为损失函数，optimizer为空时执行验证，device为设备。
+    参数: model为模型，loader为数据加载器，criterion为损失函数，optimizer为空时执行验证，device为设备，grad_scaler为CUDA混合精度梯度缩放器。
     返回: 当前epoch平均损失。
     progress_label为可选的批次进度标题。
     调用位置: run_training_loop。
@@ -211,7 +226,8 @@ def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module, optimi
 
     is_train = optimizer is not None
     model.train(is_train)
-    total_loss = 0.0
+    amp_enabled = device.type == "cuda"
+    total_loss = torch.zeros((), device=device)
     total_count = 0
     progress = TerminalProgress(progress_label, len(loader), width=24) if progress_label else None
     for batch_index, (features, target) in enumerate(loader, start=1):
@@ -219,19 +235,29 @@ def run_epoch(model: nn.Module, loader: DataLoader, criterion: nn.Module, optimi
         target = target.to(device, non_blocking=True)
         if is_train:
             optimizer.zero_grad(set_to_none=True)
-        prediction = model(features)
-        loss = criterion(prediction, target)
+        with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=amp_enabled):
+            prediction = model(features)
+            loss = criterion(prediction, target)
         if is_train:
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-            optimizer.step()
-        total_loss += float(loss.item()) * len(target)
+            if grad_scaler is not None and amp_enabled:
+                grad_scaler.scale(loss).backward()
+                grad_scaler.unscale_(optimizer)
+                nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+                grad_scaler.step(optimizer)
+                grad_scaler.update()
+            else:
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+                optimizer.step()
+        total_loss += loss.detach() * len(target)
         total_count += len(target)
-        if progress:
-            progress.update(batch_index, f"loss={loss.item():.5f}，样本 {total_count}")
+        # 减少每个批次的CPU-GPU同步和终端刷新，最后一批仍然强制刷新。
+        if progress and (batch_index % 10 == 0 or batch_index == len(loader)):
+            progress.update(batch_index, f"loss={loss.detach().item():.5f}，样本 {total_count}")
+    average_loss = float(total_loss.item()) / max(total_count, 1)
     if progress:
-        progress.finish(f"平均损失={total_loss / max(total_count, 1):.5f}")
-    return total_loss / max(total_count, 1)
+        progress.finish(f"平均损失={average_loss:.5f}")
+    return average_loss
 
 
 def run_training_loop(train_x: np.ndarray, train_y: np.ndarray, val_x: np.ndarray, val_y: np.ndarray, cfg: ExperimentConfig, params: dict, device: torch.device, epochs: int, early_stopping: bool = True) -> tuple[nn.Module, list[dict], float]:
@@ -247,14 +273,15 @@ def run_training_loop(train_x: np.ndarray, train_y: np.ndarray, val_x: np.ndarra
     criterion = BalancedHuberLoss(float(params.get("target_mean", 0.0)), float(params.get("target_std", 1.0)), float(params["huber_delta"]))
     train_loader = make_loader(train_x, train_y, cfg.batch_size, True, device)
     val_loader = make_loader(val_x, val_y, cfg.batch_size, False, device)
+    grad_scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     best_state = deepcopy(model.state_dict())
     best_val = float("inf")
     stale_epochs = 0
     logs: list[dict] = []
     progress = TerminalProgress(f"训练 {params['name']}", epochs)
     for epoch in range(1, epochs + 1):
-        train_loss = run_epoch(model, train_loader, criterion, optimizer, device, f"E{epoch:02d}/{epochs} 训练批次")
-        val_loss = run_epoch(model, val_loader, criterion, None, device, f"E{epoch:02d}/{epochs} 验证批次")
+        train_loss = run_epoch(model, train_loader, criterion, optimizer, device, grad_scaler, f"E{epoch:02d}/{epochs} 训练批次")
+        val_loss = run_epoch(model, val_loader, criterion, None, device, grad_scaler, f"E{epoch:02d}/{epochs} 验证批次")
         scheduler.step(val_loss)
         lr_now = optimizer.param_groups[0]["lr"]
         logs.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "learning_rate": lr_now, "candidate": params["name"], "model_type": "tcn_rls", "window_seconds": params["window_seconds"], "window_steps": params["window_steps"]})
