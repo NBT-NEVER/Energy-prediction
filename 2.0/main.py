@@ -14,6 +14,7 @@ from data_utils import download_source_dataset, extract_source_zip, prepare_data
 from evaluate import evaluate_model  # 生成模型评估指标
 from predict import calibrate_uncertainty, predict_from_csv, recalculate_prediction_intervals  # 执行预测和置信区间处理
 from train import train_model  # 执行GPU训练和调参
+from terminal_logger import TerminalLogCapture  # 同步记录终端标准输出和异常信息
 from visualize import generate_all_visualizations, predict_custom_scenario  # 生成图表并预测自定义工况
 
 
@@ -103,32 +104,13 @@ def print_process_intro(mode: str) -> None:
     print("=" * 72)
 
 
-def main() -> None:
-    """功能: 根据命令行模式执行机器学习和可视化流程。
-    参数: 无。
+def run_mode(args: argparse.Namespace, cfg) -> None:
+    """功能: 根据命令行模式执行实验2.0的具体流程。
+    参数: args为命令行参数，cfg为实验配置对象。
     返回: None。
-    调用位置: 命令行入口。
+    调用位置: main。
     """
 
-    args = build_parser().parse_args()
-    cfg = build_config(
-        data_dir=args.data_dir,
-        save_dir=args.save_dir,
-        out_dir=args.out_dir,
-        epochs=args.epochs,
-        tune_epochs=args.tune_epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        patience=args.patience,
-        target_transform=args.target_transform,
-        random_seed=args.seed,
-        device=args.device,
-        window_seconds_candidates=tuple(float(item) for item in args.window_candidates.split(",")) if args.window_candidates else None,
-        tcn_channels=tuple(int(item) for item in args.tcn_channels.split(",")) if args.tcn_channels else None,
-        default_confidence=args.confidence,
-    )
-    ensure_directories(cfg)
     print_process_intro(args.mode)
     print(
         f"训练配置: TCN深度={len(cfg.tcn_channels)}块，通道={list(cfg.tcn_channels)}，"
@@ -197,6 +179,39 @@ def main() -> None:
         print_dict("train", train_summary)
         print_dict("evaluate", metrics)
         print_dict("visualize", visual_summary)
+
+
+def main() -> None:
+    """功能: 构建配置并在终端日志上下文中调度命令行流程。
+    参数: 无。
+    返回: None。
+    调用位置: 命令行入口。
+    """
+
+    args = build_parser().parse_args()
+    cfg = build_config(
+        data_dir=args.data_dir,
+        save_dir=args.save_dir,
+        out_dir=args.out_dir,
+        epochs=args.epochs,
+        tune_epochs=args.tune_epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        patience=args.patience,
+        target_transform=args.target_transform,
+        random_seed=args.seed,
+        device=args.device,
+        window_seconds_candidates=tuple(float(item) for item in args.window_candidates.split(",")) if args.window_candidates else None,
+        tcn_channels=tuple(int(item) for item in args.tcn_channels.split(",")) if args.tcn_channels else None,
+        default_confidence=args.confidence,
+    )
+    ensure_directories(cfg)
+    # 捕获整个业务流程的标准输出、进度刷新和异常信息。
+    with TerminalLogCapture(cfg.terminal_log_file, args.mode) as terminal_log:
+        run_mode(args, cfg)
+    if terminal_log.failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

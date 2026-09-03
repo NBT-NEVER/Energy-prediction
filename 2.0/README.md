@@ -21,6 +21,7 @@
 ├── visualize.py       # 训练、评估、预测、自定义工况图表
 ├── main.py            # 统一命令行入口
 ├── progress.py        # 轻量级终端进度条
+├── terminal_logger.py # 将终端输出和异常同步追加到UTF-8日志
 ├── uncertainty.py     # 保序残差校准和即时功率/能耗区间
 ├── device_utils.py    # CUDA设备检查
 ├── requirements.txt   # Python依赖
@@ -47,6 +48,8 @@ python main.py interval --confidence 0.90
 ```
 
 默认训练深度为 4 个 TCN 残差块，通道为 `64,64,64,32`，调参训练 20 轮、最终训练 80 轮。可通过 `--epochs`、`--tune-epochs` 和 `--tcn-channels` 覆盖；终端会显示总流程、时间窗、epoch、批次、耗时和 ETA。
+
+每次通过 `main.py` 运行任意模式时，关键终端内容会同步追加到 `out/logs/terminal_2.0.log`。日志使用 UTF-8 编码，记录运行模式、开始与结束时间、阶段提示、结果摘要和异常信息；逐 flight、逐 batch 等动态进度条只在终端显示，不写入日志，历史运行记录不会被覆盖。
 
 首次训练会使用验证集绝对残差生成在线 RLS 和固定 RLS 两套置信区间校准文件，默认置信度为 `0.95`。预测 CSV 会同时保存 `predicted_power_w`、`cumulative_energy_wh`，以及功率和累计能耗的上下限。预测完成后只需运行 `interval` 修改置信度，程序只读取已有 CSV 并即时重算，不会重新执行 TCN：
 

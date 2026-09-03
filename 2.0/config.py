@@ -23,6 +23,7 @@ OUT_MODEL_DIR = OUT_DIR / "model"
 FIGURE_DIR = OUT_DIR / "figures"
 PREDICTION_DIR = OUT_DIR / "predictions"
 CUSTOM_DIR = OUT_DIR / "custom"
+LOG_DIR = OUT_DIR / "logs"
 
 # 在线数据源和原始数据文件
 SOURCE_REPO_URL = "https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git"
@@ -69,6 +70,7 @@ CUSTOM_SCENARIO_CSV = CUSTOM_DIR / "custom_scenarios_2.0.csv"
 CUSTOM_PREDICTION_CSV = CUSTOM_DIR / "custom_predictions_2.0.csv"
 CUSTOM_PREDICTION_SUMMARY_JSON = CUSTOM_DIR / "custom_prediction_summary_2.0.json"
 VISUALIZATION_SUMMARY_JSON = OUT_DIR / "visualization_summary_2.0.json"
+TERMINAL_LOG_FILE = LOG_DIR / "terminal_2.0.log"
 
 # 训练和切分默认参数
 TARGET_COLUMN = "power_w"
@@ -77,7 +79,7 @@ TARGET_TRANSFORM = "none"
 RANDOM_SEED = 42
 TEST_RATIO = 0.15
 VAL_RATIO = 0.15
-BATCH_SIZE = 2048
+BATCH_SIZE = 1048
 EPOCHS = 80
 TUNE_EPOCHS = 20
 LEARNING_RATE = 3e-4
@@ -111,6 +113,7 @@ class ExperimentConfig:
     figure_dir: Path = FIGURE_DIR
     prediction_dir: Path = PREDICTION_DIR
     custom_dir: Path = CUSTOM_DIR
+    log_dir: Path = LOG_DIR
     source_repo_url: str = SOURCE_REPO_URL
     source_repo_dir: Path = SOURCE_REPO_DIR
     raw_zip_file: Path = RAW_ZIP_FILE
@@ -146,6 +149,7 @@ class ExperimentConfig:
     custom_scenario_csv: Path = CUSTOM_SCENARIO_CSV
     custom_prediction_csv: Path = CUSTOM_PREDICTION_CSV
     visualization_summary_json: Path = VISUALIZATION_SUMMARY_JSON
+    terminal_log_file: Path = TERMINAL_LOG_FILE
     target_column: str = TARGET_COLUMN
     training_route: str = TRAINING_ROUTE
     target_transform: str = TARGET_TRANSFORM
@@ -203,12 +207,14 @@ def build_config(**overrides: object) -> ExperimentConfig:
         figure_dir = out_dir / "figures"
         prediction_dir = out_dir / "predictions"
         custom_dir = out_dir / "custom"
+        log_dir = out_dir / "logs"
         processed_dir = out_data_dir / "processed_2.0"
         normalized.setdefault("out_data_dir", out_data_dir)
         normalized.setdefault("out_model_dir", out_model_dir)
         normalized.setdefault("figure_dir", figure_dir)
         normalized.setdefault("prediction_dir", prediction_dir)
         normalized.setdefault("custom_dir", custom_dir)
+        normalized.setdefault("log_dir", log_dir)
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
         normalized.setdefault("excluded_routes_csv", processed_dir / "excluded_routes_2.0.csv")
@@ -235,6 +241,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("custom_scenario_csv", custom_dir / "custom_scenarios_2.0.csv")
         normalized.setdefault("custom_prediction_csv", custom_dir / "custom_predictions_2.0.csv")
         normalized.setdefault("visualization_summary_json", out_dir / "visualization_summary_2.0.json")
+        normalized.setdefault("terminal_log_file", log_dir / "terminal_2.0.log")
         normalized.setdefault("custom_prediction_summary_json", custom_dir / "custom_prediction_summary_2.0.json")
     return replace(cfg, **normalized)
 
@@ -256,6 +263,7 @@ def ensure_directories(cfg: ExperimentConfig | None = None) -> None:
         cfg.figure_dir,
         cfg.prediction_dir,
         cfg.custom_dir,
+        cfg.log_dir,
         cfg.raw_data_dir,
         cfg.processed_dir,
         cfg.training_vis_dir,
