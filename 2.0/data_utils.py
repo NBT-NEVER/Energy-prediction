@@ -174,9 +174,9 @@ def calculate_time_delta(frame: pd.DataFrame) -> pd.Series:
     return dt.where((dt > 0) & (dt < 5), fallback).fillna(fallback)
 
 
-def add_derived_features(raw_frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def add_derived_features(raw_frame: pd.DataFrame, training_route: str = "R1") -> tuple[pd.DataFrame, list[str]]:
     """功能: 构造能耗预测所需的实测工况和代理工况特征。
-    参数: raw_frame为原始飞行数据。
+    参数: raw_frame为原始飞行数据，training_route为本实验保留的航线编号。
     返回: 处理后的DataFrame和特征列名列表。
     调用位置: prepare_dataset、prepare_prediction_frame。
     """
@@ -188,8 +188,8 @@ def add_derived_features(raw_frame: pd.DataFrame) -> tuple[pd.DataFrame, list[st
     frame["route"] = frame["route"].astype(str).str.strip()
     frame = frame.dropna(subset=["flight", "route", *NUMERIC_SOURCE_COLUMNS])
 
-    # 只保留真实飞行、悬停等空中工况，剔除A类地面测试。
-    frame = frame[frame["route"].str.startswith(("R", "H"))].copy()
+    # 2.0 固定只使用 R1 航线，其他航线另存为排除数据，不进入任何数据集。
+    frame = frame[frame["route"].eq(str(training_route).strip())].copy()
     frame["flight"] = frame["flight"].astype(int)
     frame = frame.sort_values(["flight", "time"]).reset_index(drop=True)
 
@@ -328,7 +328,14 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
     """
 
     ensure_directories(cfg)
-    expected = [cfg.clean_data_csv, cfg.train_csv, cfg.val_csv, cfg.test_csv, cfg.feature_meta_json]
+    expected = [
+        cfg.clean_data_csv,
+        cfg.excluded_routes_csv,
+        cfg.train_csv,
+        cfg.val_csv,
+        cfg.test_csv,
+        cfg.feature_meta_json,
+    ]
     if not force and all(path.exists() for path in expected):
         progress = TerminalProgress("数据准备", 1)
         summary = load_json(cfg.dataset_summary_json) if cfg.dataset_summary_json.exists() else {}
@@ -342,10 +349,15 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
     progress.update(2, "原始文件已解压")
     raw = load_raw_flights(cfg)
     progress.update(3, f"已读取 {len(raw)} 条原始记录")
-    feature_frame, feature_columns = add_derived_features(raw)
-    progress.update(4, f"已构造 {len(feature_columns)} 个特征")
+    route_series = raw["route"].astype(str).str.strip()
+    route_distribution_before = route_series.value_counts().sort_index().to_dict()
+    excluded = raw[route_series.ne(cfg.training_route)].copy()
+    excluded.to_csv(cfg.excluded_routes_csv, index=False, encoding="utf-8")
+    progress.update(4, f"已筛选 {cfg.training_route} 航线，排除 {len(excluded)} 条其他航线记录")
+    feature_frame, feature_columns = add_derived_features(raw, cfg.training_route)
+    progress.update(5, f"已构造 {len(feature_columns)} 个特征")
     splits = split_by_flight(feature_frame, cfg)
-    progress.update(5, "训练集、验证集和测试集已划分")
+    progress.update(6, "训练集、验证集和测试集已划分")
 
     feature_frame.to_csv(cfg.clean_data_csv, index=False, encoding="utf-8")
     splits["train"].to_csv(cfg.train_csv, index=False, encoding="utf-8")
@@ -354,6 +366,56 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
 
     meta = {
         "feature_columns": feature_columns,
+        "training_route": cfg.training_route,
+        "excluded_routes_file": str(cfg.excluded_routes_csv),
+        "route_distribution_before_filter": {str(k): int(v) for k, v in route_distribution_before.items()},
+        "route_distribution_after_filter": {
+            str(k): int(v) for k, v in feature_frame["route"].value_counts().sort_index().items()
+        },
+        "field_descriptions": {
+            "flight": "飞行任务编号；同一编号的连续采样点属于同一次飞行，用于分组切分。",
+            "route": "航线编号；本版本仅保留 R1。",
+            "dt_seconds": "相邻采样点时间间隔，单位为秒；用于把功率积分为能耗。",
+            "power_w": "监督学习目标；电池电压乘以非负放电电流得到的瞬时功率，单位为瓦特。",
+            "energy_interval_wh": "当前采样间隔内的能耗，等于 power_w * dt_seconds / 3600，单位为瓦时。",
+            "battery_voltage": "电池端电压，单位为伏特。",
+            "battery_current": "电池电流原始值，单位为安培；放电功率计算时仅使用非负部分。",
+            "wind_angle": "风向角，单位为度；通过正弦和余弦转换为连续特征。",
+            "velocity_x": "机体坐标系 X 轴速度，单位为米每秒。",
+            "velocity_y": "机体坐标系 Y 轴速度，单位为米每秒。",
+            "velocity_z": "机体坐标系 Z 轴速度，单位为米每秒。",
+            "angular_x": "绕 X 轴角速度，单位为弧度每秒。",
+            "angular_y": "绕 Y 轴角速度，单位为弧度每秒。",
+            "angular_z": "绕 Z 轴角速度，单位为弧度每秒。",
+            "linear_acceleration_x": "X 轴线性加速度，单位为米每二次方秒。",
+            "linear_acceleration_y": "Y 轴线性加速度，单位为米每二次方秒。",
+            "linear_acceleration_z": "Z 轴线性加速度，单位为米每二次方秒，包含重力影响的原始测量值。",
+            "speed": "任务记录的规划飞行速度，单位为米每秒。",
+            "payload": "原始载荷质量，单位为克；payload_kg为其换算值。",
+            "altitude": "原始飞行高度，单位为米；altitude_m为模型使用的同值派生字段。",
+            "time": "飞行内相对时间戳，单位为秒。",
+            "flight_progress": "当前时间除以本次飞行最大时间，范围 0 到 1，表示飞行进度。",
+            "wind_speed": "风速，单位为米每秒。",
+            "wind_sin": "风向角的正弦分量，用于连续表达风向。",
+            "wind_cos": "风向角的余弦分量，用于连续表达风向。",
+            "programmed_speed_mps": "任务规划速度，单位为米每秒。",
+            "actual_speed_mps": "三轴速度合成后的实际速度，单位为米每秒。",
+            "horizontal_speed_mps": "水平面速度合成值，单位为米每秒。",
+            "vertical_speed_mps": "垂直速度分量，单位为米每秒；正负表示升降方向。",
+            "vertical_speed_abs_mps": "垂直速度绝对值，单位为米每秒，表示垂直机动强度。",
+            "relative_air_speed_mps": "相对空气速度，结合机体速度和风速计算，单位为米每秒。",
+            "wind_alignment": "水平速度与风速方向的余弦相似度，范围 -1 到 1。",
+            "wind_cross_component_mps": "风速在水平速度横向上的分量，单位为米每秒。",
+            "payload_kg": "载荷质量，单位为千克。",
+            "altitude_m": "飞行高度，单位为米。",
+            "dynamic_accel_norm": "去除重力影响后的三轴线性加速度合成强度，单位为米每二次方秒。",
+            "angular_rate_norm": "三轴角速度合成强度，单位为弧度每秒。",
+            "obstacle_agility_index": "由加速度、角速度和垂直速度构成的机动性代理指标，无量纲。",
+            "thermal_load_proxy": "由相对气流、载荷和爬升状态估计的热负荷代理指标，用于表征附加能耗。",
+            "vision_energy_proxy_w": "由速度、机动性和高度估计的视觉计算附加功率代理值，单位为瓦特。",
+            "communication_energy_proxy_w": "由高度、风速和速度估计的通信附加功率代理值，单位为瓦特。",
+            "route_R1": "R1 航线独热编码；R1 样本取 1。",
+        },
         "target_column": cfg.target_column,
         "measured_features": [
             "wind_speed",
@@ -374,6 +436,8 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
         ],
         "target_definition": "power_w = max(battery_voltage * battery_current, 0)",
         "split_method": "按flight分组随机切分，避免同一飞行泄漏到多个集合。",
+        "training_route": cfg.training_route,
+        "excluded_routes_file": str(cfg.excluded_routes_csv),
     }
     save_json(cfg.feature_meta_json, meta)
 
@@ -389,7 +453,7 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
                 "此时尚未执行缺失值清理和航线筛选，单位为行。"
             ),
             "processed_rows": (
-                "完成数值转换、缺失值删除、R/H类航线筛选、特征工程及无穷值清理后"
+                "完成数值转换、缺失值删除、仅保留R1航线、特征工程及无穷值清理后"
                 "保留的有效采样记录总数，单位为行。"
             ),
             "processed_flights": (
@@ -409,7 +473,7 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
             "test_flights": "测试集包含的不重复飞行任务数量，单位为次。",
             "feature_count": (
                 "每条样本输入模型的特征数量，包括实测工况、派生特征、代理特征、"
-                "飞行进度和航线独热编码，本实验为28维。"
+                "飞行进度和航线独热编码；具体维度以feature_count为准。"
             ),
             "target_column": (
                 "监督学习的目标字段名。power_w表示由非负放电电流与电池电压相乘得到的"
@@ -428,6 +492,13 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
         "test_flights": int(splits["test"]["flight"].nunique()),
         "feature_count": int(len(feature_columns)),
         "target_column": cfg.target_column,
+        "training_route": cfg.training_route,
+        "excluded_rows": int(len(excluded)),
+        "excluded_routes_file": str(cfg.excluded_routes_csv),
+        "route_distribution_before_filter": {str(k): int(v) for k, v in route_distribution_before.items()},
+        "route_distribution_after_filter": {
+            str(k): int(v) for k, v in feature_frame["route"].value_counts().sort_index().items()
+        },
     }
     save_json(cfg.dataset_summary_json, summary)
     progress.finish(f"已保存 {summary['processed_rows']} 条有效记录")
@@ -444,12 +515,22 @@ def prepare_prediction_frame(input_csv: Path, cfg: ExperimentConfig) -> tuple[pd
     meta = load_json(cfg.feature_meta_json)
     feature_columns = meta["feature_columns"]
     frame = pd.read_csv(input_csv)
+    if "route" in frame.columns:
+        routes = frame["route"].astype(str).str.strip()
+        invalid_routes = sorted(set(routes) - {cfg.training_route})
+        if invalid_routes:
+            raise ValueError(f"实验2.0仅支持{cfg.training_route}航线，输入文件包含: {invalid_routes}")
+    else:
+        dummy_columns = [column for column in frame.columns if column.startswith("route_") and column != f"route_{cfg.training_route}"]
+        active_dummies = [column for column in dummy_columns if pd.to_numeric(frame[column], errors="coerce").fillna(0).abs().gt(1e-8).any()]
+        if active_dummies:
+            raise ValueError(f"实验2.0仅支持{cfg.training_route}航线，输入特征包含其他航线独热编码: {active_dummies}")
     if all(column in frame.columns for column in feature_columns):
         return frame, feature_columns
     missing_raw = sorted(set(RAW_COLUMNS) - set(frame.columns))
     if missing_raw:
         raise ValueError(f"预测文件既不是处理后特征表，也缺少原始字段: {missing_raw}")
-    feature_frame, _ = add_derived_features(frame)
+    feature_frame, _ = add_derived_features(frame, cfg.training_route)
     for column in feature_columns:
         if column not in feature_frame.columns:
             feature_frame[column] = 0.0

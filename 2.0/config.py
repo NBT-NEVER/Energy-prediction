@@ -36,6 +36,7 @@ RAW_README_FILE = RAW_DATA_DIR / "README.txt"
 # 处理后数据和数据切分文件
 PROCESSED_DIR = OUT_DATA_DIR / "processed_2.0"
 CLEAN_DATA_CSV = PROCESSED_DIR / "uav_energy_features.csv"
+EXCLUDED_ROUTES_CSV = PROCESSED_DIR / "excluded_routes_2.0.csv"
 TRAIN_CSV = PROCESSED_DIR / "train.csv"
 VAL_CSV = PROCESSED_DIR / "val.csv"
 TEST_CSV = PROCESSED_DIR / "test.csv"
@@ -55,6 +56,8 @@ EVALUATION_CSV = OUT_MODEL_DIR / "evaluation_2.0.csv"
 FLIGHT_ENERGY_SUMMARY_CSV = OUT_MODEL_DIR / "flight_energy_summary_2.0.csv"
 POWER_BIN_EVALUATION_CSV = OUT_MODEL_DIR / "power_bin_evaluation_2.0.csv"
 PREDICTION_CSV = PREDICTION_DIR / "test_predictions_2.0.csv"
+UNCERTAINTY_CALIBRATION_NPZ = OUT_MODEL_DIR / "uncertainty_calibration_2.0.npz"
+UNCERTAINTY_CALIBRATION_JSON = OUT_MODEL_DIR / "uncertainty_calibration_2.0.json"
 
 # 可视化和自定义工况输出文件
 LOSS_CURVE_FILE = FIGURE_DIR / "training" / "loss_curve_2.0.png"
@@ -69,6 +72,7 @@ VISUALIZATION_SUMMARY_JSON = OUT_DIR / "visualization_summary_2.0.json"
 
 # 训练和切分默认参数
 TARGET_COLUMN = "power_w"
+TRAINING_ROUTE = "R1"
 TARGET_TRANSFORM = "none"
 RANDOM_SEED = 42
 TEST_RATIO = 0.15
@@ -83,6 +87,7 @@ DEFAULT_DEVICE = "cuda"
 # TCN/RLS短时间窗候选值，单位为秒；训练时会折算为采样步数并写入调参结果。
 WINDOW_SECONDS_CANDIDATES = (0.6, 1.0, 1.5, 2.0, 3.0)
 DEFAULT_WINDOW_SECONDS = 1.5
+DEFAULT_CONFIDENCE = 0.95
 # TCN残差块通道；4个块对应更深的时间特征提取网络
 TCN_CHANNELS = (64, 64, 64, 32)
 RLS_FORGETTING_FACTOR = 0.995
@@ -115,6 +120,7 @@ class ExperimentConfig:
     raw_readme_file: Path = RAW_README_FILE
     processed_dir: Path = PROCESSED_DIR
     clean_data_csv: Path = CLEAN_DATA_CSV
+    excluded_routes_csv: Path = EXCLUDED_ROUTES_CSV
     train_csv: Path = TRAIN_CSV
     val_csv: Path = VAL_CSV
     test_csv: Path = TEST_CSV
@@ -131,6 +137,8 @@ class ExperimentConfig:
     flight_energy_summary_csv: Path = FLIGHT_ENERGY_SUMMARY_CSV
     power_bin_evaluation_csv: Path = POWER_BIN_EVALUATION_CSV
     prediction_csv: Path = PREDICTION_CSV
+    uncertainty_calibration_npz: Path = UNCERTAINTY_CALIBRATION_NPZ
+    uncertainty_calibration_json: Path = UNCERTAINTY_CALIBRATION_JSON
     training_vis_dir: Path = TRAINING_VIS_DIR
     result_vis_dir: Path = RESULT_VIS_DIR
     prediction_vis_dir: Path = PREDICTION_VIS_DIR
@@ -139,6 +147,7 @@ class ExperimentConfig:
     custom_prediction_csv: Path = CUSTOM_PREDICTION_CSV
     visualization_summary_json: Path = VISUALIZATION_SUMMARY_JSON
     target_column: str = TARGET_COLUMN
+    training_route: str = TRAINING_ROUTE
     target_transform: str = TARGET_TRANSFORM
     random_seed: int = RANDOM_SEED
     test_ratio: float = TEST_RATIO
@@ -152,6 +161,7 @@ class ExperimentConfig:
     device: str = DEFAULT_DEVICE
     window_seconds_candidates: tuple[float, ...] = WINDOW_SECONDS_CANDIDATES
     default_window_seconds: float = DEFAULT_WINDOW_SECONDS
+    default_confidence: float = DEFAULT_CONFIDENCE
     tcn_channels: tuple[int, ...] = TCN_CHANNELS
     rls_forgetting_factor: float = RLS_FORGETTING_FACTOR
     rls_initial_covariance: float = RLS_INITIAL_COVARIANCE
@@ -201,6 +211,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("custom_dir", custom_dir)
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
+        normalized.setdefault("excluded_routes_csv", processed_dir / "excluded_routes_2.0.csv")
         normalized.setdefault("train_csv", processed_dir / "train.csv")
         normalized.setdefault("val_csv", processed_dir / "val.csv")
         normalized.setdefault("test_csv", processed_dir / "test.csv")
@@ -214,6 +225,8 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("flight_energy_summary_csv", out_model_dir / "flight_energy_summary_2.0.csv")
         normalized.setdefault("power_bin_evaluation_csv", out_model_dir / "power_bin_evaluation_2.0.csv")
         normalized.setdefault("prediction_csv", prediction_dir / "test_predictions_2.0.csv")
+        normalized.setdefault("uncertainty_calibration_npz", out_model_dir / "uncertainty_calibration_2.0.npz")
+        normalized.setdefault("uncertainty_calibration_json", out_model_dir / "uncertainty_calibration_2.0.json")
         normalized.setdefault("loss_curve_file", figure_dir / "training" / "loss_curve_2.0.png")
         normalized.setdefault("training_vis_dir", figure_dir / "training")
         normalized.setdefault("result_vis_dir", figure_dir / "results")
@@ -272,6 +285,8 @@ def print_key_paths(cfg: ExperimentConfig | None = None) -> None:
         "RAW_FLIGHTS_CSV": cfg.raw_flights_csv,
         "TRAIN_CSV": cfg.train_csv,
         "BEST_MODEL_FILE": cfg.best_model_file,
+        "UNCERTAINTY_CALIBRATION_NPZ": cfg.uncertainty_calibration_npz,
+        "PREDICTION_CSV": cfg.prediction_csv,
     }
     for name, path in paths.items():
         print(f"{name}: {path}")

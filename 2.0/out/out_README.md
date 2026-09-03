@@ -1,10 +1,10 @@
-# 四轴无人机飞行能耗预测实验 2.0：TCN + RLS 输出说明
+# 四轴无人机飞行能耗预测实验 2.0：时间卷积网络（Temporal Convolutional Network, TCN）+ 递归最小二乘（Recursive Least Squares, RLS）输出说明
 
-本文件与 `2.0/out` 当前生成的 CSV、JSON 和 PNG 一一对应，用于复核实验方案、读取结果，并和 `1.0/out` 做同口径对比。2.0 沿用 1.0 的数据源、特征工程、标签定义、flight 分组切分、随机种子、评价指标和输出命名；算法部分改为短时间窗因果 TCN 前向推理，再用 RLS 对功率输出进行实时在线校正。
+本文件与 `2.0/out` 当前生成的 CSV、JSON 和 PNG 一一对应，用于复核实验方案、读取结果，并和 `1.0/out` 做同口径对比。2.0 沿用 1.0 的数据源、基础特征工程、标签定义、flight 分组切分、随机种子、评价指标和输出命名；本版本仅保留 R1 航线，其他航线筛选后保存为 `out/data/processed_2.0/excluded_routes_2.0.csv`，D 盘原始数据不做任何修改。算法部分改为短时间窗因果 TCN 前向推理，再用 RLS 对功率输出进行实时在线校正。
 
 ## 1. 实验方案
 
-数据来自 DJI Matrice 100 四轴无人机公开数据集。程序读取 `flights.csv`，完成数值转换、缺失值清理、R/H 航线筛选、功率标签构造和 28 维特征工程。功率标签定义为：
+数据来自 DJI Matrice 100 四轴无人机公开数据集。程序读取 `flights.csv`，完成数值转换、缺失值清理、仅保留 R1 航线、功率标签构造和 22 维特征工程（航线独热编码仅保留 `route_R1`）。功率标签定义为：
 
 $$
 P_i=\max\left(U_i I_i,0\right)
@@ -15,13 +15,15 @@ $P_i$：第 $i$ 个采样点的真实瞬时功率，单位 W。
 $U_i$：第 $i$ 个采样点的电池电压，单位 V。
 $I_i$：第 $i$ 个采样点的非负放电电流，单位 A。
 
-处理后共有 249210 条记录、198 次飞行。数据按 `flight` 整组随机划分，随机种子为 42：
+原始读取 257896 条记录，其中 30345 条非 R1 记录保存到排除文件；处理后共有 227551 条 R1 记录、182 次飞行。数据按 `flight` 整组随机划分，随机种子为 42：
 
 | 集合 | 飞行数 | 记录数 |
 | --- | ---: | ---: |
-| train | 138 | 174653 |
-| val | 30 | 34796 |
-| test | 30 | 39761 |
+| train | 126 | 158625 |
+| val | 28 | 32820 |
+| test | 28 | 36106 |
+
+原始航线记录分布为：R1 227551 条，R6 8369 条，R5 5490 条，H 3794 条，A3 2730 条，R7 2185 条，A1 2078 条，A2 1693 条，R2 1445 条，R3 1364 条，R4 1197 条。训练、验证和测试只保留 R1；其余 30345 条记录可在 `excluded_routes_2.0.csv` 中追溯。
 
 测试集不参与网络参数更新；标准化统计量只由训练集计算，保存在 `out/model/scaler_2.0.json`。
 
@@ -29,12 +31,12 @@ $I_i$：第 $i$ 个采样点的非负放电电流，单位 A。
 
 两版共同使用：
 
-- 同一公开数据源、同一清洗规则和同一 28 维输入特征；
+- 同一公开数据源、同一基础清洗规则和同一评价口径；2.0 在 R1 航线筛选后使用 22 维输入特征；
 - 同一 `power_w` 目标、采样间隔积分公式、flight 分组切分和随机种子 42；
-- 同一测试集指标：样本级功率 MAE、RMSE、R2、MAPE、WAPE，以及 flight 级能耗 MAE、RMSE、R2、MAPE、WAPE；
+- 同一测试集指标：样本级功率平均绝对误差（Mean Absolute Error, MAE）、均方根误差（Root Mean Square Error, RMSE）、决定系数（Coefficient of Determination, R2）、平均绝对百分比误差（Mean Absolute Percentage Error, MAPE）、加权绝对百分比误差（Weighted Absolute Percentage Error, WAPE），以及 flight 级能耗的 MAE、RMSE、R2、MAPE、WAPE；
 - 同一功率区间和 flight 汇总表结构，同名图表的轴含义保持一致。
 
-模型对比方法完全对应：1.0 在验证集比较 5 个 MLP 候选，2.0 在验证集比较 5 个短时间窗 TCN 候选。2.0 的每个候选同时计算 TCN 原始输出和 RLS 校正输出，`tcn_*` 字段表示校正前基线，不带 `tcn_` 前缀的字段表示最终结果。
+模型对比方法完全对应：1.0 在验证集比较 5 个多层感知机（Multilayer Perceptron, MLP）候选，2.0 在验证集比较 5 个短时间窗 TCN 候选。2.0 的每个候选同时计算 TCN 原始输出和 RLS 校正输出，`tcn_*` 字段表示校正前基线，不带 `tcn_` 前缀的字段表示最终结果。
 
 ## 3. 2.0 模型流程
 
@@ -99,34 +101,57 @@ $\mathrm{WAPE}_{\mathrm{sample}}$：采样点功率 WAPE。
 
 | 候选窗口 | 采样步数 | 验证 TCN 功率 WAPE (%) | 验证 RLS 功率 WAPE (%) | 验证 TCN 能耗 WAPE (%) | 验证 RLS 能耗 WAPE (%) | 选择分数 |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0.6 s | 5 | 11.4626 | 10.4656 | 3.0033 | 1.1052 | 3.1984 |
-| 1.0 s | 8 | 11.0563 | 10.1336 | 2.9504 | 0.8228 | 2.8495 |
-| 1.5 s | 12 | 11.1535 | 10.5508 | 2.8236 | 1.1146 | 3.2248 |
-| 2.0 s | 17 | 11.0797 | 10.4139 | 2.9071 | 1.6499 | 3.7327 |
-| 3.0 s | 25 | 10.9303 | 10.1358 | 2.0600 | 0.8858 | 2.9130 |
+| 0.6 s | 5 | 7.8032 | 7.5136 | 1.4960 | 0.7194 | 2.2221 |
+| 1.0 s | 8 | 7.7412 | 7.3141 | 1.9462 | 0.4117 | 1.8746 |
+| 1.5 s | 12 | 7.4923 | 7.2485 | 1.8543 | 0.5152 | 1.9649 |
+| 2.0 s | 17 | 7.3449 | 7.0897 | 1.8292 | 0.3968 | 1.8147 |
+| 3.0 s | 25 | 7.5989 | 7.1918 | 1.7433 | 0.5435 | 1.9819 |
 
-综合分数最小的窗口为 **1.0 s、8 个采样步**。该窗口在本次验证集上取得最低综合分数和最低 RLS flight 能耗 WAPE，同时保持较短的实时输入延迟。候选比较图如下。
+综合分数最小的窗口为 **2.0 s、17 个采样步**，验证 RLS 功率 WAPE 为 7.0897%，flight 能耗 WAPE 为 0.3968%，因此最终被选为 `best_candidate`。候选比较图如下。
 
 ![时间窗口候选比较](./figures/training/candidate_validation_wape.png)
 
 ![超参数排序](./figures/training/hyperparameter_ranking.png)
 
+### 4.1 `best_*` 字段来源
+
+`best_candidate`、`best_model_type`、`best_window_seconds`、`best_window_steps`、`best_channels`、`best_dropout`、`best_learning_rate` 和 `best_weight_decay` 都来自 `train.py` 中验证集最优候选 `best_params`，其值直接写入训练摘要和 `best_energy_tcn_rls_2.0.pt` 的 checkpoint。对应关系如下：
+
+| 字段 | 具体来源 | 比较方式 |
+| --- | --- | --- |
+| `best_candidate` | `tuning_results_2.0.csv` 的 `candidate` 列和 `train.py` 返回的 `best_params["name"]` | 取 `selection_score` 最小的候选名 |
+| `best_model_type` | `candidate_grid()` 中固定写死的 `tcn_rls` | 所有候选一致，不单独比较 |
+| `best_window_seconds` | 最优候选行的 `window_seconds` | 在 0.6、1.0、1.5、2.0、3.0 s 中比较 |
+| `best_window_steps` | `window_seconds_to_steps()` 由秒级窗口换算 | 由窗口秒数和 `sample_interval_seconds` 共同决定 |
+| `best_channels` | `cfg.tcn_channels`，写入候选行后再随最优候选带回 | 所有候选一致，不单独比较 |
+| `best_dropout` | `candidate_grid()` 中固定写死的 `0.08` | 所有候选一致，不单独比较 |
+| `best_learning_rate` | `cfg.learning_rate` | 所有候选一致，不单独比较 |
+| `best_weight_decay` | `cfg.weight_decay` | 所有候选一致，不单独比较 |
+
+1. 先用 `candidate_grid()` 生成 5 个候选，只改变 `window_seconds`；
+2. 每个候选都保持相同的 `model_type = tcn_rls`、`channels = [64, 64, 64, 32]`、`dropout = 0.08`、`learning_rate = 0.0003`、`weight_decay = 0.0001`、`kernel_size = 3` 和 `huber_delta = 0.65`；
+3. 按候选窗口重建训练集和验证集序列，训练 TCN；
+4. 在验证集上先算 TCN 基线，再用同一组初始 RLS 参数做校正；
+5. 用 `selection_score = val_flight_energy_wape + 0.2 * val_sample_power_wape` 进行排序，分数最小者即为最优窗口。
+
+`sample_interval_seconds` 则不是搜索出来的超参数，而是训练集估计得到的典型采样间隔，保存在 `scaler_2.0.json` 中；`window_steps` 由 `window_seconds / sample_interval_seconds` 四舍五入得到，所以 2.0 s 对应 17 步。
+
 ## 5. 当前测试集结果
 
-以下数值直接读取 `out/model/evaluation_2.0.json`。RLS 校正和 TCN 基线使用同一测试集 39761 条记录、30 次飞行。
+以下数值直接读取 `out/model/evaluation_2.0.json`。RLS 校正和 TCN 基线使用同一 R1 测试集 36106 条记录、28 次飞行。
 
 | 指标 | TCN 基线 | RLS 校正 | 单位 |
 | --- | ---: | ---: | --- |
-| 样本功率 MAE | 36.6303 | 34.3533 | W |
-| 样本功率 RMSE | 64.6494 | 60.3883 | W |
-| 样本功率 R2 | 0.9258 | 0.9353 | 无量纲 |
-| 样本功率 WAPE | 9.2908 | 8.7132 | % |
-| flight 能耗 MAE | 0.4908 | 0.2990 | Wh |
-| flight 能耗 RMSE | 0.9748 | 0.8503 | Wh |
-| flight 能耗 R2 | 0.9685 | 0.9760 | 无量纲 |
-| flight 能耗 WAPE | 2.2541 | 1.3733 | % |
+| 样本功率 MAE | 34.1247 | 31.9776 | W |
+| 样本功率 RMSE | 51.5945 | 49.2628 | W |
+| 样本功率 R2 | 0.9472 | 0.9519 | 无量纲 |
+| 样本功率 WAPE | 8.3998 | 7.8713 | % |
+| flight 能耗 MAE | 0.5345 | 0.1269 | Wh |
+| flight 能耗 RMSE | 0.7369 | 0.1755 | Wh |
+| flight 能耗 R2 | 0.9753 | 0.9986 | 无量纲 |
+| flight 能耗 WAPE | 2.4430 | 0.5798 | % |
 
-MAPE 分别为 504.2632%（RLS 样本功率）和 1.5913%（RLS flight 能耗）。功率接近 0 W 时分母很小，MAPE 会被少量低功率样本放大，因此功率主比较采用 MAE、R2 和 WAPE。
+MAPE 分别为 84.3295%（RLS 样本功率）和 0.6548%（RLS flight 能耗）。功率接近 0 W 时分母很小，MAPE 会被少量低功率样本放大，因此功率主比较采用 MAE、R2 和 WAPE。
 
 ![总体评估指标](./figures/results/evaluation_metrics.png)
 
@@ -135,14 +160,116 @@ MAPE 分别为 504.2632%（RLS 样本功率）和 1.5913%（RLS flight 能耗）
 | 版本 | 样本功率 MAE (W) | 样本功率 R2 | 样本功率 WAPE (%) | flight 能耗 MAE (Wh) | flight 能耗 R2 | flight 能耗 WAPE (%) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1.0 MLP | 36.4561 | 0.9196 | 9.2466 | 0.6298 | 0.9597 | 2.8922 |
-| 2.0 TCN | 36.6303 | 0.9258 | 9.2908 | 0.4908 | 0.9685 | 2.2541 |
-| 2.0 TCN + RLS | **34.3533** | **0.9353** | **8.7132** | **0.2990** | **0.9760** | **1.3733** |
+| 2.0 TCN | 34.1247 | 0.9472 | 8.3998 | 0.5345 | 0.9753 | 2.4430 |
+| 2.0 TCN + RLS | **31.9776** | **0.9519** | **7.8713** | **0.1269** | **0.9986** | **0.5798** |
 
-相对 2.0 TCN 基线，RLS 将样本功率 MAE 降低 2.2771 W、WAPE 降低 0.5775 个百分点；flight 能耗 MAE 降低 0.1918 Wh、WAPE 降低 0.8808 个百分点。相对 1.0，2.0 的主要收益体现在 flight 能耗和逐点功率 R2，说明加深时序特征提取并配合在线校正后，误差的时间平均效果更稳定。
+相对 2.0 TCN 基线，RLS 将样本功率 MAE 降低 2.1471 W、WAPE 降低 0.5285 个百分点；flight 能耗 MAE 降低 0.4077 Wh、WAPE 降低 1.8632 个百分点。相对 1.0，R1 子集上的 2.0 在样本功率和 flight 能耗指标上均有改善。
 
 ## 6. 训练过程
 
-最终训练日志位于 `out/model/training_log_2.0.csv`，对应 1.0 s 窗口。训练和验证损失均使用加权 Huber Loss，图中纵轴为标准化损失，不是 W 或 Wh。
+最终训练日志位于 `out/model/training_log_2.0.csv`，对应 2.0 s、17 个采样步的最优窗口；本次最终训练因验证集早停实际运行 40 轮。训练和验证损失均使用加权 Huber Loss，图中纵轴为标准化损失，不是 W 或 Wh。
+
+### 6.1 从训练数据到最终模型的完整过程
+
+`train.py` 读取 `train.csv`、`val.csv` 和 `feature_metadata.json` 后，只使用训练集计算输入特征均值、输入特征标准差、目标功率均值、目标功率标准差以及 RLS 功率尺度。验证集不参与这些统计量的计算，也不参与梯度更新。这样处理可以避免验证信息提前进入模型。
+
+程序以 `flight` 为独立序列单位，每个 flight 内按时间排序。对于时刻 $t$，TCN 输入由当前样本及之前的 $L-1$ 个样本组成。窗口开头历史长度不足时，使用当前 flight 的第一个样本进行左侧填充，不会跨 flight 取样，也不会读取未来时刻数据。标准化后的输入数组形状为 `(样本数, 窗口步数, 特征数)`，随后由 `DataLoader` 按批次送入模型。
+
+完整训练由“候选窗口调参”和“最优窗口正式训练”两个阶段组成。调参阶段为 0.6、1.0、1.5、2.0 和 3.0 s 五个窗口分别新建 TCN，每个候选最多训练 20 轮。候选训练完成后，程序恢复该候选验证损失最低时的 TCN 权重，在验证集上依次计算 TCN 原始预测和 RLS 在线校正结果，再依据第 4 节的综合分数排序。当前最优候选为 2.0 s，对应 17 个采样步。
+
+确定窗口后，程序重新初始化 TCN，使用 2.0 s 窗口最多训练 80 轮。正式训练仍以验证损失保存最佳权重，并同时启用学习率衰减和早停。当前日志在第 30 轮取得最低验证损失 0.020108；第 31～40 轮均未刷新该值，连续 10 轮无改善后触发早停。程序停止于第 40 轮，但最终恢复并保存的是第 30 轮对应的模型参数，而不是第 40 轮参数。
+
+正式 TCN 确定后，程序在训练集上执行一次前向预测，使用 TCN 预测功率与真实功率拟合 RLS 的全局仿射初值。随后在验证集上按照“先校正当前预测、再使用当前实测值更新”的顺序运行 RLS，并保存用于置信区间估计的绝对残差。最终 checkpoint 同时包含 TCN 权重、最优窗口、网络结构、标准化信息路径、RLS 初始参数、遗忘因子和综合选择分数。
+
+### 6.2 TCN 与 RLS 的具体配合方式
+
+TCN 和 RLS 承担不同职责。TCN 是离线训练的非线性时序模型，负责从 2.0 s 历史窗口中提取飞行状态与功率之间的关系；RLS 是在线线性校正器，负责根据当前 flight 已经观测到的误差调整 TCN 输出的偏置和比例。RLS 不修改 TCN 权重，TCN 也不参与 RLS 参数的递推更新。
+
+一次在线预测按以下顺序执行：
+
+1. 收集当前时刻和历史 16 个采样点的 22 维特征，组成 17 步因果窗口；
+2. 使用训练集均值和标准差对窗口特征进行标准化；
+3. TCN 输出标准化功率，再反标准化为功率预测值 `tcn_predicted_power_w`；
+4. RLS 使用上一时刻参数对 TCN 输出进行仿射校正，得到 `rls_corrected_power_w`；
+5. 先将校正值作为当前时刻预测结果输出；
+6. 如果当前输入包含实测 `power_w`，再用该观测更新 RLS 参数，更新后的参数只影响下一时刻；
+7. flight 改变时重置 RLS 参数和协方差，防止不同飞行之间传递在线状态；
+8. 如果部署输入不含 `power_w`，RLS 只使用 checkpoint 中保存的固定初值进行校正，不进行在线更新。
+
+这种串联关系保留了 TCN 对复杂非线性和短期动态的表达能力，同时允许 RLS 针对当前飞行的系统偏差快速调整。代码中的“先输出、后更新”保证当前真实功率不会提前参与当前预测，因此测试结果仍符合实时预测条件。
+
+### 6.3 加权 Huber 损失
+
+TCN 训练采用按真实功率区间加权的 Huber 损失。单个批次的损失为：
+
+$$
+\mathcal{L}=\frac{1}{N}\sum_{i=1}^{N}w_i
+\begin{cases}
+\dfrac{1}{2}e_i^2, & |e_i|\leq\delta,\\
+\delta\left(|e_i|-\dfrac{1}{2}\delta\right), & |e_i|>\delta
+\end{cases}
+$$
+
+$$
+e_i=\hat{y}_i-y_i
+$$
+
+$$
+w_i=
+\begin{cases}
+1.8, & P_i<100,\\
+1.5, & P_i>650,\\
+1.0, & 100\leq P_i\leq650
+\end{cases}
+$$
+
+其中：
+$\mathcal{L}$：当前批次的加权 Huber 平均损失。
+$N$：当前批次的样本数量。
+$w_i$：第 $i$ 个样本的功率区间权重。
+$e_i$：第 $i$ 个样本在标准化目标空间中的预测误差。
+$\hat{y}_i$：第 $i$ 个样本的标准化预测功率。
+$y_i$：第 $i$ 个样本的标准化真实功率。
+$\delta$：Huber 损失的误差阈值，本实验为 0.65。
+$P_i$：第 $i$ 个样本的真实功率，单位 W。
+$i$：批次内的样本索引。
+
+误差绝对值不超过 0.65 时采用平方项，使模型能够细化小误差；误差超过阈值后改为线性增长，减弱异常样本对梯度的支配。低于 100 W 的样本权重设为 1.8，高于 650 W 的样本权重设为 1.5，中间功率段权重为 1.0。这组权重用于减轻模型向样本较集中的中等功率区间收缩。反向传播后，程序还将梯度范数裁剪到 5.0，以降低偶发大梯度造成的训练波动。
+
+### 6.4 批量、训练轮数和早停参数
+
+| 参数 | 当前值 | 在训练过程中的含义 |
+| --- | ---: | --- |
+| `batch_size` | 2048 | 每次参数更新使用 2048 个时间窗口样本。一个 epoch 会将全部训练样本分成若干批次，每个批次依次完成前向计算、损失计算、反向传播和一次 AdamW 更新。 |
+| `tune_epochs` | 20 | 五个候选窗口各自最多遍历训练集 20 次，用相同预算比较窗口效果；这些临时候选权重不直接作为最终部署模型。 |
+| `epochs` | 80 | 选出最优窗口后，正式 TCN 最多遍历训练集 80 次，这是上限而不是必须运行的固定轮数。 |
+| `patience` | 10 | 验证损失连续 10 轮未低于历史最优值时停止训练，并恢复历史最优轮次的权重。 |
+
+以当前训练集 158625 条记录估算，批量大小为 2048 时，一个 epoch 约包含 78 个批次，最后一个批次不足 2048 条。调参阶段五个候选最多执行 100 个候选 epoch；正式训练虽然上限为 80 轮，但本次在第 40 轮触发早停，减少了后续无改善训练和过拟合风险。
+
+### 6.5 其他固定超参数及其作用
+
+| 参数 | 当前值 | 作用与确定方式 |
+| --- | ---: | --- |
+| TCN 通道 | `[64, 64, 64, 32]` | 形成 4 个残差卷积块，兼顾时序特征容量与训练开销；本次窗口搜索中固定不变。 |
+| 卷积核宽度 | 3 | 每层卷积处理局部相邻信息；本次固定不变。 |
+| 膨胀率 | `1, 2, 4, 8` | 随网络深度扩大时序感受范围，由 4 层结构按 $2^j$ 自动生成。 |
+| Dropout | 0.08 | 在卷积块和预测头中随机丢弃部分激活，抑制过拟合；本次固定不变。 |
+| 初始学习率 | 0.0003 | AdamW 的初始更新步长；所有窗口使用同一数值。 |
+| 权重衰减 | 0.0001 | 对网络参数施加正则约束；所有窗口使用同一数值。 |
+| Huber 阈值 | 0.65 | 决定损失从平方增长切换到线性增长的位置；作用于标准化误差。 |
+| 学习率衰减 | 因子 0.5，耐心 3 | 验证损失连续 3 轮没有改善时将学习率减半，使后期参数更新更细。 |
+| 梯度裁剪 | 5.0 | 限制反向传播的梯度范数，降低训练不稳定风险。 |
+| RLS 遗忘因子 | 0.995 | 使近期观测具有略高权重，同时保留较长的历史信息；本次固定不变。 |
+| RLS 初始协方差 | 1000.0 | 表示初始参数不确定性较大，使新 flight 开始阶段能够较快适应。 |
+
+本次实验真正通过候选验证确定的超参数只有时间窗口。网络宽度、卷积核、Dropout、优化器参数、损失阈值和 RLS 参数在五个候选中保持一致，因此不能把它们描述为网格搜索得到的“最优参数”。`best_channels`、`best_dropout`、`best_learning_rate` 和 `best_weight_decay` 的 `best_` 前缀表示它们随最优窗口一起写入 checkpoint，并不表示这些字段分别参加了搜索。
+
+### 6.6 超参数确定和模型保存流程
+
+超参数确定可概括为：固定 TCN 与 RLS 的主体参数，只搜索短时间窗口；每个窗口先训练 TCN，再在同一验证集上执行 RLS 校正；最后按 RLS 校正后的 flight 能耗 WAPE 与采样点功率 WAPE 的组合分数选择窗口。选择时采用最终系统的 RLS 输出，而不是只看 TCN 的验证损失，因此选出的窗口同时考虑了离线预测能力和在线校正后的累计能耗表现。
+
+候选 2.0 s 的选择分数为 1.8147，在五个候选中最低。它的 TCN 验证损失为 0.020668，RLS 功率 WAPE 为 7.0897%，RLS flight 能耗 WAPE 为 0.3968%。最终训练完成后保存的模型以第 30 轮最低验证损失 0.020108 对应的权重为准。调参选择分数和最终训练验证损失承担不同职责：前者决定使用哪个时间窗口，后者决定正式训练过程中保存哪个 epoch 的网络权重。
 
 ![训练损失曲线](./figures/training/training_loss_history.png)
 
@@ -156,13 +283,13 @@ MAPE 分别为 504.2632%（RLS 样本功率）和 1.5913%（RLS flight 能耗）
 
 | 真实功率区间 | 样本数 | 真实均值 (W) | 预测均值 (W) | MAE (W) | WAPE (%) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 0-50 W | 9549 | 1.2502 | 19.1073 | 18.8670 | 1509.0693 |
-| 50-300 W | 704 | 162.6580 | 212.1468 | 116.5167 | 71.6330 |
-| 300-450 W | 4471 | 409.9169 | 447.8037 | 51.2579 | 12.5045 |
-| 450-600 W | 19985 | 520.0242 | 516.8128 | 30.0530 | 5.7792 |
-| 600 W 以上 | 5052 | 658.0570 | 614.6180 | 54.2256 | 8.2403 |
+| 0-50 W | 7440 | 1.6910 | 7.2159 | 6.9099 | 408.6365 |
+| 50-300 W | 694 | 167.2873 | 204.1094 | 101.4516 | 60.6451 |
+| 300-450 W | 5429 | 410.1488 | 439.1670 | 41.9100 | 10.2182 |
+| 450-600 W | 17928 | 517.8305 | 511.7356 | 31.9333 | 6.1667 |
+| 600 W 以上 | 4615 | 656.3968 | 620.8823 | 50.4306 | 7.6829 |
 
-450-600 W 是样本最多且最稳定的区间，预测均值与真实均值相差 3.2114 W。0-50 W 区间的真实均值接近 0，模型仍保留约 19 W 的输出，较上一版有所下降，但停机/着陆末段仍存在非零基线偏差；该区间不适合单独使用 MAPE 判断模型优劣。50-300 W 样本较少且动态状态比例高，误差仍然偏大，是后续改进的重点。
+450-600 W 是样本最多的区间，预测均值与真实均值相差 6.0949 W。0-50 W 区间的预测均值已降至 7.2159 W，但真实均值接近 0，MAPE 仍会被放大；该区间不适合单独使用 MAPE 判断模型优劣。50-300 W 样本较少且动态状态比例高，误差仍然偏大，是后续改进的重点。
 
 ![功率区间 MAE](./figures/results/power_bin_mae.png)
 
@@ -172,7 +299,7 @@ MAPE 分别为 504.2632%（RLS 样本功率）和 1.5913%（RLS flight 能耗）
 
 散点图显示，改进后的 TCN 输出不再集中成旧版本的两条水平平台，预测点沿理想线形成连续分布；高功率段的离散程度较小，低功率段仍有明显的正偏差。残差直方图与分段表反映的是同一现象。
 
-flight 能耗汇总保存在 `out/model/flight_energy_summary_2.0.csv`。大多数 R1 飞行的能耗误差低于 0.4 Wh，RLS 对不同飞行的偏置进行了逐段修正。`flight 224` 仍是最明显的异常案例：真实能耗约 17.657 Wh，RLS 预测约 22.461 Wh，误差约 4.804 Wh。该飞行属于 H 航线、编程速度为 0，末段出现近零功率，但输入特征中没有明确的着陆或停机状态标志，TCN 和 RLS 都会把部分末段状态延续为较高功率。这个案例说明，增加停机状态特征或单独建模着陆段比继续增大网络容量更有针对性。
+flight 能耗汇总保存在 `out/model/flight_energy_summary_2.0.csv`。本次 28 个测试 flight 全部属于 R1，大多数飞行的 RLS 能耗误差低于 0.2 Wh；RLS 对不同飞行的偏置进行了逐段修正。低功率段仍有少量正偏差，需结合功率分箱表和时序图判断，不能用单个 flight 的异常代表整体 R1 结果。
 
 ![flight 能耗真实值与预测值](./figures/results/flight_energy_actual_vs_predicted.png)
 
@@ -189,6 +316,8 @@ flight 能耗汇总保存在 `out/model/flight_energy_summary_2.0.csv`。大多�
 ## 8. 输出文件与字段
 
 - `data/processed_2.0/dataset_summary.json`：原始记录数、清洗后记录数、flight 数量和切分规模。
+- `data/processed_2.0/excluded_routes_2.0.csv`：从原始数据筛出的非 R1 航线记录，仅保存在项目内用于追溯，未参与训练、验证、测试。
+- `data/processed_2.0/feature_metadata.json`：22 个输入特征及全部字段的中文含义、单位、航线筛选统计和目标定义。
 - `data/processed_2.0/uav_energy_features.csv`：清洗和特征工程后的建模数据。
 - `model/scaler_2.0.json`：训练集标准化参数、特征列、典型采样间隔和功率尺度。
 - `model/tuning_results_2.0.csv`：五个时间窗候选及验证集比较结果。
@@ -196,6 +325,7 @@ flight 能耗汇总保存在 `out/model/flight_energy_summary_2.0.csv`。大多�
 - `model/evaluation_2.0.json`、`evaluation_2.0.csv`：TCN 与 RLS 的双基线评估指标。
 - `model/flight_energy_summary_2.0.csv`：逐 flight 的真实能耗、TCN 能耗、RLS 能耗和误差。
 - `model/power_bin_evaluation_2.0.csv`：按真实功率区间统计最终预测误差。
+- `model/uncertainty_calibration_2.0.npz`、`uncertainty_calibration_2.0.json`：验证集绝对残差校准数据和默认置信度摘要。
 - `predictions/test_predictions_2.0.csv`：逐点保存输入、`tcn_predicted_power_w`、`rls_corrected_power_w`、`predicted_power_w`、校正量、能耗和 RLS 最终参数。
 - `custom/custom_scenarios_2.0.csv`：自定义工况输入。
 - `custom/custom_predictions_2.0.csv`：自定义工况的 TCN/RLS 预测序列。
@@ -212,9 +342,71 @@ flight 能耗汇总保存在 `out/model/flight_energy_summary_2.0.csv`。大多�
 
 ![自定义工况累计能耗](./figures/custom/custom_cumulative_energy.png)
 
-自定义工况结果只表示模型推演，不替代真实飞行测试。当前自定义输入共 16 个采样点，平均预测功率 431.1566 W，最大预测功率 594.1182 W，累计预测能耗 0.38325 Wh。
+自定义工况结果只表示模型推演，不替代真实飞行测试。当前自定义输入共 16 个 R1 工况采样点，平均预测功率 390.4646 W，最大预测功率 566.3827 W，累计预测能耗 0.34708 Wh；95% 置信度下累计能耗区间为 0.26572~0.42844 Wh。
 
-## 9. 复核和运行顺序
+## 9. 终端输出字段说明
+
+终端运行 `train`、`evaluate` 和 `visualize` 时，会分别以 `[train]`、`[evaluate]` 和 `[visualize]` 为标题打印结果字典。下面只说明各字段的含义，不固定记录具体数值；数值会随数据划分、训练过程和当前运行结果变化。
+
+### 9.1 训练阶段 `[train]`
+
+| 字段 | 含义 |
+| --- | --- |
+| `device` | 实际使用的训练设备，例如 CPU 或 CUDA GPU 编号。 |
+| `cuda_device_name` | 实际参与训练的显卡型号。 |
+| `best_candidate` | 验证集综合选择分数最低的候选模型名称。 |
+| `best_model_type` | 最优模型类型，本实验为 `tcn_rls`，即 TCN 与 RLS 的组合。 |
+| `best_window_seconds` | 最优输入时间窗口长度，单位为秒。 |
+| `best_window_steps` | 最优时间窗口包含的离散采样步数。 |
+| `sample_interval_seconds` | 相邻采样点的时间间隔，单位为秒。 |
+| `best_channels` | 最优 TCN 各卷积层的通道数配置。 |
+| `best_dropout` | TCN 的 Dropout 比例，用于抑制过拟合。 |
+| `best_learning_rate` | 网络训练使用的学习率。 |
+| `best_weight_decay` | 权重衰减系数，用于正则化网络参数。 |
+| `rls_forgetting_factor` | RLS 遗忘因子，用于控制历史观测对当前参数更新的影响。 |
+| `rls_initial_theta` | RLS 初始仿射校正参数向量，通常包含偏置项和比例项。 |
+| `target_transform` | 目标功率值使用的变换方式；`none` 表示未做额外变换。 |
+| `best_val_loss_standardized` | 最终训练过程中验证集上的最优标准化损失。 |
+| `best_selection_score` | 时间窗口候选比较使用的综合选择分数，具体计算方式见第 4 节。 |
+| `epochs_run` | 最终训练实际执行的轮数。 |
+| `model_file` | 保存最优模型 checkpoint 的文件路径。 |
+| `scaler_file` | 保存训练集标准化参数、特征信息和采样间隔的文件路径。 |
+
+### 9.2 评估阶段 `[evaluate]`
+
+评估结果分为两组：`sample_power_w` 表示采样点功率（单位 W）层面的指标，`flight_energy_wh` 表示单次飞行能耗（单位 Wh）层面的指标。字段名前缀为 `tcn_` 时，表示未经过 RLS 校正的 TCN 基线结果；不带该前缀时，表示 TCN 与 RLS 组合模型的最终结果。
+
+字段末尾的指标缩写含义如下：`MAE` 为平均绝对误差，`RMSE` 为均方根误差，`R2` 为决定系数，`MAPE` 为平均绝对百分比误差，`WAPE` 为加权绝对百分比误差。一般情况下，MAE、RMSE、MAPE 和 WAPE 越小越好，R2 越接近 1 越好。
+
+| 字段 | 含义 |
+| --- | --- |
+| `sample_power_w_mae`、`sample_power_w_rmse`、`sample_power_w_r2`、`sample_power_w_mape_percent`、`sample_power_w_wape_percent` | 最终 TCN + RLS 模型在采样点功率上的 MAE、RMSE、R2、MAPE 和 WAPE；百分比指标的单位为 `%`。 |
+| `tcn_sample_power_w_mae`、`tcn_sample_power_w_rmse`、`tcn_sample_power_w_r2`、`tcn_sample_power_w_mape_percent`、`tcn_sample_power_w_wape_percent` | 纯 TCN 基线在采样点功率上的对应五项指标。 |
+| `flight_energy_wh_mae`、`flight_energy_wh_rmse`、`flight_energy_wh_r2`、`flight_energy_wh_mape_percent`、`flight_energy_wh_wape_percent` | 最终 TCN + RLS 模型在 flight 级能耗上的对应五项指标；误差指标单位为 `Wh`，百分比指标单位为 `%`。 |
+| `tcn_flight_energy_wh_mae`、`tcn_flight_energy_wh_rmse`、`tcn_flight_energy_wh_r2`、`tcn_flight_energy_wh_mape_percent`、`tcn_flight_energy_wh_wape_percent` | 纯 TCN 基线在 flight 级能耗上的对应五项指标。 |
+| `test_rows` | 测试集中的采样点记录总数。 |
+| `test_flights` | 测试集包含的独立 flight 数量。 |
+
+功率接近 0 W 的样本会使 MAPE 的分母很小，导致该指标被放大，因此功率结果应结合 MAE、RMSE、R2 和 WAPE 一起判断。
+
+### 9.3 评估文件字段
+
+| 字段 | 含义 |
+| --- | --- |
+| `prediction_file` | 逐采样点测试预测结果文件路径。 |
+| `flight_energy_summary_file` | 按 flight 汇总真实能耗、预测能耗和误差的文件路径。 |
+| `power_bin_evaluation_file` | 按真实功率区间分箱统计评估结果的文件路径。 |
+
+### 9.4 可视化阶段 `[visualize]`
+
+| 字段 | 含义 |
+| --- | --- |
+| `figure_count` | 本次可视化流程实际生成的图像数量。 |
+| `figures` | 本次生成的图像文件路径或文件名列表。 |
+
+`figures` 中的文件按用途分为训练类、结果类和预测类。训练类包括训练损失、学习率、候选窗口验证 WAPE 和超参数排序图；结果类包括总体评价指标、flight 能耗对比、flight 能耗误差和功率分段 MAE 图；预测类包括功率预测散点图、功率残差直方图和典型 flight 功率时序图。
+
+## 10. 复核和运行顺序
 
 ```powershell
 python main.py train
@@ -224,3 +416,54 @@ python main.py predict
 ```
 
 复核时先对照两个版本的 `dataset_summary.json`，再对照 `tuning_results_1.0.csv` 与 `tuning_results_2.0.csv`，最后在相同指标和单位下比较 `evaluation_1.0.csv` 与 `evaluation_2.0.csv`。功率散点、分段表和 flight 汇总应结合阅读，以区分稳定巡航误差、低功率段误差和动态切换误差。
+
+## 11. 预测置信度和上下阈值
+
+预测文件同时给出点预测和置信区间。校准文件 `model/uncertainty_calibration_2.0.npz` 保存验证集上的绝对残差，`model/uncertainty_calibration_2.0.json` 保存样本数和默认半径。程序分别保存在线 RLS（输入含 `power_w`）和固定 RLS（部署或自定义工况无实测功率）的残差，避免把两种运行状态混用。
+
+给定置信度 $c$，从对应校准残差计算有限样本保序分位数 $q_c$：
+
+$$
+q_c=\operatorname{sort}(e)_{\lceil(n+1)c\rceil},\qquad e_i=|P_i-\hat{P}_i|
+$$
+
+其中：
+$c$：用户指定的置信度，例如 `0.90`、`0.95` 或 `0.99`。
+$e_i$：验证集第 $i$ 个样本的功率绝对残差，单位 W。
+$n$：校准样本数。
+$q_c$：功率区间半径，单位 W。
+
+逐采样点区间为：
+
+$$
+P_t^{\mathrm{low}}=\max(\hat{P}_t-q_c,0),\qquad P_t^{\mathrm{up}}=\hat{P}_t+q_c
+$$
+
+能耗和累计能耗上下限使用同一功率边界积分：
+
+$$
+E_t^{\mathrm{low/up}}=P_t^{\mathrm{low/up}}\frac{\Delta t_t}{3600},\qquad
+C_t^{\mathrm{low/up}}=\sum_{j\le t}E_j^{\mathrm{low/up}}
+$$
+
+其中：
+$\hat{P}_t$：TCN + RLS 点预测功率，单位 W。
+$P_t^{\mathrm{low}}$、$P_t^{\mathrm{up}}$：置信度下的功率下限和上限，单位 W。
+$E_t^{\mathrm{low/up}}$：单个采样间隔的能耗下限和上限，单位 Wh。
+$C_t^{\mathrm{low/up}}$：截至时刻 $t$ 的累计能耗下限和上限，单位 Wh。
+$\Delta t_t$：当前采样间隔，单位 s。
+
+完整预测：
+
+```powershell
+python main.py predict --confidence 0.95
+```
+
+预测完成后即时改变置信度，无需重新加载模型或执行 TCN：
+
+```powershell
+python main.py interval --confidence 0.90
+python main.py interval --confidence 0.99
+```
+
+`interval` 默认原地更新 `out/predictions/test_predictions_2.0.csv`。也可以通过 `--input-csv` 和 `--output-csv` 指定其他预测文件。输出字段包括 `predicted_power_w`、`predicted_power_lower_w`、`predicted_power_upper_w`、`cumulative_energy_wh`、`cumulative_energy_lower_wh` 和 `cumulative_energy_upper_wh`。评估 JSON 另外记录 `sample_power_interval_coverage_percent`、`flight_energy_interval_coverage_percent`、区间半径和平均区间宽度。这里的累计区间是逐点边界的累加结果，不等同于整条轨迹同时覆盖率保证。
