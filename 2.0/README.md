@@ -42,7 +42,7 @@ python main.py all
 
 $$L=\max\left(2,\operatorname{round}\left(\frac{T}{\Delta t}\right)\right)$$
 
-其中：`$T$` 为候选时间窗（s），`$\Delta t$` 为训练集典型采样间隔（s），`$L$` 为输入步数。
+其中：$T$ 为候选时间窗（s），$\Delta t$ 为训练集典型采样间隔（s），$L$ 为输入步数。
 
 候选为 `0.4、0.6、0.8、1.0、1.2、1.5、2.0、2.5、3.0、4.0 s`，本次对应 `3、5、7、8、10、12、17、21、25、33` 步。所有候选使用同一 TCN 结构 `[64,64,64,32]`、卷积核 3、Dropout 0.08、学习率 `3e-4`、权重衰减 `1e-4`、Huber 参数 0.65 和 batch size 4096；每个候选单独初始化并固定完整训练 30 轮。每轮都计算验证损失，保存最低验证损失权重，调参阶段不启用早停。
 
@@ -50,7 +50,7 @@ $$L=\max\left(2,\operatorname{round}\left(\frac{T}{\Delta t}\right)\right)$$
 
 $$S_{TCN}=\mathrm{WAPE}_{flight}+0.2\,\mathrm{WAPE}_{sample}$$
 
-其中：`$S_{TCN}$` 为窗口选择分数，`$\mathrm{WAPE}_{flight}$` 为 flight 能耗 WAPE，`$\mathrm{WAPE}_{sample}$` 为采样点功率 WAPE，均在验证集计算且分数越低越好。
+其中：$S_{TCN}$ 为窗口选择分数，$\mathrm{WAPE}_{flight}$ 为 flight 能耗 WAPE，$\mathrm{WAPE}_{sample}$ 为采样点功率 WAPE，均在验证集计算且分数越低越好。
 
 本次选择 `0.8 s / 7 步`，TCN 验证选择分数为 `3.12761984`。10 个窗口的验证指标位于 `out/model/tuning_results_2.1.csv`，所有窗口的 30 轮日志位于 `out/model/training_log_2.1.csv` 的 `stage1_tcn_window` 行。
 

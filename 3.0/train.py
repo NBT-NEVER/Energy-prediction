@@ -291,7 +291,7 @@ def run_training_loop(train_x: np.ndarray, train_y: np.ndarray, val_x: np.ndarra
             "val_loss": val_loss,
             "learning_rate": lr_now,
             "candidate": params["name"],
-            "model_type": "tcn_rls",
+            "model_type": "tcn",
             "window_seconds": params["window_seconds"],
             "window_steps": params["window_steps"],
             "phase": "training",
@@ -480,7 +480,7 @@ def candidate_grid(cfg: ExperimentConfig, sample_interval: float) -> list[dict]:
     调用位置: train_model。
     """
 
-    return [{"name": f"tcn_rls_window_{seconds:g}s", "model_type": "tcn_rls", "window_seconds": float(seconds), "window_steps": window_seconds_to_steps(seconds, sample_interval), "channels": list(cfg.tcn_channels), "kernel_size": 3, "dropout": 0.08, "learning_rate": cfg.learning_rate, "weight_decay": cfg.weight_decay, "huber_delta": 0.65} for seconds in cfg.window_seconds_candidates]
+    return [{"name": f"tcn_window_{seconds:g}s", "model_type": "tcn", "window_seconds": float(seconds), "window_steps": window_seconds_to_steps(seconds, sample_interval), "channels": list(cfg.tcn_channels), "kernel_size": 3, "dropout": 0.08, "learning_rate": cfg.learning_rate, "weight_decay": cfg.weight_decay, "huber_delta": 0.65} for seconds in cfg.window_seconds_candidates]
 
 
 def save_loss_curve(logs: list[dict], path) -> None:
@@ -555,6 +555,8 @@ def train_model(cfg: ExperimentConfig) -> dict:
         del train_x, train_y, val_x, val_y, model
         torch.cuda.empty_cache()
     candidate_progress.finish(f"TCN最优窗口={best_params['window_seconds'] if best_params else '无'}s")
+    if best_params is not None and best_window_row is not None:
+        print(f"TCN最优结果：候选={best_params['name']}，时间窗={best_params['window_seconds']:g}s/{best_params['window_steps']}步，选择分数={best_window_row['tcn_selection_score']:.6f}")
     workflow_progress.update(2, f"已完成 {len(candidates)} 个时间窗候选比较")
     if best_params is None:
         raise RuntimeError("时间窗调参未得到可用候选。")
@@ -574,7 +576,7 @@ def train_model(cfg: ExperimentConfig) -> dict:
     rls_rows: list[dict] = []
     best_rls = None
     best_rls_score = float("inf")
-    print("阶段二：固定最优TCN窗口，使用同一份验证预测搜索72组RLS参数。")
+    print(f"阶段二：固定最优TCN窗口，使用同一份验证预测搜索{len(rls_candidate_grid(cfg))}组RLS参数。")
     for rls_index, rls_params in enumerate(rls_candidate_grid(cfg), start=1):
         corrected, _ = apply_rls_correction(best_window_val_base, val_df, scaler, cfg, rls_theta, update=True, rls_params=rls_params)
         metrics = energy_window_selection_metrics(best_window_val_base, corrected, val_df, cfg)
@@ -586,6 +588,7 @@ def train_model(cfg: ExperimentConfig) -> dict:
             print(f"RLS候选 {rls_index}/72，当前最优分数={best_rls_score:.4f}")
     if best_rls is None:
         raise RuntimeError("RLS参数搜索未得到可用候选。")
+    print(f"RLS最优结果：候选={best_rls['candidate']}，遗忘因子={best_rls['forgetting_factor']:g}，初始协方差={best_rls['initial_covariance']:g}，预热={best_rls['warmup_seconds']:g}s，选择分数={best_rls_score:.6f}")
     workflow_progress.update(3, f"窗口={best_params['window_seconds']:g}s，RLS共完成72组")
 
     train_x, train_y = build_sequence_arrays(train_df, scaler, best_params["window_steps"], "最终训练序列")
@@ -617,8 +620,8 @@ def train_model(cfg: ExperimentConfig) -> dict:
     pd.DataFrame(rls_rows).to_csv(cfg.rls_tuning_results_csv, index=False, encoding="utf-8")
     pd.DataFrame(all_training_logs).to_csv(cfg.training_log_csv, index=False, encoding="utf-8")
     save_loss_curve(logs, cfg.loss_curve_file)
-    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "tcn_rls", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_seconds": best_rls["warmup_seconds"], "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "uncertainty_calibration_npz": str(cfg.uncertainty_calibration_npz), "uncertainty_calibration_json": str(cfg.uncertainty_calibration_json), "device_used": str(device), "best_val_loss": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "tcn_selection_score": best_window_row["tcn_selection_score"], "rls_selection_score": best_rls_score}
+    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "tcn", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_seconds": best_rls["warmup_seconds"], "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "uncertainty_calibration_npz": str(cfg.uncertainty_calibration_npz), "uncertainty_calibration_json": str(cfg.uncertainty_calibration_json), "device_used": str(device), "best_val_loss": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_rls_candidate": best_rls["candidate"], "rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows)}
     torch.save(checkpoint, cfg.best_model_file)
     torch.save(checkpoint, cfg.final_model_file)
     workflow_progress.finish(f"权重、日志和置信区间校准已保存；深度={len(best_params['channels'])}块")
-    return {"version": "3.0", "device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0), "best_candidate": best_params["name"], "best_model_type": "tcn_rls_second_energy", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_seconds": best_rls["warmup_seconds"], "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "tcn_selection_score": best_window_row["tcn_selection_score"], "rls_selection_score": best_rls_score, "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json), "uncertainty_calibration_file": str(cfg.uncertainty_calibration_npz)}
+    return {"version": "3.0", "device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0), "best_candidate": best_params["name"], "best_model_type": "tcn_second_energy_rls", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_seconds": best_rls["warmup_seconds"], "best_rls_candidate": best_rls["candidate"], "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_tcn_selection_score": best_window_row["tcn_selection_score"], "rls_selection_score": best_rls_score, "best_rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows), "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json), "uncertainty_calibration_file": str(cfg.uncertainty_calibration_npz)}

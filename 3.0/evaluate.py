@@ -8,6 +8,7 @@
 
 import numpy as np
 import pandas as pd
+import torch
 
 from config import ExperimentConfig, ensure_directories
 from data_utils import save_json
@@ -146,6 +147,17 @@ def evaluation_field_descriptions() -> dict[str, str]:
         "prediction_file": "测试集逐样本预测结果CSV文件路径。",
         "flight_energy_summary_file": "按flight汇总的能耗评估CSV文件路径。",
         "power_bin_evaluation_file": "按真实功率区间汇总的误差评估CSV文件路径。",
+        "best_tcn_candidate": "验证集阶段一选择的TCN时间窗候选名称。",
+        "best_tcn_window_seconds": "验证集选择的TCN时间窗，单位s。",
+        "best_tcn_window_steps": "选择时间窗按不规则采样典型间隔折算的输入步数。",
+        "best_tcn_selection_score": "阶段一TCN窗口选择价值函数，越小越好。",
+        "best_rls_candidate": "验证集阶段二选择的RLS参数候选名称。",
+        "best_rls_forgetting_factor": "最终固定使用的RLS遗忘因子。",
+        "best_rls_initial_covariance": "最终固定使用的RLS初始协方差。",
+        "best_rls_warmup_seconds": "最终固定使用的RLS预热时长，单位s。",
+        "best_rls_selection_score": "阶段二汇总所有验证flight后的RLS选择价值函数。",
+        "tcn_candidate_count": "TCN时间窗候选数量。",
+        "rls_candidate_count": "RLS参数组合候选数量。",
     }
 
 
@@ -214,6 +226,11 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
                     "flight_energy_interval_mean_width_wh": float(np.mean(upper_energy - lower_energy)),
                 }
             )
+    tuning = pd.read_csv(cfg.tuning_results_csv)
+    rls_tuning = pd.read_csv(cfg.rls_tuning_results_csv)
+    best_tcn = tuning.sort_values("tcn_selection_score").iloc[0]
+    checkpoint = torch.load(cfg.best_model_file, map_location="cpu", weights_only=False)
+    best_rls = rls_tuning[rls_tuning["candidate"] == checkpoint["best_rls_candidate"]].iloc[0]
     metrics = {
         **sample_metrics,
         **tcn_sample_metrics,
@@ -225,6 +242,17 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         "prediction_file": str(prediction_path),
         "flight_energy_summary_file": str(cfg.flight_energy_summary_csv),
         "power_bin_evaluation_file": str(cfg.power_bin_evaluation_csv),
+        "best_tcn_candidate": str(best_tcn["candidate"]),
+        "best_tcn_window_seconds": float(best_tcn["window_seconds"]),
+        "best_tcn_window_steps": int(best_tcn["window_steps"]),
+        "best_tcn_selection_score": float(best_tcn["tcn_selection_score"]),
+        "best_rls_candidate": str(best_rls["candidate"]),
+        "best_rls_forgetting_factor": float(best_rls["forgetting_factor"]),
+        "best_rls_initial_covariance": float(best_rls["initial_covariance"]),
+        "best_rls_warmup_seconds": float(best_rls["warmup_seconds"]),
+        "best_rls_selection_score": float(best_rls["selection_score"]),
+        "tcn_candidate_count": int(len(tuning)),
+        "rls_candidate_count": int(len(rls_tuning)),
     }
     progress.update(4, f"flight能耗 WAPE={flight_metrics['flight_energy_wh_wape_percent']:.4f}%")
 

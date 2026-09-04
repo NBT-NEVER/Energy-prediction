@@ -226,6 +226,29 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
         plt.title("Power Prediction Residual Distribution")
         outputs.append(save_figure(cfg.prediction_vis_dir / "power_residual_histogram.png"))
 
+    if {"flight", "second_window", "actual_second_energy_wh", "predicted_second_energy_wh"}.issubset(predictions.columns):
+        second = predictions.drop_duplicates(["flight", "second_window"]).copy()
+        second = second.dropna(subset=["actual_second_energy_wh", "predicted_second_energy_wh"])
+        if not second.empty:
+            plt.figure(figsize=(6, 6))
+            plt.scatter(second["actual_second_energy_wh"], second["predicted_second_energy_wh"], s=12, alpha=0.4, color="#59a14f")
+            max_value = float(max(second["actual_second_energy_wh"].max(), second["predicted_second_energy_wh"].max()))
+            plt.plot([0, max_value], [0, max_value], color="#e45756", linewidth=2, label="Ideal")
+            plt.xlabel("Actual second energy (Wh)")
+            plt.ylabel("Predicted second energy (Wh)")
+            plt.title("Second-Level Energy Prediction Scatter")
+            plt.legend()
+            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_prediction_scatter.png"))
+
+            residual = second["predicted_second_energy_wh"] - second["actual_second_energy_wh"]
+            plt.figure(figsize=(9, 5))
+            limit = max(float(np.quantile(np.abs(residual), 0.99)), 1e-6)
+            plt.hist(residual.clip(-limit, limit), bins=80, color="#f28e2b", alpha=0.85)
+            plt.xlabel("Second-level energy residual (Wh)")
+            plt.ylabel("Count")
+            plt.title("Second-Level Energy Residual Distribution")
+            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_residual_histogram.png"))
+
     if {"flight", "time", "predicted_power_w"}.issubset(predictions.columns):
         flight_ids = predictions["flight"].drop_duplicates().head(max_flights).tolist()
         for flight_id in flight_ids:
