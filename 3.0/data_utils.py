@@ -63,6 +63,7 @@ NUMERIC_SOURCE_COLUMNS = [
 
 ENGINEERED_NUMERIC_FEATURES = [
     "time",
+    "dt_seconds",
     "flight_progress",
     "wind_speed",
     "wind_sin",
@@ -215,6 +216,7 @@ def add_derived_features(raw_frame: pd.DataFrame, training_route: str = "R1") ->
     frame["flight"] = frame["flight"].astype(int)
     frame = frame.sort_values(["flight", "time"]).reset_index(drop=True)
 
+    # 固定采样数据仍显式保留时间间隔，避免后续流程把时间信息隐含在数组下标中。
     frame["dt_seconds"] = calculate_time_delta(frame)
     frame["battery_current_discharge_a"] = frame["battery_current"].clip(lower=0)
     frame["power_w"] = (frame["battery_voltage"] * frame["battery_current_discharge_a"]).clip(lower=0)
@@ -281,7 +283,7 @@ def add_derived_features(raw_frame: pd.DataFrame, training_route: str = "R1") ->
     route_features = sorted(route_dummies.columns.tolist())
     feature_columns = ENGINEERED_NUMERIC_FEATURES + route_features
 
-    useful_columns = [
+    useful_columns = list(dict.fromkeys([
         "flight",
         "route",
         "dt_seconds",
@@ -290,7 +292,7 @@ def add_derived_features(raw_frame: pd.DataFrame, training_route: str = "R1") ->
         "battery_voltage",
         "battery_current",
         *feature_columns,
-    ]
+    ]))
     frame = frame[useful_columns].replace([np.inf, -np.inf], np.nan).dropna().reset_index(drop=True)
     return frame, feature_columns
 

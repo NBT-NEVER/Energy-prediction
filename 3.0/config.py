@@ -24,6 +24,7 @@ FIGURE_DIR = OUT_DIR / "figures"
 PREDICTION_DIR = OUT_DIR / "predictions"
 CUSTOM_DIR = OUT_DIR / "custom"
 LOG_DIR = OUT_DIR / "logs"
+RLS_DIR = OUT_DIR / "rls"
 
 # 在线数据源和原始数据文件
 SOURCE_REPO_URL = "https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git"
@@ -53,15 +54,18 @@ FINAL_MODEL_FILE = SAVE_DIR / "final_energy_tcn_rls_3.0.pt"
 SCALER_JSON = OUT_MODEL_DIR / "scaler_3.0.json"
 TRAINING_LOG_CSV = OUT_MODEL_DIR / "training_log_3.0.csv"
 TUNING_RESULTS_CSV = OUT_MODEL_DIR / "tuning_results_3.0.csv"
-RLS_TUNING_RESULTS_CSV = OUT_MODEL_DIR / "rls_tuning_results_3.0.csv"
+RLS_TUNING_RESULTS_CSV = RLS_DIR / "rls_tuning_results_3.0.csv"
+RLS_PARAMETER_TRACE_CSV = RLS_DIR / "rls_parameter_trace_3.0.csv"
+RLS_PARAMETER_STATISTICS_CSV = RLS_DIR / "rls_parameter_statistics_3.0.csv"
+RLS_PARAMETER_SUMMARY_JSON = RLS_DIR / "rls_parameter_summary_3.0.json"
 EVALUATION_JSON = OUT_MODEL_DIR / "evaluation_3.0.json"
 EVALUATION_CSV = OUT_MODEL_DIR / "evaluation_3.0.csv"
 FLIGHT_ENERGY_SUMMARY_CSV = OUT_MODEL_DIR / "flight_energy_summary_3.0.csv"
 POWER_BIN_EVALUATION_CSV = OUT_MODEL_DIR / "power_bin_evaluation_3.0.csv"
 SECOND_ENERGY_EVALUATION_CSV = OUT_MODEL_DIR / "second_energy_evaluation_3.0.csv"
 PREDICTION_CSV = PREDICTION_DIR / "test_predictions_3.0.csv"
-UNCERTAINTY_CALIBRATION_NPZ = OUT_MODEL_DIR / "uncertainty_calibration_3.0.npz"
-UNCERTAINTY_CALIBRATION_JSON = OUT_MODEL_DIR / "uncertainty_calibration_3.0.json"
+UNCERTAINTY_CALIBRATION_NPZ = RLS_DIR / "uncertainty_calibration_3.0.npz"
+UNCERTAINTY_CALIBRATION_JSON = RLS_DIR / "uncertainty_calibration_3.0.json"
 
 # 可视化和自定义工况输出文件
 LOSS_CURVE_FILE = FIGURE_DIR / "training" / "loss_curve_3.0.png"
@@ -95,12 +99,14 @@ DEFAULT_WINDOW_SECONDS = 1.5
 DEFAULT_CONFIDENCE = 0.95
 # TCN残差块通道；4个块对应更深的时间特征提取网络
 TCN_CHANNELS = (64, 64, 64, 32)
-# RLS预选范围：针对上一轮下边界最优结果向低遗忘因子和低协方差扩展，并在短预热区间加密。
-RLS_FORGETTING_FACTORS = (0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96)
-RLS_INITIAL_COVARIANCES = (0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
-RLS_WARMUP_SECONDS = (0.0, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3)
+# RLS预选范围围绕上一轮最优值0.91、0.1、0窗口展开；预热以完整秒窗口计数。
+RLS_FORGETTING_FACTORS = (0.86, 0.88, 0.90, 0.91, 0.92, 0.94, 0.96)
+RLS_INITIAL_COVARIANCES = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
+RLS_WARMUP_WINDOWS = (0, 1, 2, 3)
 RLS_FORGETTING_FACTOR = 0.97
 RLS_INITIAL_COVARIANCE = 10.0
+FLIGHT_STATE_THRESHOLD_W = 50.0
+RESAMPLED_INTERVAL_SECONDS = 0.12
 
 
 @dataclass(frozen=True)
@@ -121,6 +127,7 @@ class ExperimentConfig:
     prediction_dir: Path = PREDICTION_DIR
     custom_dir: Path = CUSTOM_DIR
     log_dir: Path = LOG_DIR
+    rls_dir: Path = RLS_DIR
     source_repo_url: str = SOURCE_REPO_URL
     source_repo_dir: Path = SOURCE_REPO_DIR
     raw_zip_file: Path = RAW_ZIP_FILE
@@ -143,6 +150,9 @@ class ExperimentConfig:
     training_log_csv: Path = TRAINING_LOG_CSV
     tuning_results_csv: Path = TUNING_RESULTS_CSV
     rls_tuning_results_csv: Path = RLS_TUNING_RESULTS_CSV
+    rls_parameter_trace_csv: Path = RLS_PARAMETER_TRACE_CSV
+    rls_parameter_statistics_csv: Path = RLS_PARAMETER_STATISTICS_CSV
+    rls_parameter_summary_json: Path = RLS_PARAMETER_SUMMARY_JSON
     loss_curve_file: Path = LOSS_CURVE_FILE
     evaluation_json: Path = EVALUATION_JSON
     evaluation_csv: Path = EVALUATION_CSV
@@ -181,7 +191,9 @@ class ExperimentConfig:
     rls_initial_covariance: float = RLS_INITIAL_COVARIANCE
     rls_forgetting_factors: tuple[float, ...] = RLS_FORGETTING_FACTORS
     rls_initial_covariances: tuple[float, ...] = RLS_INITIAL_COVARIANCES
-    rls_warmup_seconds: tuple[float, ...] = RLS_WARMUP_SECONDS
+    rls_warmup_windows: tuple[int, ...] = RLS_WARMUP_WINDOWS
+    flight_state_threshold_w: float = FLIGHT_STATE_THRESHOLD_W
+    resampled_interval_seconds: float = RESAMPLED_INTERVAL_SECONDS
     custom_prediction_summary_json: Path = CUSTOM_PREDICTION_SUMMARY_JSON
 
 
@@ -221,6 +233,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         prediction_dir = out_dir / "predictions"
         custom_dir = out_dir / "custom"
         log_dir = out_dir / "logs"
+        rls_dir = out_dir / "rls"
         processed_dir = out_data_dir / "processed_3.0"
         normalized.setdefault("out_data_dir", out_data_dir)
         normalized.setdefault("out_model_dir", out_model_dir)
@@ -228,6 +241,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("prediction_dir", prediction_dir)
         normalized.setdefault("custom_dir", custom_dir)
         normalized.setdefault("log_dir", log_dir)
+        normalized.setdefault("rls_dir", rls_dir)
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
         normalized.setdefault("second_energy_csv", processed_dir / "second_energy_3.0.csv")
@@ -240,15 +254,18 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("scaler_json", out_model_dir / "scaler_3.0.json")
         normalized.setdefault("training_log_csv", out_model_dir / "training_log_3.0.csv")
         normalized.setdefault("tuning_results_csv", out_model_dir / "tuning_results_3.0.csv")
-        normalized.setdefault("rls_tuning_results_csv", out_model_dir / "rls_tuning_results_3.0.csv")
+        normalized.setdefault("rls_tuning_results_csv", rls_dir / "rls_tuning_results_3.0.csv")
+        normalized.setdefault("rls_parameter_trace_csv", rls_dir / "rls_parameter_trace_3.0.csv")
+        normalized.setdefault("rls_parameter_statistics_csv", rls_dir / "rls_parameter_statistics_3.0.csv")
+        normalized.setdefault("rls_parameter_summary_json", rls_dir / "rls_parameter_summary_3.0.json")
         normalized.setdefault("evaluation_json", out_model_dir / "evaluation_3.0.json")
         normalized.setdefault("evaluation_csv", out_model_dir / "evaluation_3.0.csv")
         normalized.setdefault("flight_energy_summary_csv", out_model_dir / "flight_energy_summary_3.0.csv")
         normalized.setdefault("power_bin_evaluation_csv", out_model_dir / "power_bin_evaluation_3.0.csv")
         normalized.setdefault("second_energy_evaluation_csv", out_model_dir / "second_energy_evaluation_3.0.csv")
         normalized.setdefault("prediction_csv", prediction_dir / "test_predictions_3.0.csv")
-        normalized.setdefault("uncertainty_calibration_npz", out_model_dir / "uncertainty_calibration_3.0.npz")
-        normalized.setdefault("uncertainty_calibration_json", out_model_dir / "uncertainty_calibration_3.0.json")
+        normalized.setdefault("uncertainty_calibration_npz", rls_dir / "uncertainty_calibration_3.0.npz")
+        normalized.setdefault("uncertainty_calibration_json", rls_dir / "uncertainty_calibration_3.0.json")
         normalized.setdefault("loss_curve_file", figure_dir / "training" / "loss_curve_3.0.png")
         normalized.setdefault("training_vis_dir", figure_dir / "training")
         normalized.setdefault("result_vis_dir", figure_dir / "results")
@@ -280,6 +297,7 @@ def ensure_directories(cfg: ExperimentConfig | None = None) -> None:
         cfg.prediction_dir,
         cfg.custom_dir,
         cfg.log_dir,
+        cfg.rls_dir,
         cfg.raw_data_dir,
         cfg.processed_dir,
         cfg.training_vis_dir,

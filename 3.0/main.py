@@ -13,7 +13,7 @@ from config import build_config, ensure_directories  # 构建实验配置并创�
 from data_utils import download_source_dataset, extract_source_zip, prepare_dataset  # 下载、解包和切分数据
 from evaluate import evaluate_model  # 生成模型评估指标
 from predict import calibrate_uncertainty, predict_from_csv, recalculate_prediction_intervals  # 执行预测和置信区间处理
-from train import train_model  # 执行GPU训练和调参
+from train import train_fixed_tcn, train_model  # 执行固定超参数训练和调参
 from terminal_logger import TerminalLogCapture  # 同步记录终端标准输出和异常信息
 from visualize import generate_all_visualizations, predict_custom_scenario  # 生成图表并预测自定义工况
 
@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="all",
-        choices=["download", "prepare", "train", "calibrate", "predict", "interval", "evaluate", "visualize", "custom", "all"],
+        choices=["download", "prepare", "tune-tcn", "train", "train-fixed", "tune-rls", "test", "calibrate", "predict", "interval", "evaluate", "visualize", "custom", "all"],
         help="运行模式，all会依次完成数据处理、训练、评估和可视化。",
     )
     parser.add_argument("--data-dir", type=Path, default=None, help="覆盖原始数据目录。")
@@ -87,6 +87,10 @@ def print_process_intro(mode: str) -> None:
         "download": "下载公开数据仓库并解压建模所需 CSV 文件。",
         "prepare": "清洗飞行记录，构造特征，并按 flight 划分训练、验证和测试集。",
         "train": "标准化训练数据，比较候选网络，训练并保存最优模型。",
+        "train-fixed": "读取当前选定的TCN时间窗，跳过超参数搜索并正式训练TCN。",
+        "tune-tcn": "仅搜索TCN时间窗候选并保存当前最优TCN模型。",
+        "tune-rls": "加载当前训练模型，仅搜索RLS超参数。",
+        "test": "加载训练好的TCN和RLS参数，运行测试集并生成结果图。",
         "calibrate": "使用验证集残差生成在线RLS和固定RLS的置信区间校准文件。",
         "predict": "加载最优模型，对输入 CSV 逐批预测功率和区间能耗。",
         "interval": "读取已有预测 CSV，只重算指定置信度下的功率和累计能耗区间。",
@@ -116,6 +120,8 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         f"训练配置: TCN深度={len(cfg.tcn_channels)}块，通道={list(cfg.tcn_channels)}，"
         f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}，默认置信度={cfg.default_confidence:.1%}"
     )
+    print(f"TCN时间窗候选: {list(cfg.window_seconds_candidates)}")
+    print(f"RLS候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，预热完整窗口数={list(cfg.rls_warmup_windows)}")
 
     if args.mode == "download":
         print("\n[下载数据] 检查公开数据仓库和原始压缩包。")
@@ -126,10 +132,29 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         print("\n[数据准备] 清洗记录、构造特征并划分数据集。")
         summary = prepare_dataset(cfg, force=args.force_prepare)
         print_dict("prepare", summary)
+    elif args.mode == "tune-tcn":
+        print("\n[TCN超参数] 仅比较当前TCN时间窗候选。")
+        summary = train_model(cfg, stop_after_tcn=True)
+        print_dict("tune-tcn", summary)
     elif args.mode == "train":
         print("\n[模型训练] 调参后训练并保存最优网络。")
         summary = train_model(cfg)
         print_dict("train", summary)
+    elif args.mode == "train-fixed":
+        print("\n[固定参数训练] 使用当前选定TCN参数正式训练，不重复搜索超参数。")
+        summary = train_fixed_tcn(cfg)
+        print_dict("train-fixed", summary)
+    elif args.mode == "tune-rls":
+        print("\n[RLS超参数] 加载训练好的TCN，仅搜索RLS候选。")
+        from train import tune_rls_only
+        summary = tune_rls_only(cfg)
+        print_dict("tune-rls", summary)
+    elif args.mode == "test":
+        print("\n[独立测试] 加载当前TCN和RLS参数，生成测试指标与图表。")
+        metrics = evaluate_model(cfg)
+        visual_summary = generate_all_visualizations(cfg)
+        print_dict("evaluate", metrics)
+        print_dict("visualize", visual_summary)
     elif args.mode == "predict":
         print("\n[批量预测] 加载模型并输出预测 CSV。")
         output_path = predict_from_csv(cfg, args.input_csv, args.output_csv, confidence=args.confidence)

@@ -66,6 +66,27 @@ class TCNBlock(nn.Module):
         return torch.relu(self.net(x) + self.shortcut(x))
 
 
+class TimeAwareGate(nn.Module):
+    """功能: 根据每个采样点的真实时间间隔调节卷积输入。
+    参数: hidden为时间门控的隐层宽度。
+    返回: 每个时间点的正值门控系数。
+    调用位置: TemporalConvNet.forward。
+    """
+
+    def __init__(self, hidden: int = 8) -> None:
+        super().__init__()
+        self.network = nn.Sequential(nn.Linear(1, hidden), nn.SiLU(), nn.Linear(hidden, 1))
+
+    def forward(self, dt_seconds: torch.Tensor) -> torch.Tensor:
+        """功能: 将真实采样间隔映射为时间感知门控系数。
+        参数: dt_seconds为形状(batch, time)的标准化时间间隔。
+        返回: 形状(batch, time, 1)的正值门控系数。
+        调用位置: TemporalConvNet.forward。
+        """
+
+        return 1.0 + 0.2 * torch.tanh(self.network(dt_seconds.unsqueeze(-1)))
+
+
 class TemporalConvNet(nn.Module):
     """功能: 使用多层因果TCN从短时间窗预测当前时刻标准化功率。
     参数: input_dim为每个采样点的特征数，channels为卷积通道序列，kernel_size为卷积核宽度，dropout为丢弃率。
@@ -73,7 +94,7 @@ class TemporalConvNet(nn.Module):
     调用位置: train.py、predict.py、evaluate.py。
     """
 
-    def __init__(self, input_dim: int, channels: tuple[int, ...] = (64, 64, 64, 32), kernel_size: int = 3, dropout: float = 0.08) -> None:
+    def __init__(self, input_dim: int, channels: tuple[int, ...] = (64, 64, 64, 32), kernel_size: int = 3, dropout: float = 0.08, dt_feature_index: int | None = None) -> None:
         super().__init__()
         layers: list[nn.Module] = []
         last = input_dim
@@ -81,6 +102,8 @@ class TemporalConvNet(nn.Module):
             layers.append(TCNBlock(last, channel, kernel_size, 2**index, dropout))
             last = channel
         self.network = nn.Sequential(*layers)
+        self.dt_feature_index = dt_feature_index
+        self.time_gate = TimeAwareGate()
         self.input_skip = nn.Sequential(nn.LayerNorm(input_dim), nn.Linear(input_dim, last // 2), nn.SiLU())
         self.head = nn.Sequential(nn.Linear(last, last // 2), nn.SiLU(), nn.Dropout(dropout), nn.Linear(last // 2, 1))
         self.skip_head = nn.Linear(last // 2, 1)
@@ -92,20 +115,23 @@ class TemporalConvNet(nn.Module):
         调用位置: train.py、predict.py、evaluate.py。
         """
 
+        if self.dt_feature_index is not None:
+            dt = features[:, :, self.dt_feature_index]
+            features = features * self.time_gate(dt)
         encoded = self.network(features.transpose(1, 2))
         last_features = encoded[:, :, -1]
         skip_features = self.input_skip(features[:, -1, :])
         return (self.head(last_features) + self.skip_head(skip_features)).squeeze(-1)
 
 
-def build_model(input_dim: int, channels: tuple[int, ...], dropout: float, kernel_size: int = 3) -> nn.Module:
+def build_model(input_dim: int, channels: tuple[int, ...], dropout: float, kernel_size: int = 3, dt_feature_index: int | None = None) -> nn.Module:
     """功能: 构建实验3.0的TCN模型。
     参数: input_dim为输入特征数，channels为TCN通道宽度，dropout为丢弃率，kernel_size为卷积核宽度。
     返回: TemporalConvNet模型实例。
     调用位置: train.py、predict.py。
     """
 
-    return TemporalConvNet(input_dim=input_dim, channels=channels, kernel_size=kernel_size, dropout=dropout)
+    return TemporalConvNet(input_dim=input_dim, channels=channels, kernel_size=kernel_size, dropout=dropout, dt_feature_index=dt_feature_index)
 
 
 class RLSCorrector:
@@ -131,6 +157,16 @@ class RLSCorrector:
         """
 
         self.theta = self.initial_theta.clone()
+        self.covariance = torch.eye(2, dtype=torch.float64) * self.initial_covariance
+
+    def reset_neutral(self) -> None:
+        """功能: 在飞行状态切换时恢复无偏置、单位缩放的中性校正状态。
+        参数: 无。
+        返回: None。
+        调用位置: train.py的apply_rls_correction。
+        """
+
+        self.theta = torch.tensor([0.0, 1.0], dtype=torch.float64)
         self.covariance = torch.eye(2, dtype=torch.float64) * self.initial_covariance
 
     def predict(self, base_power: float) -> float:
@@ -161,17 +197,17 @@ class RLSCorrector:
         self.theta[1] = self.theta[1].clamp(0.0, 2.0)
         self.covariance = (self.covariance - torch.outer(gain, phi) @ self.covariance) / self.forgetting_factor
 
-    def update_window(self, predicted_energy_wh: float, actual_energy_wh: float, duration_seconds: float) -> None:
+    def update_window(self, base_energy_wh: float, actual_energy_wh: float, duration_seconds: float) -> None:
         """功能: 用完整时间窗口的真实能量更新RLS参数。
-        参数: predicted_energy_wh和actual_energy_wh为窗口能量，duration_seconds为窗口实际时长。
+        参数: base_energy_wh为TCN窗口能量，actual_energy_wh为真实窗口能量，duration_seconds为窗口实际时长。
         返回: None。
         调用位置: train.py的apply_rls_correction。
         """
 
         duration = max(float(duration_seconds), 1e-6)
-        predicted_power = 3600.0 * float(predicted_energy_wh) / duration
+        base_power = 3600.0 * float(base_energy_wh) / duration
         actual_power = 3600.0 * float(actual_energy_wh) / duration
-        phi = torch.tensor([1.0, predicted_power / self.power_scale], dtype=torch.float64)
+        phi = torch.tensor([1.0, base_power / self.power_scale], dtype=torch.float64)
         denominator = self.forgetting_factor + phi @ self.covariance @ phi
         gain = self.covariance @ phi / max(float(denominator), 1e-12)
         residual = actual_power / self.power_scale - float(phi @ self.theta)

@@ -200,6 +200,8 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             flight_frame = predictions[predictions["flight"] == flight_id].drop_duplicates("second_window").sort_values("second_window")
             plt.figure(figsize=(10, 5))
             plt.plot(flight_frame["second_window"], flight_frame["actual_second_energy_wh"], label="Actual second energy", linewidth=1.8)
+            if "tcn_second_energy_wh" in flight_frame:
+                plt.plot(flight_frame["second_window"], flight_frame["tcn_second_energy_wh"], label="TCN second energy", linewidth=1.4)
             plt.plot(flight_frame["second_window"], flight_frame["predicted_second_energy_wh"], label="Predicted second energy", linewidth=1.8)
             plt.xlabel("Second window")
             plt.ylabel("Energy (Wh)")
@@ -256,6 +258,8 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.figure(figsize=(10, 5))
             if "power_w" in flight_frame.columns:
                 plt.plot(flight_frame["time"], flight_frame["power_w"], label="Actual power", linewidth=1.8)
+            if "tcn_predicted_power_w" in flight_frame.columns:
+                plt.plot(flight_frame["time"], flight_frame["tcn_predicted_power_w"], label="TCN power", linewidth=1.3)
             plt.plot(flight_frame["time"], flight_frame["predicted_power_w"], label="Predicted power", linewidth=1.8)
             if {"predicted_power_lower_w", "predicted_power_upper_w"}.issubset(flight_frame.columns):
                 plt.fill_between(
@@ -271,6 +275,39 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.title(f"Flight {flight_id} Power Prediction")
             plt.legend()
             outputs.append(save_figure(cfg.prediction_vis_dir / f"flight_{flight_id}_power_timeseries.png"))
+    return outputs
+
+
+def plot_rls_parameter_trace(cfg: ExperimentConfig) -> list[Path]:
+    """功能: 绘制测试过程中RLS偏置、缩放参数和状态切换轨迹。
+    参数: cfg为实验配置对象。
+    返回: 已生成的RLS参数图路径列表。
+    调用位置: generate_all_visualizations。
+    """
+
+    if not cfg.rls_parameter_trace_csv.exists():
+        return []
+    trace = pd.read_csv(cfg.rls_parameter_trace_csv)
+    if trace.empty:
+        return []
+    outputs: list[Path] = []
+    set_plot_style()
+    selected = trace["flight"].drop_duplicates().head(3)
+    for flight_id in selected:
+        part = trace[trace["flight"] == flight_id].sort_values("second_window")
+        fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+        axes[0].plot(part["second_window"], part["theta_bias_after"], label="Bias")
+        axes[0].axhline(0.0, color="#777777", linewidth=1)
+        axes[0].set_ylabel("Bias coefficient")
+        axes[1].plot(part["second_window"], part["theta_scale_after"], label="Scale", color="#f28e2b")
+        axes[1].axhline(1.0, color="#777777", linewidth=1)
+        axes[1].set_ylabel("Scale coefficient")
+        axes[1].set_xlabel("Second window")
+        for axis in axes:
+            for window in part.loc[part["state_changed"].eq(1), "second_window"]:
+                axis.axvline(window, color="#e15759", alpha=0.3)
+        fig.suptitle(f"Flight {flight_id} RLS Parameter Trace")
+        outputs.append(save_figure(cfg.rls_dir / f"flight_{flight_id}_rls_parameter_trace.png"))
     return outputs
 
 
@@ -427,7 +464,7 @@ def predict_custom_scenario(
     progress.update(3, f"已构造 {len(sequences)} 条输入序列")
     tcn_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
     progress.update(4, "TCN前向推理完成")
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_windows": checkpoint.get("rls_warmup_windows", checkpoint.get("rls_warmup_seconds", 0))}
     corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正", rls_params=rls_params)
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power
@@ -491,6 +528,7 @@ def generate_all_visualizations(cfg: ExperimentConfig) -> dict[str, Any]:
     outputs.extend(plot_result_summary(cfg))
     progress.update(2, f"评估结果图表已生成（累计 {len(outputs)} 张）")
     outputs.extend(plot_prediction_outputs(cfg))
+    outputs.extend(plot_rls_parameter_trace(cfg))
     progress.finish(f"预测结果图表已生成，共 {len(outputs)} 张")
     summary = {
         "figure_count": len(outputs),

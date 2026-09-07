@@ -62,7 +62,7 @@ def load_trained_model(cfg: ExperimentConfig, device: torch.device) -> tuple[tor
     if not cfg.best_model_file.exists():
         raise FileNotFoundError(f"未找到模型权重: {cfg.best_model_file}")
     checkpoint = torch.load(cfg.best_model_file, map_location=device, weights_only=False)
-    model = build_model(int(checkpoint["input_dim"]), tuple(checkpoint["channels"]), float(checkpoint["dropout"]), int(checkpoint.get("kernel_size", 3))).to(device)
+    model = build_model(int(checkpoint["input_dim"]), tuple(checkpoint["channels"]), float(checkpoint["dropout"]), int(checkpoint.get("kernel_size", 3)), checkpoint.get("dt_feature_index")).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
     scaler = load_json(resolve_scaler_path(cfg, checkpoint))
@@ -124,8 +124,8 @@ def predict_from_csv(
     if online_update is None:
         online_update = cfg.target_column in frame.columns
     initial_theta = None if online_update else checkpoint.get("rls_theta")
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
-    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正", rls_params=rls_params)
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_windows": checkpoint.get("rls_warmup_windows", checkpoint.get("rls_warmup_seconds", 0))}
+    corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正", rls_params=rls_params, trace_path=cfg.rls_parameter_trace_csv)
     workflow_progress.update(4, f"RLS校正完成，在线更新={'开启' if online_update else '关闭'}")
     output = frame.copy()
     output["tcn_predicted_power_w"] = base_power
@@ -218,7 +218,7 @@ def calibrate_uncertainty(cfg: ExperimentConfig) -> dict:
     base_power = predict_array(model, sequences, scaler, device, cfg.batch_size, "校准TCN前向")
     progress.update(3, "TCN校准预测已完成")
     actual = val_frame[cfg.target_column].to_numpy(dtype=float)
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_seconds": checkpoint.get("rls_warmup_seconds", 0.0)}
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_windows": checkpoint.get("rls_warmup_windows", checkpoint.get("rls_warmup_seconds", 0))}
     online, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, None, update=True, progress_label="在线RLS校准", rls_params=rls_params)
     static, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="固定RLS校准", rls_params=rls_params)
     progress.update(4, "在线和固定RLS残差已计算")
