@@ -459,7 +459,7 @@ def tcn_selection_metrics(base_power: np.ndarray, frame: pd.DataFrame, cfg: Expe
 
 
 def rls_candidate_grid(cfg: ExperimentConfig) -> list[dict]:
-    """功能: 生成72组RLS验证候选参数。
+    """功能: 生成RLS验证候选参数组合。
     参数: cfg为实验配置。
     返回: RLS遗忘因子、初始协方差和预热长度的组合列表。
     调用位置: train_model。
@@ -576,20 +576,22 @@ def train_model(cfg: ExperimentConfig) -> dict:
     rls_rows: list[dict] = []
     best_rls = None
     best_rls_score = float("inf")
-    print(f"阶段二：固定最优TCN窗口，使用同一份验证预测搜索{len(rls_candidate_grid(cfg))}组RLS参数。")
-    for rls_index, rls_params in enumerate(rls_candidate_grid(cfg), start=1):
+    rls_candidates = rls_candidate_grid(cfg)
+    rls_candidate_count = len(rls_candidates)
+    print(f"阶段二：固定最优TCN窗口，使用同一份验证预测搜索{rls_candidate_count}组RLS参数。")
+    for rls_index, rls_params in enumerate(rls_candidates, start=1):
         corrected, _ = apply_rls_correction(best_window_val_base, val_df, scaler, cfg, rls_theta, update=True, rls_params=rls_params)
         metrics = energy_window_selection_metrics(best_window_val_base, corrected, val_df, cfg)
         row = {"phase": "stage2_rls", "tcn_window_seconds": best_params["window_seconds"], "tcn_window_steps": best_params["window_steps"], **rls_params, **metrics}
         rls_rows.append(row)
         if metrics["selection_score"] < best_rls_score:
             best_rls_score, best_rls = metrics["selection_score"], rls_params.copy()
-        if rls_index % 12 == 0 or rls_index == 72:
-            print(f"RLS候选 {rls_index}/72，当前最优分数={best_rls_score:.4f}")
+        if rls_index % max(1, rls_candidate_count // 10) == 0 or rls_index == rls_candidate_count:
+            print(f"RLS候选 {rls_index}/{rls_candidate_count}，当前最优分数={best_rls_score:.4f}")
     if best_rls is None:
         raise RuntimeError("RLS参数搜索未得到可用候选。")
     print(f"RLS最优结果：候选={best_rls['candidate']}，遗忘因子={best_rls['forgetting_factor']:g}，初始协方差={best_rls['initial_covariance']:g}，预热={best_rls['warmup_seconds']:g}s，选择分数={best_rls_score:.6f}")
-    workflow_progress.update(3, f"窗口={best_params['window_seconds']:g}s，RLS共完成72组")
+    workflow_progress.update(3, f"窗口={best_params['window_seconds']:g}s，RLS共完成{rls_candidate_count}组")
 
     train_x, train_y = build_sequence_arrays(train_df, scaler, best_params["window_steps"], "最终训练序列")
     val_x, val_y = build_sequence_arrays(val_df, scaler, best_params["window_steps"], "最终验证序列")

@@ -205,6 +205,22 @@ flight 23 的窗口曲线用于观察不同能量水平下的跟踪效果。TCN 
 
 flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功率图更适合检查能量守恒和窗口级反馈效果，最终累计能量则由这些窗口能量逐段累加得到。
 
+### 8.7 自定义展示航线
+
+本次在 `out/custom` 中生成一条固定的 R1 展示航线，编号为 `999001`，总时长 180 s，输出间隔 1 s。航线剖面由三个阶段组成：0～约 27 s 起飞，约 27～153 s 巡航，约 153～180 s 降落。输入条件为风速 4 m/s、风向 0°、巡航速度 8 m/s、载荷 250 g、飞行高度 50 m。
+
+![自定义展示航线功率](./out/figures/custom/custom_power_timeseries.png)
+
+图中展示该航线的逐采样点功率预测和 95% 预测区间。蓝色曲线是经过 checkpoint 中 RLS 仿射参数校正后的预测功率，阴影是功率区间。起飞和降落阶段的垂直速度变化会改变实际速度、相对空速和热负载代理量，因此预测功率随航线阶段发生变化。
+
+![自定义展示航线累计能耗](./out/figures/custom/custom_cumulative_energy.png)
+
+图中展示逐点预测功率按 `dt_seconds` 积分后的累计能耗及 95% 区间。本次共 181 个采样点，平均预测功率为 `506.1544 W`，最大预测功率为 `577.6692 W`，累计预测能耗为 `25.4483 Wh`，95% 区间为 `20.8112～30.0854 Wh`。
+
+自定义航线的处理顺序与真实测试一致：先根据工况生成 22 维输入特征；TCN 输出逐采样点功率；再使用固定的 RLS 参数进行功率校正；最后按每个采样点的 `dt_seconds` 计算预测能量并累加。该航线没有真实电压、电流和真实功率，所以不能计算 MAE、RMSE、R2 或 WAPE，结果只用于模型推演、接口测试和算法展示，不替代真实飞行测试。
+
+自定义产物如下：`custom_scenarios_3.0.csv` 保存航线输入，`custom_predictions_3.0.csv` 保存 TCN/RLS 预测和能量字段，`custom_prediction_summary_3.0.json` 保存摘要指标；对应图片位于 `out/figures/custom/`。
+
 ## 9. 输出文件
 
 - `out/model/tuning_results_3.0.csv`：10 个 TCN 窗口的 80 轮训练结果和能量选择指标。
@@ -220,6 +236,11 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 - `out/figures/prediction/second_energy_residual_histogram.png`：每秒能量残差直方图。
 - `out/figures/results/flight_energy_actual_vs_predicted.png`：flight 总能量对比图。
 - `out/figures/results/flight_energy_error.png`：flight 总能量误差图。
+- `out/custom/custom_scenarios_3.0.csv`：固定参数生成的 R1 自定义展示航线输入。
+- `out/custom/custom_predictions_3.0.csv`：自定义航线的 TCN 功率、RLS 校正功率、预测能量和累计能量。
+- `out/custom/custom_prediction_summary_3.0.json`：自定义航线预测摘要和置信区间。
+- `out/figures/custom/custom_power_timeseries.png`：自定义航线功率及预测区间。
+- `out/figures/custom/custom_cumulative_energy.png`：自定义航线累计能耗及预测区间。
 
 ## 10. 文件调用关系
 

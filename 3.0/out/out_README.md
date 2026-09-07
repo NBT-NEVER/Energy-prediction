@@ -34,7 +34,9 @@ TCN 输入不直接使用真实每秒能量，输入仍为 2.1 的 22 维工况�
 
 逐点功率训练损失仍使用 Huber 损失。每个候选训练 80 个 epoch，不使用调参阶段早停。窗口选择同时考虑逐点功率、秒级能量和 flight 总能量：
 
-$$S_{TCN}=WAPE_{second}+0.2WAPE_{sample}+0.5WAPE_{flight}$$
+$$
+S_{TCN}=WAPE_{second}+0.2WAPE_{sample}+0.5WAPE_{flight}
+$$
 
 其中：
 
@@ -56,7 +58,9 @@ $WAPE_{flight}$：验证集按 flight 汇总能量 WAPE。
 
 RLS 将窗口预测能量和真实能量换算为窗口平均功率，再进行仿射回归：
 
-$$\bar{P}_{f,k}^{true}\approx\theta_{0,f,k}+\theta_{1,f,k}\bar{P}_{f,k}^{pred}$$
+$$
+\bar{P}_{f,k}^{true}\approx\theta_{0,f,k}+\theta_{1,f,k}\bar{P}_{f,k}^{pred}
+$$
 
 其中：
 
@@ -80,9 +84,13 @@ $k$：当前秒级窗口编号。
 
 每个 flight 先计算独立价值函数，再对 28 个验证 flight 等权平均：
 
-$$S_{RLS,f}=WAPE_{second,f}+0.2WAPE_{sample,f}+0.5WAPE_{flight,f}$$
+$$
+S_{RLS,f}=WAPE_{second,f}+0.2WAPE_{sample,f}+0.5WAPE_{flight,f}
+$$
 
-$$S_{RLS}=\frac{1}{N_{flight}}\sum_f S_{RLS,f}$$
+$$
+S_{RLS}=\frac{1}{N_{flight}}\sum_f S_{RLS,f}
+$$
 
 其中：
 
@@ -104,16 +112,17 @@ $WAPE_{flight,f}$：单个 flight 总能量误差。
 
 固定 `2.0 s / 17 步` 和上述 RLS 参数后，最终 TCN 训练 80 个 epoch，最佳验证损失为 `0.02064699`，出现在第 30 个 epoch。测试集只在超参数全部固定后运行一次。
 
-| 指标 | TCN | TCN + 秒级能量 RLS | 单位 |
-|---|---:|---:|---|
-| 样本功率 MAE | 33.3710 | 31.6002 | W |
-| 样本功率 RMSE | 50.6321 | 49.1276 | W |
-| 样本功率 R2 | 0.9492 | 0.9522 | 无量纲 |
-| 样本功率 WAPE | 8.2143 | 7.7784 | % |
-| flight 能耗 MAE | 0.5225 | 0.2492 | Wh |
-| flight 能耗 RMSE | 0.7106 | 0.3423 | Wh |
-| flight 能耗 R2 | 0.9771 | 0.9947 | 无量纲 |
-| flight 能耗 WAPE | 2.3879 | 1.1391 | % |
+
+| 指标             |     TCN | TCN + 秒级能量 RLS | 单位   |
+| ---------------- | ------: | -----------------: | ------ |
+| 样本功率 MAE     | 33.3710 |            31.6002 | W      |
+| 样本功率 RMSE    | 50.6321 |            49.1276 | W      |
+| 样本功率 R2      |  0.9492 |             0.9522 | 无量纲 |
+| 样本功率 WAPE    |  8.2143 |             7.7784 | %      |
+| flight 能耗 MAE  |  0.5225 |             0.2492 | Wh     |
+| flight 能耗 RMSE |  0.7106 |             0.3423 | Wh     |
+| flight 能耗 R2   |  0.9771 |             0.9947 | 无量纲 |
+| flight 能耗 WAPE |  2.3879 |             1.1391 | %      |
 
 RLS 后 flight 能耗 MAE 从 `0.5225 Wh` 降至 `0.2492 Wh`，WAPE 从 `2.3879%` 降至 `1.1391%`；样本功率 WAPE 从 `8.2143%` 降至 `7.7784%`。测试集包含 36106 条记录和 28 个 flight。95% 功率预测区间覆盖率为 `94.3084%`，平均宽度为 `169.9646 W`；flight 能耗区间覆盖率为 `100%`，平均宽度为 `9.1514 Wh`。RLS 的主要作用仍是窗口级能量一致性校正，不保证每个采样点误差指标全部同步改善。
 
@@ -205,6 +214,22 @@ flight 23 的窗口曲线用于观察不同能量水平下的跟踪效果。TCN 
 
 flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功率图更适合检查能量守恒和窗口级反馈效果，最终累计能量则由这些窗口能量逐段累加得到。
 
+### 8.7 自定义展示航线
+
+本次在 `out/custom` 中生成一条固定的 R1 展示航线，编号为 `999001`，总时长 180 s，输出间隔 1 s。航线剖面由三个阶段组成：0～约 27 s 起飞，约 27～153 s 巡航，约 153～180 s 降落。输入条件为风速 4 m/s、风向 0°、巡航速度 8 m/s、载荷 250 g、飞行高度 50 m。
+
+![自定义展示航线功率](./figures/custom/custom_power_timeseries.png)
+
+图中展示该航线的逐采样点功率预测和 95% 预测区间。蓝色曲线是经过 checkpoint 中 RLS 仿射参数校正后的预测功率，阴影是功率区间。起飞和降落阶段的垂直速度变化会改变实际速度、相对空速和热负载代理量，因此预测功率随航线阶段发生变化。
+
+![自定义展示航线累计能耗](./figures/custom/custom_cumulative_energy.png)
+
+图中展示逐点预测功率按 `dt_seconds` 积分后的累计能耗及 95% 区间。本次共 181 个采样点，平均预测功率为 `506.1544 W`，最大预测功率为 `577.6692 W`，累计预测能耗为 `25.4483 Wh`，95% 区间为 `20.8112～30.0854 Wh`。
+
+自定义航线的处理顺序与真实测试一致：先根据工况生成 22 维输入特征；TCN 输出逐采样点功率；再使用固定的 RLS 参数进行功率校正；最后按每个采样点的 `dt_seconds` 计算预测能量并累加。该航线没有真实电压、电流和真实功率，所以不能计算 MAE、RMSE、R2 或 WAPE，结果只用于模型推演、接口测试和算法展示，不替代真实飞行测试。
+
+自定义产物如下：`custom_scenarios_3.0.csv` 保存航线输入，`custom_predictions_3.0.csv` 保存 TCN/RLS 预测和能量字段，`custom_prediction_summary_3.0.json` 保存摘要指标；对应图片位于 `figures/custom/`。
+
 ## 9. 输出文件
 
 - `out/model/tuning_results_3.0.csv`：10 个 TCN 窗口的 80 轮训练结果和能量选择指标。
@@ -220,6 +245,11 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 - `out/figures/prediction/second_energy_residual_histogram.png`：每秒能量残差直方图。
 - `out/figures/results/flight_energy_actual_vs_predicted.png`：flight 总能量对比图。
 - `out/figures/results/flight_energy_error.png`：flight 总能量误差图。
+- `out/custom/custom_scenarios_3.0.csv`：固定参数生成的 R1 自定义展示航线输入。
+- `out/custom/custom_predictions_3.0.csv`：自定义航线的 TCN 功率、RLS 校正功率、预测能量和累计能量。
+- `out/custom/custom_prediction_summary_3.0.json`：自定义航线预测摘要和置信区间。
+- `out/figures/custom/custom_power_timeseries.png`：自定义航线功率及预测区间。
+- `out/figures/custom/custom_cumulative_energy.png`：自定义航线累计能耗及预测区间。
 
 ## 10. 文件调用关系
 
@@ -233,17 +263,16 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 
 ## 12. 变量解释
 
-| 变量 | 含义 | 单位 |
-|---|---|---|
-| $P_{f,i}^{true}$ | flight $f$ 的第 $i$ 个样本真实功率 | W |
-| $\Delta t_{f,i}$ | 该样本对应的不规则采样间隔 | s |
-| $E_{f,k}^{true}$ | flight $f$ 第 $k$ 个完整 1 秒窗口真实能量 | Wh |
-| $E_{f,k}^{TCN}$ | TCN 逐点功率积分得到的窗口能量 | Wh |
-| $E_{f,k}^{RLS}$ | RLS 校正功率积分得到的窗口能量 | Wh |
-| $\theta_{0,f,k}$ | 当前窗口使用的功率偏置参数 | W |
-| $\theta_{1,f,k}$ | 当前窗口使用的功率缩放参数 | 无量纲 |
-| $\lambda$ | RLS 遗忘因子，本次为 0.97 | 无量纲 |
-| $\mathbf P_{f,k}$ | 当前 flight 的 RLS 协方差矩阵 | 参数协方差 |
-| $T_w$ | TCN 输入时间窗，本次最优为 2 s | s |
 
-变量使用 GitHub 可渲染的 $...$ 数学格式，独立公式使用 $$...$$，不再把数学表达式放在代码反引号中。
+| 变量              | 含义                                     | 单位       |
+| ----------------- | ---------------------------------------- | ---------- |
+| $P_{f,i}^{true}$  | flight$f$ 的第 $i$ 个样本真实功率        | W          |
+| $\Delta t_{f,i}$  | 该样本对应的不规则采样间隔               | s          |
+| $E_{f,k}^{true}$  | flight$f$ 第 $k$ 个完整 1 秒窗口真实能量 | Wh         |
+| $E_{f,k}^{TCN}$   | TCN 逐点功率积分得到的窗口能量           | Wh         |
+| $E_{f,k}^{RLS}$   | RLS 校正功率积分得到的窗口能量           | Wh         |
+| $\theta_{0,f,k}$  | 当前窗口使用的功率偏置参数               | W          |
+| $\theta_{1,f,k}$  | 当前窗口使用的功率缩放参数               | 无量纲     |
+| $\lambda$         | RLS 遗忘因子，本次为 0.97                | 无量纲     |
+| $\mathbf P_{f,k}$ | 当前 flight 的 RLS 协方差矩阵            | 参数协方差 |
+| $T_w$             | TCN 输入时间窗，本次最优为 2 s           | s          |
