@@ -61,3 +61,13 @@ output/
 *.7z
 *.tar
 *.gz
+
+# 纳入实验3.0的全部输出产物；大CSV和NPZ由Git LFS管理
+!3.0/out/
+!3.0/out/**/
+!3.0/out/**/*
+
+# 训练、验证和测试数据仅保留本地，不纳入版本管理
+3.0/out/data/processed_3.0/train.csv
+3.0/out/data/processed_3.0/val.csv
+3.0/out/data/processed_3.0/test.csv

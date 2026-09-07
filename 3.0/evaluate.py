@@ -154,7 +154,7 @@ def evaluation_field_descriptions() -> dict[str, str]:
         "best_rls_candidate": "验证集阶段二选择的RLS参数候选名称。",
         "best_rls_forgetting_factor": "最终固定使用的RLS遗忘因子。",
         "best_rls_initial_covariance": "最终固定使用的RLS初始协方差。",
-        "best_rls_warmup_windows": "最终固定使用的RLS预热完整秒窗口数量。",
+        "best_rls_warmup_windows": "兼容旧字段，当前版本固定为0个完整秒窗口，不参与RLS候选搜索。",
         "best_rls_selection_score": "阶段二汇总所有验证flight后的RLS选择价值函数。",
         "tcn_candidate_count": "TCN时间窗候选数量。",
         "rls_candidate_count": "RLS参数组合候选数量。",

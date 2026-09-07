@@ -1,0 +1,14 @@
+{
+  "version": "3.0",
+  "window_count": 5442,
+  "flight_count": 28,
+  "state_switch_count": 63,
+  "bias_mean": 0.02106799095792063,
+  "bias_std": 0.203277473210522,
+  "bias_min": -1.0,
+  "bias_max": 1.0,
+  "scale_mean": 0.9555385617982683,
+  "scale_std": 0.20592171741829424,
+  "scale_min": 0.0,
+  "scale_max": 2.0
+}

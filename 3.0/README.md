@@ -290,3 +290,141 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 | $T_w$ | TCN 输入时间窗，本次最优为 2 s | s |
 
 变量使用 GitHub 可渲染的 $...$ 数学格式，独立公式使用 $$...$$，不再把数学表达式放在代码反引号中。
+
+---
+
+## 13. 2026-09-07 全流程更新补充（最新结果）
+
+本节为本次完整流程产生的新记录，追加在原 README 之后。前文中的参数、图表和指标属于历史运行记录，继续保留用于追溯；下面的“最新全流程结果”以当前 `out/model`、`out/rls`、`out/predictions` 和 `out/figures` 中的文件为准。
+
+### 13.1 直接运行入口与阶段顺序
+
+在 `3.0` 目录直接执行：
+
+```bash
+python main.py
+```
+
+默认模式为 `all`，按以下顺序执行，不会跳过 `tune-tcn`：
+
+```text
+prepare -> tune-tcn -> train-fixed -> tune-rls -> calibrate -> evaluate -> visualize
+```
+
+其中，`tune-tcn` 会训练并比较全部 TCN 时间窗候选，同时在终端显示候选编号、当前候选的逐 epoch 训练进度、验证集推理和每个候选的测试结果；`train-fixed` 读取已经选出的 TCN 窗口，只进行正式训练，不重复搜索 TCN；`tune-rls` 固定正式 TCN 的预测，只搜索 RLS 参数；后续阶段负责区间校准、测试评估和图表生成。也可以单独执行 `python main.py tune-tcn`、`python main.py train-fixed` 或 `python main.py tune-rls`。
+
+终端显示阶段耗时、训练 epoch、当前损失、学习率、候选进度和 ETA。CSV/JSON 日志只保存 epoch 结果、候选汇总、最优参数和阶段摘要，不把动态进度条写入结果文件；完整终端记录另存为 `out/logs/terminal_3.0.log`。
+
+### 13.2 最新超参数选择方式
+
+数据按完整 flight 划分为训练集、验证集和测试集，测试集在全部参数固定后才使用。当前测试集有 45237 条采样记录、28 个 flight；TCN 和 RLS 的选择均只依据验证集。
+
+TCN 阶段固定通道 `[64,64,64,32]`、卷积核 3、Dropout 0.08、学习率 `3e-4`、权重衰减 `1e-4` 和 Huber 参数 0.65，搜索 10 个时间窗：`0.25、0.5、1、2、4、6、8、10、12、16 s`。每组候选训练 80 轮，不使用调参早停，然后将验证集逐点功率、完整秒能量和 flight 总能量统一计算为：
+
+$$
+S_{TCN}=WAPE_{second}+0.2WAPE_{sample}+0.5WAPE_{flight}
+$$
+
+选择分数越小越好。最新最优候选是 `12 s / 100 步`，验证集采样点功率 WAPE 为 `6.4503%`，秒级能量 WAPE 为 `4.8466%`，flight 能量 WAPE 为 `1.7613%`，综合分数为 `7.017347`。候选完整记录见 `out/model/tuning_results_3.0.csv`。
+
+RLS 阶段复用固定 TCN 在验证集上的逐点预测，不重新训练 TCN。当前只搜索遗忘因子 `0.86、0.88、0.90、0.91、0.92、0.94、0.96` 与初始协方差 `0.01、0.025、0.05、0.1、0.25、0.5、1.0`，共 `7 × 7 = 49` 组；`warmup_windows` 已从候选参数中删除，所有候选均固定为 `0`，窗口结束后立即用该窗口真实能量更新，更新后的参数只用于下一窗口。最新最优组合为 `forgetting_factor=0.90`、`initial_covariance=0.25`、`warmup=0`，验证选择分数为 `6.481503`。完整记录见 `out/rls/rls_tuning_results_3.0.csv`。
+
+### 13.3 数据流与算法边界
+
+原始记录先按 flight 重采样到约 `0.12 s` 网格，计算相邻时间差 `dt_seconds`、电压电流得到的真实功率，以及每个完整 1 秒窗口的真实能量。TCN 输入是 22 维工况特征加 `dt_seconds` 的 23 维序列；真实秒级能量只作为训练监督和 RLS 反馈，不作为当前窗口的前向输入。
+
+TCN 先输出每个采样点的功率 $\hat{P}_{f,i}^{TCN}$。对窗口 $k$ 积分得到能量：
+
+$$
+E_{f,k} = \sum_{i\in k} P_{f,i}\frac{\Delta t_{f,i}}{3600}
+$$
+
+窗口内，RLS 使用窗口开始前的参数对每个 TCN 功率进行仿射校正：
+
+$$
+\hat{P}_{f,i}^{RLS}=\theta_{0,f,k}+\theta_{1,f,k}\hat{P}_{f,i}^{TCN}
+$$
+
+窗口结束后才得到真实能量 $E_{f,k}^{true}$，程序据此更新 RLS；因此当前窗口不使用当前窗口标签，更新后的 $\theta_{f,k+1}$ 只传给下一个窗口。每个 flight 独立初始化并在状态切换时恢复中性校正，避免一个 flight 的参数泄漏到另一个 flight。
+
+其中：
+
+$f$：flight 编号；$k$：完整 1 秒窗口编号；$i$：窗口内采样点编号。
+
+$P_{f,i}$：采样点功率，单位 W；$\hat{P}_{f,i}^{TCN}$ 和 $\hat{P}_{f,i}^{RLS}$：TCN 原始功率和 RLS 校正功率，单位 W。
+
+$\Delta t_{f,i}$：采样间隔，单位 s；$E_{f,k}$：窗口能量，单位 Wh；$\theta_0$：偏置，单位 W；$\theta_1$：无量纲缩放系数。
+
+### 13.4 最新正式训练与测试结果
+
+`train-fixed` 使用 `12 s / 100 步` 正式训练，最多 80 轮，在第 50 轮早停；第 40 轮验证联合损失最低，为 `0.017336`，保存该轮最佳权重。该阶段没有再次遍历 TCN 候选。测试阶段固定 RLS 为 `0.90 / 0.25 / warmup=0`。
+
+| 指标 | 纯 TCN | TCN + RLS | 单位 |
+|---|---:|---:|---|
+| 样本功率 MAE | 31.7382 | 27.9911 | W |
+| 样本功率 RMSE | 46.7863 | 43.4546 | W |
+| 样本功率 R2 | 0.9563 | 0.9623 | 无量纲 |
+| 样本功率 WAPE | 7.8114 | 6.8892 | % |
+| flight 能耗 MAE | 0.5968 | 0.0640 | Wh |
+| flight 能耗 RMSE | 0.8423 | 0.0890 | Wh |
+| flight 能耗 R2 | 0.9679 | 0.9996 | 无量纲 |
+| flight 能耗 WAPE | 2.7277 | 0.2923 | % |
+
+RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；flight 能耗 WAPE 下降 `2.4354` 个百分点，相对下降 `89.28%`。测试集真实总能量为 `612.6634 Wh`，纯 TCN 预测总能量为 `626.2884 Wh`，RLS 预测总能量为 `613.8128 Wh`。这说明秒级反馈主要消除了累计能量偏差，不能据此认为所有瞬态功率误差都已消失。
+
+### 13.5 最新图表与数据分析
+
+![最新 TCN 候选验证结果](./out/figures/training/candidate_validation_wape.png)
+
+上图按验证集选择分数比较 10 个时间窗。12 s 候选最低；6 s 分数为 `7.132358`，16 s 为 `7.175536`。候选并不随时间窗单调改善，说明历史信息长度和训练误差之间存在折中。
+
+![最新超参数排序](./out/figures/training/hyperparameter_ranking.png)
+
+![修复后的学习率曲线](./out/figures/training/learning_rate_schedule.png)
+
+学习率图现在只读取 `final_tcn` 的正式训练记录，不再把 10 个候选的 epoch 混在同一条曲线中。图像尺寸为 `1620×720`，正式训练从 `3e-4` 衰减到 `1.875e-5`；这保证横轴 epoch 与 12 s 正式模型一一对应。
+
+![最新总体评估指标](./out/figures/results/evaluation_metrics.png)
+
+![最新功率分箱误差](./out/figures/results/power_bin_mae.png)
+
+测试功率主要集中在 `450--600 W`，共 22870 条，RLS MAE 为 `27.5046 W`、WAPE 为 `5.3152%`。`300--450 W` 区间 MAE 为 `39.4472 W`，`600 W` 以上为 `43.0195 W`；`50--300 W` 仅 859 条但 MAE 达 `96.9980 W`，通常对应起降或状态变化。`0--50 W` 的 MAE 只有 `5.6193 W`，但真实均值仅 `1.7965 W`，WAPE 被小分母放大到 `312.7965%`，该段应优先看绝对误差。
+
+![最新功率预测散点](./out/figures/prediction/power_prediction_scatter.png)
+
+![最新功率残差分布](./out/figures/prediction/power_residual_histogram.png)
+
+散点主体集中在 `450--600 W`，全测试集 $R^2=0.9623$。残差主体靠近 0，但 RMSE 高于 MAE，说明少量快速变化和状态切换样本仍形成较大误差尾部；RLS 使用完整秒窗口反馈，不能提前修正当前窗口内部的瞬态。
+
+![最新 flight 能耗对比](./out/figures/results/flight_energy_actual_vs_predicted.png)
+
+![最新 flight 能耗误差](./out/figures/results/flight_energy_error.png)
+
+28 个 flight 的能耗结果中，最大相对误差为 flight 87 的 `0.9005%`，其次为 flight 194 的 `0.8735%` 和 flight 135 的 `0.8616%`；最小为 flight 113 的 `0.0278%`。flight 级 $R^2=0.9996$，但区间仍应保留，因为不同 flight 的起降、负载和功率跃迁并不相同。
+
+![最新每秒能量散点](./out/figures/prediction/second_energy_prediction_scatter.png)
+
+![最新每秒能量残差](./out/figures/prediction/second_energy_residual_histogram.png)
+
+测试集共有 5442 个完整秒窗口。秒级能量残差均值为 `0.000211 Wh`，平均绝对残差为 `0.005805 Wh`，第 5% 和第 95% 分位为 `-0.013975 Wh` 与 `0.013677 Wh`。残差尾部主要出现在起飞、降落和状态切换窗口，符合“窗口结束后才更新”的在线时序约束。
+
+![最新 RLS 参数轨迹](./out/rls/flight_18_rls_parameter_trace.png)
+
+全部测试 flight 的 RLS 轨迹共有 5442 个窗口、63 次状态切换。偏置均值/标准差为 `0.02107 / 0.20328`，缩放均值/标准差为 `0.95554 / 0.20592`；偏置限制在 `[-1,1]`，缩放限制在 `[0,2]`。参数触及边界的窗口提示强瞬态和低能量窗口仍是在线校正的主要风险点。
+
+![最新自定义工况功率](./out/figures/custom/custom_power_timeseries.png)
+
+![最新自定义工况累计能耗](./out/figures/custom/custom_cumulative_energy.png)
+
+自定义 R1 工况为 180 s、1 s 输出间隔、风速 4 m/s、巡航速度 8 m/s、载荷 250 g、高度 50 m。181 个采样点的平均预测功率为 `506.1544 W`，最大功率为 `577.6692 W`，累计预测能耗为 `25.4483 Wh`，95% 区间为 `20.8112--30.0854 Wh`。该工况没有真实功率标签，因此只用于展示预测曲线和累计能耗，不能计算误差或替代测试集结论。
+
+### 13.6 最新产物索引
+
+- `out/model/tuning_results_3.0.csv`：10 个 TCN 候选的窗口、步数、验证指标和选择分数。
+- `out/model/training_log_3.0.csv`：TCN 候选 epoch 结果及正式训练 epoch 结果；动态进度条不写入该文件。
+- `out/rls/rls_tuning_results_3.0.csv`：49 个 RLS 候选，`warmup_windows` 全部为 0。
+- `out/model/evaluation_3.0.json/csv`：最新测试指标、最优参数和候选数量。
+- `out/model/flight_energy_summary_3.0.csv`、`power_bin_evaluation_3.0.csv`、`second_energy_evaluation_3.0.csv`：flight、功率分箱和秒级能量明细。
+- `out/predictions/test_predictions_3.0.csv`：逐点功率、秒级能量、累计能量和预测区间。
+- `out/rls/rls_parameter_trace_3.0.csv`、`rls_parameter_statistics_3.0.csv`、`rls/rls_parameter_summary_3.0.json`：RLS 在线参数轨迹和统计摘要。
+- `out/figures/training/learning_rate_schedule.png`：只对应正式 TCN 训练的学习率图；其余图表按目录分别对应训练、预测、评估、RLS 和自定义工况。

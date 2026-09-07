@@ -86,14 +86,17 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
         log_frame = pd.read_csv(cfg.training_log_csv)
         # 阶段一和最终训练的epoch都会从1开始，学习率图只展示最终训练序列。
         if "phase" in log_frame.columns:
-            log_frame = log_frame[log_frame["phase"] == "final_tcn"].copy()
+            final_frame = log_frame[log_frame["phase"].isin(["final_tcn", "train-fixed"])].copy()
+            if not final_frame.empty:
+                log_frame = final_frame
         log_frame = log_frame.sort_values("epoch")
-        plt.figure(figsize=(9, 4))
-        plt.plot(log_frame["epoch"], log_frame["learning_rate"], color="#2f6fbb", linewidth=2)
-        plt.xlabel("Epoch")
-        plt.ylabel("Learning rate")
-        plt.title("Learning Rate Schedule")
-        outputs.append(save_figure(cfg.training_vis_dir / "learning_rate_schedule.png"))
+        if not log_frame.empty and {"epoch", "learning_rate"}.issubset(log_frame.columns):
+            plt.figure(figsize=(9, 4))
+            plt.plot(log_frame["epoch"], log_frame["learning_rate"], color="#2f6fbb", linewidth=2, marker=".")
+            plt.xlabel("Epoch")
+            plt.ylabel("Learning rate")
+            plt.title("Learning Rate Schedule")
+            outputs.append(save_figure(cfg.training_vis_dir / "learning_rate_schedule.png"))
 
     if cfg.tuning_results_csv.exists():
         tuning = pd.read_csv(cfg.tuning_results_csv)
@@ -464,7 +467,7 @@ def predict_custom_scenario(
     progress.update(3, f"已构造 {len(sequences)} 条输入序列")
     tcn_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
     progress.update(4, "TCN前向推理完成")
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "warmup_windows": checkpoint.get("rls_warmup_windows", checkpoint.get("rls_warmup_seconds", 0))}
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance)}
     corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正", rls_params=rls_params)
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power

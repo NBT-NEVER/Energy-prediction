@@ -7,14 +7,16 @@
 # 版本号：3.0
 
 import argparse
+import time
+from datetime import datetime
 from pathlib import Path
 
 from config import build_config, ensure_directories  # 构建实验配置并创建路径目录
 from data_utils import download_source_dataset, extract_source_zip, prepare_dataset  # 下载、解包和切分数据
 from evaluate import evaluate_model  # 生成模型评估指标
 from predict import calibrate_uncertainty, predict_from_csv, recalculate_prediction_intervals  # 执行预测和置信区间处理
-from train import train_fixed_tcn, train_model  # 执行固定超参数训练和调参
-from terminal_logger import TerminalLogCapture  # 同步记录终端标准输出和异常信息
+from train import train_fixed_tcn, train_model, tune_rls_only  # 执行固定超参数训练、TCN调参和RLS调参
+from terminal_logger import TerminalLogCapture, log_result  # 保留终端过程并记录阶段结果
 from visualize import generate_all_visualizations, predict_custom_scenario  # 生成图表并预测自定义工况
 
 
@@ -31,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default="all",
         choices=["download", "prepare", "tune-tcn", "train", "train-fixed", "tune-rls", "test", "calibrate", "predict", "interval", "evaluate", "visualize", "custom", "all"],
-        help="运行模式，all会依次完成数据处理、训练、评估和可视化。",
+        help="运行模式，all会依次完成数据准备、TCN调参、固定训练、RLS调参、校准、评估和可视化。",
     )
     parser.add_argument("--data-dir", type=Path, default=None, help="覆盖原始数据目录。")
     parser.add_argument("--save-dir", type=Path, default=None, help="覆盖模型权重保存目录。")
@@ -74,6 +76,25 @@ def print_dict(title: str, payload: dict) -> None:
     print(f"\n[{title}]")
     for key, value in payload.items():
         print(f"{key}: {value}")
+    log_result(title, payload)
+
+
+def run_timed_stage(label: str, action):
+    """功能: 执行一个阶段并在终端显示起止时间和耗时。
+    参数: label为阶段名称，action为无参数阶段函数。
+    返回: action的返回值。
+    调用位置: run_mode的all流程及独立训练流程。
+    """
+
+    started = time.perf_counter()
+    started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    print(f"\n>>> {label} 开始: {started_at}")
+    result = action()
+    elapsed = time.perf_counter() - started
+    finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    print(f">>> {label} 完成: {finished_at} | 耗时 {elapsed:.2f}s")
+    log_result(label, {"started_at": started_at, "finished_at": finished_at, "elapsed_seconds": round(elapsed, 3), "status": "完成"})
+    return result
 
 
 def print_process_intro(mode: str) -> None:
@@ -97,14 +118,14 @@ def print_process_intro(mode: str) -> None:
         "evaluate": "生成测试集预测，统计逐点功率和整次飞行能耗误差。",
         "visualize": "读取训练和评估输出，生成损失、误差及预测曲线。",
         "custom": "构造或读取自定义工况，预测功率与累计能耗。",
-        "all": "依次执行数据准备、模型训练、测试评估和结果可视化。",
+        "all": "依次执行数据准备、TCN调参、固定参数训练、RLS调参、校准、测试评估和结果可视化。",
     }
     print("\n" + "=" * 72)
     print("四轴无人机飞行能耗预测实验 3.0：TCN + 秒级能量监督RLS")
     print(f"当前模式: {mode}")
     print(f"运行内容: {descriptions[mode]}")
     if mode == "all":
-        print("执行顺序: 数据准备 -> 调参与最终训练 -> 测试评估 -> 图表生成")
+        print("执行顺序: prepare -> tune-tcn -> train-fixed -> tune-rls -> calibrate -> evaluate -> visualize")
     print("=" * 72)
 
 
@@ -121,7 +142,7 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}，默认置信度={cfg.default_confidence:.1%}"
     )
     print(f"TCN时间窗候选: {list(cfg.window_seconds_candidates)}")
-    print(f"RLS候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，预热完整窗口数={list(cfg.rls_warmup_windows)}")
+    print(f"RLS候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，窗口结束后立即更新（warmup=0）")
 
     if args.mode == "download":
         print("\n[下载数据] 检查公开数据仓库和原始压缩包。")
@@ -134,7 +155,7 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         print_dict("prepare", summary)
     elif args.mode == "tune-tcn":
         print("\n[TCN超参数] 仅比较当前TCN时间窗候选。")
-        summary = train_model(cfg, stop_after_tcn=True)
+        summary = run_timed_stage("tune-tcn：TCN时间窗搜索", lambda: train_model(cfg, stop_after_tcn=True))
         print_dict("tune-tcn", summary)
     elif args.mode == "train":
         print("\n[模型训练] 调参后训练并保存最优网络。")
@@ -142,12 +163,11 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         print_dict("train", summary)
     elif args.mode == "train-fixed":
         print("\n[固定参数训练] 使用当前选定TCN参数正式训练，不重复搜索超参数。")
-        summary = train_fixed_tcn(cfg)
+        summary = run_timed_stage("train-fixed：固定TCN参数正式训练", lambda: train_fixed_tcn(cfg))
         print_dict("train-fixed", summary)
     elif args.mode == "tune-rls":
         print("\n[RLS超参数] 加载训练好的TCN，仅搜索RLS候选。")
-        from train import tune_rls_only
-        summary = tune_rls_only(cfg)
+        summary = run_timed_stage("tune-rls：RLS参数搜索", lambda: tune_rls_only(cfg))
         print_dict("tune-rls", summary)
     elif args.mode == "test":
         print("\n[独立测试] 加载当前TCN和RLS参数，生成测试指标与图表。")
@@ -192,16 +212,25 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         )
         print_dict("custom", summary)
     elif args.mode == "all":
-        print("\n[1/4 数据准备] 清洗记录、构造特征并划分数据集。")
-        data_summary = prepare_dataset(cfg, force=args.force_prepare)
-        print("\n[2/4 模型训练] 调参后训练并保存最优网络。")
-        train_summary = train_model(cfg)
-        print("\n[3/4 测试评估] 生成测试预测并计算误差指标。")
-        metrics = evaluate_model(cfg)
-        print("\n[4/4 结果可视化] 生成训练、评估和预测图表。")
-        visual_summary = generate_all_visualizations(cfg)
+        print("\n[1/7 prepare] 清洗记录、构造特征并划分数据集。")
+        data_summary = run_timed_stage("prepare：数据准备", lambda: prepare_dataset(cfg, force=args.force_prepare))
+        print("\n[2/7 tune-tcn] 搜索TCN时间窗，并测试每个候选窗口。")
+        tune_summary = run_timed_stage("tune-tcn：TCN时间窗搜索", lambda: train_model(cfg, stop_after_tcn=True))
+        print("\n[3/7 train-fixed] 使用已选TCN参数正式训练，不重复搜索。")
+        fixed_summary = run_timed_stage("train-fixed：固定TCN参数正式训练", lambda: train_fixed_tcn(cfg))
+        print("\n[4/7 tune-rls] 固定正式TCN模型，搜索RLS参数。")
+        rls_summary = run_timed_stage("tune-rls：RLS参数搜索", lambda: tune_rls_only(cfg))
+        print("\n[5/7 calibrate] 生成预测区间校准结果。")
+        calibration_summary = run_timed_stage("calibrate：置信区间校准", lambda: calibrate_uncertainty(cfg))
+        print("\n[6/7 evaluate] 生成测试预测并计算误差指标。")
+        metrics = run_timed_stage("evaluate：测试集评估", lambda: evaluate_model(cfg))
+        print("\n[7/7 visualize] 生成训练、评估和预测图表。")
+        visual_summary = run_timed_stage("visualize：结果可视化", lambda: generate_all_visualizations(cfg))
         print_dict("prepare", data_summary)
-        print_dict("train", train_summary)
+        print_dict("tune-tcn", tune_summary)
+        print_dict("train-fixed", fixed_summary)
+        print_dict("tune-rls", rls_summary)
+        print_dict("calibrate", calibration_summary)
         print_dict("evaluate", metrics)
         print_dict("visualize", visual_summary)
 

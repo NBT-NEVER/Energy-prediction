@@ -1,0 +1,13 @@
+{
+  "custom_prediction_csv": "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\custom\\custom_predictions_3.0.csv",
+  "custom_power_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\custom\\custom_power_timeseries.png",
+  "custom_energy_chart": "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\custom\\custom_cumulative_energy.png",
+  "rows": 181,
+  "mean_predicted_power_w": 506.1543884277344,
+  "max_predicted_power_w": 577.669189453125,
+  "total_predicted_energy_wh": 25.44831698099772,
+  "confidence_level": 0.95,
+  "power_interval_radius_w": 92.22918701171875,
+  "total_predicted_energy_lower_wh": 20.81123841179742,
+  "total_predicted_energy_upper_wh": 30.085395550198022
+}

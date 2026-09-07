@@ -99,10 +99,9 @@ DEFAULT_WINDOW_SECONDS = 1.5
 DEFAULT_CONFIDENCE = 0.95
 # TCN残差块通道；4个块对应更深的时间特征提取网络
 TCN_CHANNELS = (64, 64, 64, 32)
-# RLS预选范围围绕上一轮最优值0.91、0.1、0窗口展开；预热以完整秒窗口计数。
+# RLS候选范围只搜索遗忘因子和初始协方差；warmup固定为0个完整秒窗口。
 RLS_FORGETTING_FACTORS = (0.86, 0.88, 0.90, 0.91, 0.92, 0.94, 0.96)
 RLS_INITIAL_COVARIANCES = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
-RLS_WARMUP_WINDOWS = (0, 1, 2, 3)
 RLS_FORGETTING_FACTOR = 0.97
 RLS_INITIAL_COVARIANCE = 10.0
 FLIGHT_STATE_THRESHOLD_W = 50.0
@@ -191,7 +190,6 @@ class ExperimentConfig:
     rls_initial_covariance: float = RLS_INITIAL_COVARIANCE
     rls_forgetting_factors: tuple[float, ...] = RLS_FORGETTING_FACTORS
     rls_initial_covariances: tuple[float, ...] = RLS_INITIAL_COVARIANCES
-    rls_warmup_windows: tuple[int, ...] = RLS_WARMUP_WINDOWS
     flight_state_threshold_w: float = FLIGHT_STATE_THRESHOLD_W
     resampled_interval_seconds: float = RESAMPLED_INTERVAL_SECONDS
     custom_prediction_summary_json: Path = CUSTOM_PREDICTION_SUMMARY_JSON
