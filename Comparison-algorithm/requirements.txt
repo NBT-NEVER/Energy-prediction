@@ -1,0 +1,12 @@
+# _*_coding:UTF-8_*_
+# 开发者: NBT
+# 文件名: requirements.txt
+# 开发时间: 2026-09-09
+# 文件名: requirements.txt
+# 功能说明: 列出对比算法实验运行所需的 Python 依赖
+# 版本号：Comparison-algorithm
+
+numpy
+pandas
+matplotlib
+torch
