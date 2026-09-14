@@ -13,6 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.ticker import ScalarFormatter
 
@@ -172,7 +173,7 @@ def _load_aligned_flights(cfg: ExperimentConfig) -> tuple[dict[str, pd.DataFrame
 
 
 def _save_static_plots(frame: pd.DataFrame, route_dir: Path, route: str, flight_id: int) -> list[str]:
-    """功能: 保存代表flight的功率和累计能量静态图。
+    """功能: 保存代表flight的SVG功率和累计能量图及交互三维轨迹。
     参数: frame为对齐数据，route_dir为输出目录，route和flight_id为标识。
     返回: 产物路径列表。
     调用位置: generate_route_products。
@@ -197,34 +198,67 @@ def _save_static_plots(frame: pd.DataFrame, route_dir: Path, route: str, flight_
         bbox={"facecolor": "white", "alpha": 0.8},
     )
     fig.tight_layout()
-    path = route_dir / f"flight_{flight_id}_power_energy.png"
-    fig.savefig(path, dpi=180)
+    path = route_dir / f"flight_{flight_id}_power_energy.svg"
+    fig.savefig(path)
     plt.close(fig)
-    trajectory_fig = plt.figure(figsize=(8, 6))
-    trajectory_axis = trajectory_fig.add_subplot(1, 1, 1, projection="3d")
+
     x_plot, y_plot, z_plot = _plot_coordinates(frame)
-    trajectory_axis.plot(
-        x_plot, y_plot, z_plot,
-        color="#4c78a8", lw=1.4, label="IMU轨迹",
+    custom_data = np.column_stack(
+        [frame["time"], frame["actual_speed_mps"], frame["wind_speed"], frame["wind_angle"]]
     )
-    trajectory_axis.scatter(
-        x_plot.iloc[0], y_plot.iloc[0], z_plot.iloc[0],
-        color="#e45756", s=24, label="起点",
+    trajectory_fig = go.Figure()
+    trajectory_fig.add_trace(
+        go.Scatter3d(
+            x=x_plot,
+            y=y_plot,
+            z=z_plot,
+            mode="lines",
+            name="IMU轨迹",
+            line={"color": "#4c78a8", "width": 5},
+            customdata=custom_data,
+            hovertemplate=(
+                "X %{x:.2f} m<br>Y %{y:.2f} m<br>Z %{z:.2f} m<br>"
+                "时间 %{customdata[0]:.1f} s<br>无人机速度 %{customdata[1]:.2f} m/s<br>"
+                "风速 %{customdata[2]:.2f} m/s<br>风向 %{customdata[3]:.1f}°<extra></extra>"
+            ),
+        )
+    )
+    trajectory_fig.add_trace(
+        go.Scatter3d(
+            x=[x_plot.iloc[0]], y=[y_plot.iloc[0]], z=[z_plot.iloc[0]],
+            mode="markers", name="起点", marker={"size": 6, "color": "#e45756"},
+        )
     )
     if len(frame) > 8:
         idx = min(8, len(frame) - 1)
-        trajectory_axis.quiver(x_plot.iloc[0], y_plot.iloc[0], z_plot.iloc[0], x_plot.iloc[idx], y_plot.iloc[idx], z_plot.iloc[idx], color="#e45756", arrow_length_ratio=0.15, linewidth=1.4)
-    trajectory_axis.set_xlabel("X (m)")
-    trajectory_axis.set_ylabel("Y (m)")
-    trajectory_axis.set_zlabel("Z (m)")
-    trajectory_axis.set_title(f"航线 {route} / flight {flight_id} 局部米制3D轨迹")
-    trajectory_axis.legend(loc="upper right")
-    _format_meter_axis(trajectory_axis)
-    trajectory_axis.text2D(0.02, 0.98, _wind_annotation(frame), transform=trajectory_axis.transAxes, va="top", bbox={"facecolor": "white", "alpha": 0.8})
-    trajectory_path = route_dir / f"flight_{flight_id}_imu_trajectory.png"
-    trajectory_fig.tight_layout()
-    trajectory_fig.savefig(trajectory_path, dpi=180)
-    plt.close(trajectory_fig)
+        trajectory_fig.add_trace(
+            go.Cone(
+                x=[x_plot.iloc[0]], y=[y_plot.iloc[0]], z=[z_plot.iloc[0]],
+                u=[x_plot.iloc[idx]], v=[y_plot.iloc[idx]], w=[z_plot.iloc[idx]],
+                sizemode="absolute", sizeref=max(float(np.linalg.norm([x_plot.iloc[idx], y_plot.iloc[idx], z_plot.iloc[idx]])) * 0.25, 0.5),
+                anchor="tail", colorscale=[[0, "#e45756"], [1, "#e45756"]],
+                showscale=False, name="飞行方向", hoverinfo="name",
+            )
+        )
+    trajectory_fig.update_layout(
+        title=f"航线 {route} / flight {flight_id} 交互式3D轨迹",
+        font={"family": "Microsoft YaHei, SimHei, sans-serif", "size": 14},
+        margin={"l": 0, "r": 0, "t": 55, "b": 0},
+        legend={"x": 0.82, "y": 0.98},
+        annotations=[{
+            "text": _wind_annotation(frame).replace("\n", "<br>"),
+            "x": 0.02, "y": 0.98, "xref": "paper", "yref": "paper",
+            "showarrow": False, "align": "left", "bgcolor": "rgba(255,255,255,0.85)",
+        }],
+        scene={
+            "xaxis": {"title": "X (m)", "showgrid": True, "gridcolor": "rgba(120,120,120,0.16)", "showspikes": False},
+            "yaxis": {"title": "Y (m)", "showgrid": True, "gridcolor": "rgba(120,120,120,0.16)", "showspikes": False},
+            "zaxis": {"title": "Z (m)", "showgrid": True, "gridcolor": "rgba(120,120,120,0.16)", "showspikes": False},
+            "aspectmode": "data",
+        },
+    )
+    trajectory_path = route_dir / f"flight_{flight_id}_imu_trajectory.html"
+    trajectory_fig.write_html(trajectory_path, include_plotlyjs=True, full_html=True, auto_open=False)
     return [str(path), str(trajectory_path)]
 
 
@@ -235,11 +269,11 @@ def _save_animation(frame: pd.DataFrame, route_dir: Path, route: str, flight_id:
     调用位置: generate_route_products。
     """
 
-    stride = max(1, len(frame) // 180)
-    sampled = frame.iloc[::stride].reset_index(drop=True)
+    frame_indices = np.linspace(0, len(frame) - 1, min(len(frame), 120), dtype=int)
+    sampled = frame.iloc[np.unique(frame_indices)].reset_index(drop=True)
     x_plot, y_plot, z_plot = _plot_coordinates(frame)
     sampled_x, sampled_y, sampled_z = _plot_coordinates(sampled)
-    fig = plt.figure(figsize=(13, 5))
+    fig = plt.figure(figsize=(16, 7), dpi=140)
     power_axis = fig.add_subplot(1, 2, 1)
     map_axis = fig.add_subplot(1, 2, 2, projection="3d")
     power_axis.plot(frame["time"], frame["power_w"], color="#d0d0d0", lw=0.8, label="实际功率")
@@ -260,9 +294,9 @@ def _save_animation(frame: pd.DataFrame, route_dir: Path, route: str, flight_id:
     map_axis.set_xlabel("X (m)")
     map_axis.set_ylabel("Y (m)")
     map_axis.set_zlabel("Z (m)")
-    map_axis.set_title("统一参考点下的3D IMU轨迹")
-    power_axis.legend(loc="upper right", fontsize=8)
-    map_axis.legend(loc="upper right", fontsize=8)
+    map_axis.set_title("3D IMU轨迹")
+    power_axis.legend(loc="upper right", fontsize=10)
+    map_axis.legend(loc="upper right", fontsize=10)
     _format_meter_axis(map_axis)
     fig.suptitle(f"航线 {route} / flight {flight_id} 三维轨迹与功率动态")
 
@@ -281,7 +315,7 @@ def _save_animation(frame: pd.DataFrame, route_dir: Path, route: str, flight_id:
 
     animation = FuncAnimation(fig, update, frames=len(sampled), interval=120, blit=False)
     path = route_dir / f"flight_{flight_id}_imu_trajectory.gif"
-    animation.save(path, writer=PillowWriter(fps=20))
+    animation.save(path, writer=PillowWriter(fps=8), dpi=140)
     plt.close(fig)
     return str(path)
 
@@ -335,8 +369,8 @@ def _save_all_routes_comparison(frames: dict[str, pd.DataFrame], output_dir: Pat
     energy_axis.grid(alpha=0.25)
     energy_axis.legend(fontsize=7, ncol=2)
     fig.tight_layout()
-    path = output_dir / "all_routes_trajectory_energy.png"
-    fig.savefig(path, dpi=180)
+    path = output_dir / "all_routes_trajectory_energy.svg"
+    fig.savefig(path)
     plt.close(fig)
     return path
 

@@ -40,7 +40,7 @@ def main() -> None:
     axis.grid(alpha=0.25)
     axis.legend()
     fig.tight_layout()
-    fig.savefig(OUT / "rls_energy_window_error_comparison.png", dpi=180)
+    fig.savefig(OUT / "rls_energy_window_error_comparison.svg")
     plt.close(fig)
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -60,7 +60,7 @@ def main() -> None:
     axes[1].grid(alpha=0.25)
     axes[1].legend()
     fig.tight_layout()
-    fig.savefig(OUT / "rls_energy_window_energy_metrics.png", dpi=180)
+    fig.savefig(OUT / "rls_energy_window_energy_metrics.svg")
     plt.close(fig)
 
     fig, axis = plt.subplots(figsize=(9, 5))
@@ -72,7 +72,7 @@ def main() -> None:
     axis.grid(alpha=0.25)
     axis.legend()
     fig.tight_layout()
-    fig.savefig(OUT / "rls_energy_window_count_comparison.png", dpi=180)
+    fig.savefig(OUT / "rls_energy_window_count_comparison.svg")
     plt.close(fig)
     print("saved", OUT)
 

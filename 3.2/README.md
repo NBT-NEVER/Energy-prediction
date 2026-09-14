@@ -139,85 +139,85 @@ RLS 后样本功率 WAPE 相对下降 `11.34%`，flight 能耗 WAPE 相对下降
 
 ### 8.1 TCN 窗口候选和训练过程
 
-![TCN 候选验证集 WAPE](./out/figures/training/candidate_validation_wape.png)
+![TCN 候选验证集 WAPE](./out/figures/training/candidate_validation_wape.svg)
 
 图中比较了 10 个 TCN 时间窗候选的验证集误差。2.0 s 候选的综合选择分数为 `7.38557800`，低于其余候选，因此最终采用 2.0 s、17 步输入窗口。候选并非随时间窗变长而单调改善，说明扩大历史范围后，新增历史信息与模型训练误差之间存在权衡。
 
-![TCN 和 RLS 超参数排序](./out/figures/training/hyperparameter_ranking.png)
+![TCN 和 RLS 超参数排序](./out/figures/training/hyperparameter_ranking.svg)
 
 该图保留历史 TCN 窗口排序。新 RLS 搜索选中遗忘因子 `0.91`、初始协方差 `0.25`、预热 0 个完整窗口，含尾部惩罚的汇总分数为 `6.12551123`。
 
-![学习率变化](./out/figures/training/learning_rate_schedule.png)
+![学习率变化](./out/figures/training/learning_rate_schedule.svg)
 
 学习率曲线反映训练过程中优化步长的变化。候选模型和最终模型使用同一套学习率调度，便于比较不同时间窗，而不会把学习率变化误认为时间窗带来的差异。
 
-![3.2 损失曲线](./out/figures/training/loss_curve_3.2.png)
+![3.2 损失曲线](./out/figures/training/loss_curve_3.2.svg)
 
 最终训练运行 63 个 epoch 后早停，最佳验证联合损失为 `0.01641463`，出现在第 53 个 epoch。
 
 ### 8.2 测试集总体结果
 
-![总体评估指标](./out/figures/results/evaluation_metrics.png)
+![总体评估指标](./out/figures/results/evaluation_metrics.svg)
 
 总体评估图同时比较纯 TCN 与 RLS 校正结果。RLS 后样本功率 WAPE 由 `7.7114%` 降至 `6.8371%`，flight 能耗 WAPE 由 `2.7966%` 降至 `0.3079%`，flight 能耗 R2 提升至 `0.9994`。
 
 ### 8.3 功率预测图
 
-![功率分箱 MAE](./out/figures/results/power_bin_mae.png)
+![功率分箱 MAE](./out/figures/results/power_bin_mae.svg)
 
 功率分箱图按真实功率区间统计 MAE，用来检查误差是否集中在某一功率范围。低功率段的相对误差容易被接近 0 的分母放大，因此应结合 MAE、WAPE 和散点图共同判断，不能仅凭低功率段的 MAPE 排名评价模型。
 
-![功率预测散点图](./out/figures/prediction/power_prediction_scatter.png)
+![功率预测散点图](./out/figures/prediction/power_prediction_scatter.svg)
 
 散点图以真实功率为横轴、RLS 功率为纵轴，测试集 R2 为 `0.9630`、RMSE 为 `43.2377 W`。
 
-![功率残差直方图](./out/figures/prediction/power_residual_histogram.png)
+![功率残差直方图](./out/figures/prediction/power_residual_histogram.svg)
 
 残差主体集中在 0 附近，两侧仍有快速变化形成的尾部。RLS 后样本功率 MAE 为 `27.7797 W`、RMSE 为 `43.2377 W`。
 
 ### 8.4 flight 总能量结果
 
-![flight 总能量真实值与预测值](./out/figures/results/flight_energy_actual_vs_predicted.png)
+![flight 总能量真实值与预测值](./out/figures/results/flight_energy_actual_vs_predicted.svg)
 
 图中逐个比较测试 flight 的真实总能量、TCN 汇总能量和 RLS 校正能量。RLS 曲线更贴近真实值，且 flight 级 R2 达到 `0.9947`。这与算法的监督方式一致：RLS 在每个完整 1 秒窗口结束后利用真实能量更新参数，更新后的参数只传递给下一窗口，因此能逐步修正累计能量偏差。
 
-![flight 总能量误差](./out/figures/results/flight_energy_error.png)
+![flight 总能量误差](./out/figures/results/flight_energy_error.svg)
 
 误差图展示每个 flight 的总能量误差及校正前后差异。不同 flight 的误差并不完全一致，这是飞行工况、持续时间和功率变化幅度差异共同造成的；评价时采用全部 28 个测试 flight 汇总的 MAE、RMSE、R2 和 WAPE，而不是只选取误差较小的 flight。
 
 ### 8.5 典型 flight 的逐点功率曲线
 
-![flight 18 功率时序](./out/figures/prediction/flight_18_power_timeseries.png)
+![flight 18 功率时序](./out/figures/prediction/flight_18_power_timeseries.svg)
 
 flight 18 的曲线用于观察一个测试 flight 内部的逐采样点功率跟踪情况。TCN 输出保留了原始采样时间轴，RLS 校正曲线在窗口边界后逐步调整，参数更新不会回写已经结束的窗口。
 
-![flight 23 功率时序](./out/figures/prediction/flight_23_power_timeseries.png)
+![flight 23 功率时序](./out/figures/prediction/flight_23_power_timeseries.svg)
 
 flight 23 展示另一种功率变化过程。曲线之间的局部差异说明 RLS 并非固定比例缩放，而是根据已经结束窗口的能量误差更新仿射参数，再作用于后续窗口。
 
-![flight 83 功率时序](./out/figures/prediction/flight_83_power_timeseries.png)
+![flight 1 功率时序](./out/figures/prediction/flight_1_power_timeseries.svg)
 
 flight 83 用于补充不同 flight 的工况对比。三个典型 flight 的曲线共同说明：TCN 负责逐点功率预测，RLS 负责利用秒级反馈修正后续窗口，二者输出应分别保留，便于区分基础预测误差和在线校正效果。
 
 ### 8.6 每秒能量图
 
-![每秒能量预测散点图](./out/figures/prediction/second_energy_prediction_scatter.png)
+![每秒能量预测散点图](./out/figures/prediction/second_energy_prediction_scatter.svg)
 
 该散点图以真实每秒能量为横轴、RLS 校正后的每秒预测能量为纵轴，并以理想线作为参照。点云越接近理想线，表示窗口级能量积分越准确。每秒能量使用不固定采样间隔 `dt_seconds` 加权计算，因而图中反映的是实际时间积分结果，而不是简单的样本数量求和。
 
-![每秒能量残差直方图](./out/figures/prediction/second_energy_residual_histogram.png)
+![每秒能量残差直方图](./out/figures/prediction/second_energy_residual_histogram.svg)
 
 每秒能量残差主要围绕 0 集中。秒级积分平滑了部分采样噪声，但状态突变仍形成尾部；测试集 flight 能耗 WAPE 为 `0.3079%`。
 
-![flight 18 每秒能量时序](./out/figures/prediction/flight_18_second_energy_timeseries.png)
+![flight 18 每秒能量时序](./out/figures/prediction/flight_18_second_energy_timeseries.svg)
 
 flight 18 的每秒能量曲线把逐点功率压缩为 1 秒窗口积分结果。真实能量只能在窗口结束后形成，因此当前窗口的真实值不会参与当前窗口校正，RLS 更新从下一窗口开始体现。
 
-![flight 23 每秒能量时序](./out/figures/prediction/flight_23_second_energy_timeseries.png)
+![flight 23 每秒能量时序](./out/figures/prediction/flight_23_second_energy_timeseries.svg)
 
 flight 23 的窗口曲线用于观察不同能量水平下的跟踪效果。TCN 原始能量和 RLS 校正能量同时保留，能够区分 TCN 的积分误差与在线仿射修正带来的变化。
 
-![flight 83 每秒能量时序](./out/figures/prediction/flight_83_second_energy_timeseries.png)
+![flight 1 每秒能量时序](./out/figures/prediction/flight_1_second_energy_timeseries.svg)
 
 flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功率图更适合检查能量守恒和窗口级反馈效果，最终累计能量则由这些窗口能量逐段累加得到。
 
@@ -225,11 +225,11 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 
 本次在 `out/custom` 中生成一条固定的 R1 展示航线，编号为 `999001`，总时长 180 s，输出间隔 1 s。航线剖面由三个阶段组成：0～约 27 s 起飞，约 27～153 s 巡航，约 153～180 s 降落。输入条件为风速 4 m/s、风向 0°、巡航速度 8 m/s、载荷 250 g、飞行高度 50 m。
 
-![自定义展示航线功率](./out/figures/custom/custom_power_timeseries.png)
+![自定义展示航线功率](./out/figures/custom/custom_power_timeseries.svg)
 
 图中展示该航线的逐采样点功率预测和 95% 预测区间。蓝色曲线是经过 checkpoint 中 RLS 仿射参数校正后的预测功率，阴影是功率区间。起飞和降落阶段的垂直速度变化会改变实际速度、相对空速和热负载代理量，因此预测功率随航线阶段发生变化。
 
-![自定义展示航线累计能耗](./out/figures/custom/custom_cumulative_energy.png)
+![自定义展示航线累计能耗](./out/figures/custom/custom_cumulative_energy.svg)
 
 图中展示逐点预测功率按 `dt_seconds` 积分后的累计能耗及 95% 区间。本次共 181 个采样点，平均预测功率为 `506.1544 W`，最大预测功率为 `577.6692 W`，累计预测能耗为 `25.4483 Wh`，95% 区间为 `20.8112～30.0854 Wh`。
 
@@ -241,7 +241,7 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 
 测试集 RLS 轨迹包含 5442 个秒窗口和 61 次状态切换。偏置归一化系数均值 `0.00697`，缩放系数均值 `0.97398`；少量窗口触及裁剪边界，说明后续仍可研究连续越界计数或更新平滑约束。
 
-![flight 18 RLS 参数轨迹](./out/rls/flight_18_rls_parameter_trace.png)
+![flight 1 RLS 参数轨迹](./out/rls/flight_1_rls_parameter_trace.svg)
 
 红色竖线表示状态切换，切换后参数恢复为 `[0,1]`。
 
@@ -254,17 +254,17 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 - `out/model/flight_energy_summary_3.2.csv`：按 flight 汇总的真实、TCN 和 RLS 能量。
 - `out/model/second_energy_evaluation_3.2.csv`：按 flight 和秒级窗口的能量对比及误差。
 - `out/predictions/test_predictions_3.2.csv`：逐采样点功率、每秒能量、累计能量和预测区间。
-- `out/figures/prediction/flight_*_power_timeseries.png`：逐点功率对比图。
-- `out/figures/prediction/flight_*_second_energy_timeseries.png`：每秒能量真实值与预测值对比图。
-- `out/figures/prediction/second_energy_prediction_scatter.png`：真实每秒能量与预测每秒能量的散点图及理想线。
-- `out/figures/prediction/second_energy_residual_histogram.png`：每秒能量残差直方图。
-- `out/figures/results/flight_energy_actual_vs_predicted.png`：flight 总能量对比图。
-- `out/figures/results/flight_energy_error.png`：flight 总能量误差图。
+- `out/figures/prediction/flight_*_power_timeseries.svg`：逐点功率对比图。
+- `out/figures/prediction/flight_*_second_energy_timeseries.svg`：每秒能量真实值与预测值对比图。
+- `out/figures/prediction/second_energy_prediction_scatter.svg`：真实每秒能量与预测每秒能量的散点图及理想线。
+- `out/figures/prediction/second_energy_residual_histogram.svg`：每秒能量残差直方图。
+- `out/figures/results/flight_energy_actual_vs_predicted.svg`：flight 总能量对比图。
+- `out/figures/results/flight_energy_error.svg`：flight 总能量误差图。
 - `out/custom/custom_scenarios_3.2.csv`：固定参数生成的 R1 自定义展示航线输入。
 - `out/custom/custom_predictions_3.2.csv`：自定义航线的 TCN 功率、RLS 校正功率、预测能量和累计能量。
 - `out/custom/custom_prediction_summary_3.2.json`：自定义航线预测摘要和置信区间。
-- `out/figures/custom/custom_power_timeseries.png`：自定义航线功率及预测区间。
-- `out/figures/custom/custom_cumulative_energy.png`：自定义航线累计能耗及预测区间。
+- `out/figures/custom/custom_power_timeseries.svg`：自定义航线功率及预测区间。
+- `out/figures/custom/custom_cumulative_energy.svg`：自定义航线累计能耗及预测区间。
 
 ## 10. 文件调用关系
 
@@ -376,47 +376,47 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 
 ### 13.5 最新图表与数据分析
 
-![最新 TCN 候选验证结果](./out/figures/training/candidate_validation_wape.png)
+![最新 TCN 候选验证结果](./out/figures/training/candidate_validation_wape.svg)
 
 上图按验证集选择分数比较当前缩小后的 TCN 时间窗候选。本次候选为 2 s，并以 20 轮训练得到最终模型。
 
-![最新超参数排序](./out/figures/training/hyperparameter_ranking.png)
+![最新超参数排序](./out/figures/training/hyperparameter_ranking.svg)
 
-![修复后的学习率曲线](./out/figures/training/learning_rate_schedule.png)
+![修复后的学习率曲线](./out/figures/training/learning_rate_schedule.svg)
 
 学习率图现在只读取 `final_tcn` 的正式训练记录，不再把候选和正式训练混在同一条曲线中。正式训练使用 20 epoch 的 2 s 窗口模型。
 
-![最新总体评估指标](./out/figures/results/evaluation_metrics.png)
+![最新总体评估指标](./out/figures/results/evaluation_metrics.svg)
 
-![最新功率分箱误差](./out/figures/results/power_bin_mae.png)
+![最新功率分箱误差](./out/figures/results/power_bin_mae.svg)
 
 测试功率主要集中在 `450--600 W`，共 22870 条，RLS MAE 为 `27.5046 W`、WAPE 为 `5.3152%`。`300--450 W` 区间 MAE 为 `39.4472 W`，`600 W` 以上为 `43.2195 W`；`50--300 W` 仅 859 条但 MAE 达 `96.9980 W`，通常对应起降或状态变化。`0--50 W` 的 MAE 只有 `5.6193 W`，但真实均值仅 `1.7965 W`，WAPE 被小分母放大到 `312.7965%`，该段应优先看绝对误差。
 
-![最新功率预测散点](./out/figures/prediction/power_prediction_scatter.png)
+![最新功率预测散点](./out/figures/prediction/power_prediction_scatter.svg)
 
-![最新功率残差分布](./out/figures/prediction/power_residual_histogram.png)
+![最新功率残差分布](./out/figures/prediction/power_residual_histogram.svg)
 
 散点主体集中在 `450--600 W`，全测试集 $R^2=0.9623$。残差主体靠近 0，但 RMSE 高于 MAE，说明少量快速变化和状态切换样本仍形成较大误差尾部；RLS 使用完整秒窗口反馈，不能提前修正当前窗口内部的瞬态。
 
-![最新 flight 能耗对比](./out/figures/results/flight_energy_actual_vs_predicted.png)
+![最新 flight 能耗对比](./out/figures/results/flight_energy_actual_vs_predicted.svg)
 
-![最新 flight 能耗误差](./out/figures/results/flight_energy_error.png)
+![最新 flight 能耗误差](./out/figures/results/flight_energy_error.svg)
 
 28 个 flight 的能耗结果中，最大相对误差为 flight 87 的 `0.9005%`，其次为 flight 194 的 `0.8735%` 和 flight 135 的 `0.8616%`；最小为 flight 113 的 `0.0278%`。flight 级 $R^2=0.9996$，但区间仍应保留，因为不同 flight 的起降、负载和功率跃迁并不相同。
 
-![最新每秒能量散点](./out/figures/prediction/second_energy_prediction_scatter.png)
+![最新每秒能量散点](./out/figures/prediction/second_energy_prediction_scatter.svg)
 
-![最新每秒能量残差](./out/figures/prediction/second_energy_residual_histogram.png)
+![最新每秒能量残差](./out/figures/prediction/second_energy_residual_histogram.svg)
 
 测试集共有 5442 个完整秒窗口。秒级能量残差均值为 `0.000211 Wh`，平均绝对残差为 `0.005805 Wh`，第 5% 和第 95% 分位为 `-0.013975 Wh` 与 `0.013677 Wh`。残差尾部主要出现在起飞、降落和状态切换窗口，符合“窗口结束后才更新”的在线时序约束。
 
-![最新 RLS 参数轨迹](./out/rls/flight_18_rls_parameter_trace.png)
+![最新 RLS 参数轨迹](./out/rls/flight_1_rls_parameter_trace.svg)
 
 全部测试 flight 的 RLS 轨迹共有 5442 个窗口、63 次状态切换。偏置均值/标准差为 `0.02107 / 0.20328`，缩放均值/标准差为 `0.95554 / 0.20592`；偏置限制在 `[-1,1]`，缩放限制在 `[0,2]`。参数触及边界的窗口提示强瞬态和低能量窗口仍是在线校正的主要风险点。
 
-![最新自定义工况功率](./out/figures/custom/custom_power_timeseries.png)
+![最新自定义工况功率](./out/figures/custom/custom_power_timeseries.svg)
 
-![最新自定义工况累计能耗](./out/figures/custom/custom_cumulative_energy.png)
+![最新自定义工况累计能耗](./out/figures/custom/custom_cumulative_energy.svg)
 
 自定义 R1 工况为 180 s、1 s 输出间隔、风速 4 m/s、巡航速度 8 m/s、载荷 250 g、高度 50 m。181 个采样点的平均预测功率为 `506.1544 W`，最大功率为 `577.6692 W`，累计预测能耗为 `25.4483 Wh`，95% 区间为 `20.8112--30.0854 Wh`。该工况没有真实功率标签，因此只用于展示预测曲线和累计能耗，不能计算误差或替代测试集结论。
 
@@ -429,7 +429,7 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 - `out/model/flight_energy_summary_3.2.csv`、`power_bin_evaluation_3.2.csv`、`second_energy_evaluation_3.2.csv`：flight、功率分箱和秒级能量明细。
 - `out/predictions/test_predictions_3.2.csv`：逐点功率、秒级能量、累计能量和预测区间。
 - `out/rls/rls_parameter_trace_3.2.csv`、`rls_parameter_statistics_3.2.csv`、`rls/rls_parameter_summary_3.2.json`：RLS 在线参数轨迹和统计摘要。
-- `out/figures/training/learning_rate_schedule.png`：只对应正式 TCN 训练的学习率图；其余图表按目录分别对应训练、预测、评估、RLS 和自定义工况。
+- `out/figures/training/learning_rate_schedule.svg`：只对应正式 TCN 训练的学习率图；其余静态图表均使用 SVG，按目录分别对应训练、预测、评估、RLS 和自定义工况。
 
 ### 13.7 3.2 的方法、结果和 RLS 能量窗变量分析
 
@@ -447,14 +447,14 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 
 因此，若目标是当前窗口的能量误差，较长反馈窗具有更低的 WAPE；若目标是兼顾逐点功率、flight 总能耗和飞行状态切换响应，`1--2 s` 更合适。这里的结论是变量敏感性分析，不应写成新的“最优超参数”，最终模型仍保留已完成权重中的 `20 s` 参考窗。
 
-![RLS 能量窗误差对比](./out/figures/results/rls_energy_window_error_comparison.png)
+![RLS 能量窗误差对比](./out/figures/results/rls_energy_window_error_comparison.svg)
 
-![RLS 能量窗指标对比](./out/figures/results/rls_energy_window_energy_metrics.png)
+![RLS 能量窗指标对比](./out/figures/results/rls_energy_window_energy_metrics.svg)
 
-![RLS 能量窗窗口数量对比](./out/figures/results/rls_energy_window_count_comparison.png)
+![RLS 能量窗窗口数量对比](./out/figures/results/rls_energy_window_count_comparison.svg)
 
 ### 13.8 全部原始航线轨迹产物
 
-执行 `python main.py route-visualize` 会对全部 11 种原始 route 各选择一个代表 flight，使用原始 `flights.csv` 的 IMU 位置、速度、姿态和风场字段，并与全航线预测按时间戳最近邻对齐。每个 route 的产物独立保存在 `out/routes/route_<route>/flight_<flight>/`，包含功率能量图、局部米制 3D 静态轨迹图、带左右图例的 3D GIF、对齐 CSV 和摘要 JSON。A1/A2/A3 的原始位置字段为 0 时，程序使用 IMU 速度积分恢复轨迹，避免出现经纬度被误当米制坐标的问题。
+执行 `python main.py route-visualize` 会对全部 11 种原始 route 各选择一个代表 flight，使用原始 `flights.csv` 的 IMU 位置、速度、姿态和风场字段，并与全航线预测按时间戳最近邻对齐。每个 route 的产物独立保存在 `out/routes/route_<route>/flight_<flight>/`，包含 SVG 功率能量图、可用鼠标旋转和缩放的 3D 轨迹 HTML、2240×980 分辨率且以 8 fps 播放的高清 3D GIF、对齐 CSV 和摘要 JSON。A1/A2/A3 的原始位置字段为 0 时，程序使用 IMU 速度积分恢复轨迹，避免出现经纬度被误当米制坐标的问题。
 
-所有代表 flight 使用同一个共同参考点：有效代表 flight 起点经纬高的算术平均值。坐标定义为 X=东向米、Y=北向米、Z=相对高度米；静态图、GIF 和统一对比图完全一致。风速（m/s）和风向（°）作为角标显示。全部 route 的索引为 `out/routes/route_products_summary_3.2.json`，统一对比图为 `out/routes/all_routes_trajectory_energy.png`。
+所有代表 flight 使用同一个共同参考点：有效代表 flight 起点经纬高的算术平均值。绘图时再以各代表 flight 起点平移，使坐标保持在便于阅读的米制范围；X/Y/Z 单位均为 m。交互 HTML、GIF 和统一对比图使用相同坐标定义，角标显示无人机速度、风速和风向。全部 route 的索引为 `out/routes/route_products_summary_3.2.json`，统一对比图为 `out/routes/all_routes_trajectory_energy.svg`。

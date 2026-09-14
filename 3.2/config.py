@@ -70,20 +70,20 @@ UNCERTAINTY_CALIBRATION_NPZ = RLS_DIR / "uncertainty_calibration_3.2.npz"
 UNCERTAINTY_CALIBRATION_JSON = RLS_DIR / "uncertainty_calibration_3.2.json"
 
 # 可视化和自定义工况输出文件
-LOSS_CURVE_FILE = FIGURE_DIR / "training" / "loss_curve_3.2.png"
+LOSS_CURVE_FILE = FIGURE_DIR / "training" / "loss_curve_3.2.svg"
 TRAINING_VIS_DIR = FIGURE_DIR / "training"
 RESULT_VIS_DIR = FIGURE_DIR / "results"
 PREDICTION_VIS_DIR = FIGURE_DIR / "prediction"
 CUSTOM_VIS_DIR = FIGURE_DIR / "custom"
-RLS_ENERGY_WINDOW_SELECTION_FIGURE = TRAINING_VIS_DIR / "rls_energy_window_selection.png"
-RLS_ENERGY_WINDOW_SCATTER_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_prediction_scatter.png"
-RLS_ENERGY_WINDOW_RESIDUAL_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_residual_histogram.png"
+RLS_ENERGY_WINDOW_SELECTION_FIGURE = TRAINING_VIS_DIR / "rls_energy_window_selection.svg"
+RLS_ENERGY_WINDOW_SCATTER_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_prediction_scatter.svg"
+RLS_ENERGY_WINDOW_RESIDUAL_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_residual_histogram.svg"
 RLS_ENERGY_WINDOW_COMPARISON_CSV = OUT_MODEL_DIR / "rls_energy_window_comparison_3.2.csv"
 RLS_ENERGY_WINDOW_COMPARISON_JSON = OUT_MODEL_DIR / "rls_energy_window_comparison_3.2.json"
 RLS_ENERGY_WINDOW_FLIGHT_CSV = OUT_MODEL_DIR / "rls_energy_window_comparison_by_flight_3.2.csv"
-RLS_ENERGY_WINDOW_ERROR_FIGURE = RESULT_VIS_DIR / "rls_energy_window_error_comparison.png"
-RLS_ENERGY_WINDOW_METRICS_FIGURE = RESULT_VIS_DIR / "rls_energy_window_energy_metrics.png"
-RLS_ENERGY_WINDOW_COUNT_FIGURE = RESULT_VIS_DIR / "rls_energy_window_count_comparison.png"
+RLS_ENERGY_WINDOW_ERROR_FIGURE = RESULT_VIS_DIR / "rls_energy_window_error_comparison.svg"
+RLS_ENERGY_WINDOW_METRICS_FIGURE = RESULT_VIS_DIR / "rls_energy_window_energy_metrics.svg"
+RLS_ENERGY_WINDOW_COUNT_FIGURE = RESULT_VIS_DIR / "rls_energy_window_count_comparison.svg"
 CUSTOM_SCENARIO_CSV = CUSTOM_DIR / "custom_scenarios_3.2.csv"
 CUSTOM_PREDICTION_CSV = CUSTOM_DIR / "custom_predictions_3.2.csv"
 CUSTOM_PREDICTION_SUMMARY_JSON = CUSTOM_DIR / "custom_prediction_summary_3.2.json"
@@ -294,14 +294,14 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("all_route_prediction_csv", prediction_dir / "all_route_predictions_3.2.csv")
         normalized.setdefault("uncertainty_calibration_npz", rls_dir / "uncertainty_calibration_3.2.npz")
         normalized.setdefault("uncertainty_calibration_json", rls_dir / "uncertainty_calibration_3.2.json")
-        normalized.setdefault("loss_curve_file", figure_dir / "training" / "loss_curve_3.2.png")
+        normalized.setdefault("loss_curve_file", figure_dir / "training" / "loss_curve_3.2.svg")
         normalized.setdefault("training_vis_dir", figure_dir / "training")
         normalized.setdefault("result_vis_dir", figure_dir / "results")
         normalized.setdefault("prediction_vis_dir", figure_dir / "prediction")
         normalized.setdefault("custom_vis_dir", figure_dir / "custom")
-        normalized.setdefault("rls_energy_window_selection_figure", figure_dir / "training" / "rls_energy_window_selection.png")
-        normalized.setdefault("rls_energy_window_scatter_figure", figure_dir / "prediction" / "rls_energy_window_prediction_scatter.png")
-        normalized.setdefault("rls_energy_window_residual_figure", figure_dir / "prediction" / "rls_energy_window_residual_histogram.png")
+        normalized.setdefault("rls_energy_window_selection_figure", figure_dir / "training" / "rls_energy_window_selection.svg")
+        normalized.setdefault("rls_energy_window_scatter_figure", figure_dir / "prediction" / "rls_energy_window_prediction_scatter.svg")
+        normalized.setdefault("rls_energy_window_residual_figure", figure_dir / "prediction" / "rls_energy_window_residual_histogram.svg")
         normalized.setdefault("custom_scenario_csv", custom_dir / "custom_scenarios_3.2.csv")
         normalized.setdefault("custom_prediction_csv", custom_dir / "custom_predictions_3.2.csv")
         normalized.setdefault("visualization_summary_json", out_dir / "visualization_summary_3.2.json")

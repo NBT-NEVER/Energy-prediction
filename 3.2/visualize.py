@@ -96,7 +96,7 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
             plt.xlabel("Epoch")
             plt.ylabel("Learning rate")
             plt.title("Learning Rate Schedule")
-            outputs.append(save_figure(cfg.training_vis_dir / "learning_rate_schedule.png"))
+            outputs.append(save_figure(cfg.training_vis_dir / "learning_rate_schedule.svg"))
 
     if cfg.tuning_results_csv.exists():
         tuning = pd.read_csv(cfg.tuning_results_csv)
@@ -107,7 +107,7 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
         plt.xticks(rotation=25, ha="right")
         plt.ylabel(score_column)
         plt.title("Hyperparameter Candidate Ranking")
-        outputs.append(save_figure(cfg.training_vis_dir / "hyperparameter_ranking.png"))
+        outputs.append(save_figure(cfg.training_vis_dir / "hyperparameter_ranking.svg"))
 
         available = [col for col in ["val_tcn_sample_power_wape", "val_tcn_flight_energy_wape"] if col in tuning.columns]
         if available:
@@ -121,7 +121,7 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
             plt.ylabel("WAPE (%)")
             plt.title("Validation WAPE by Candidate")
             plt.legend()
-            outputs.append(save_figure(cfg.training_vis_dir / "candidate_validation_wape.png"))
+            outputs.append(save_figure(cfg.training_vis_dir / "candidate_validation_wape.svg"))
     outputs.extend(plot_rls_energy_window_selection(cfg))
     return outputs
 
@@ -185,7 +185,7 @@ def plot_result_summary(cfg: ExperimentConfig) -> list[Path]:
         plt.bar(names, values, color=["#4c78a8", "#72b7b2", "#f58518", "#54a24b", "#e45756", "#54a24b"])
         plt.ylabel("Metric value")
         plt.title("Evaluation Metrics")
-        outputs.append(save_figure(cfg.result_vis_dir / "evaluation_metrics.png"))
+        outputs.append(save_figure(cfg.result_vis_dir / "evaluation_metrics.svg"))
 
     if cfg.flight_energy_summary_csv.exists():
         flight = pd.read_csv(cfg.flight_energy_summary_csv).sort_values("actual_energy_wh")
@@ -197,7 +197,7 @@ def plot_result_summary(cfg: ExperimentConfig) -> list[Path]:
         plt.ylabel("Energy (Wh)")
         plt.title("Flight-Level Energy: Actual vs Predicted")
         plt.legend()
-        outputs.append(save_figure(cfg.result_vis_dir / "flight_energy_actual_vs_predicted.png"))
+        outputs.append(save_figure(cfg.result_vis_dir / "flight_energy_actual_vs_predicted.svg"))
 
         plt.figure(figsize=(9, 5))
         plt.bar(flight["flight"].astype(str), flight["energy_error_wh"], color="#e45756")
@@ -205,7 +205,7 @@ def plot_result_summary(cfg: ExperimentConfig) -> list[Path]:
         plt.xlabel("Flight")
         plt.ylabel("Prediction error (Wh)")
         plt.title("Flight-Level Energy Prediction Error")
-        outputs.append(save_figure(cfg.result_vis_dir / "flight_energy_error.png"))
+        outputs.append(save_figure(cfg.result_vis_dir / "flight_energy_error.svg"))
 
     if cfg.power_bin_evaluation_csv.exists():
         bins = pd.read_csv(cfg.power_bin_evaluation_csv)
@@ -215,7 +215,7 @@ def plot_result_summary(cfg: ExperimentConfig) -> list[Path]:
         plt.xlabel("Power bin")
         plt.ylabel("MAE (W)")
         plt.title("Prediction MAE by Power Bin")
-        outputs.append(save_figure(cfg.result_vis_dir / "power_bin_mae.png"))
+        outputs.append(save_figure(cfg.result_vis_dir / "power_bin_mae.svg"))
     return outputs
 
 
@@ -245,7 +245,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.ylabel("Energy (Wh)")
             plt.title(f"Flight {flight_id} Second-Level Energy")
             plt.legend()
-            outputs.append(save_figure(cfg.prediction_vis_dir / f"flight_{flight_id}_second_energy_timeseries.png"))
+            outputs.append(save_figure(cfg.prediction_vis_dir / f"flight_{flight_id}_second_energy_timeseries.svg"))
     if "power_w" in predictions.columns:
         sample = predictions.sample(min(len(predictions), 12000), random_state=cfg.random_seed)
         plt.figure(figsize=(6, 6))
@@ -256,7 +256,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
         plt.ylabel("Predicted power (W)")
         plt.title("Power Prediction Scatter")
         plt.legend()
-        outputs.append(save_figure(cfg.prediction_vis_dir / "power_prediction_scatter.png"))
+        outputs.append(save_figure(cfg.prediction_vis_dir / "power_prediction_scatter.svg"))
 
         residual = predictions["predicted_power_w"] - predictions["power_w"]
         plt.figure(figsize=(9, 5))
@@ -264,7 +264,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
         plt.xlabel("Prediction residual (W)")
         plt.ylabel("Count")
         plt.title("Power Prediction Residual Distribution")
-        outputs.append(save_figure(cfg.prediction_vis_dir / "power_residual_histogram.png"))
+        outputs.append(save_figure(cfg.prediction_vis_dir / "power_residual_histogram.svg"))
 
     if {"flight", "second_window", "actual_second_energy_wh", "predicted_second_energy_wh"}.issubset(predictions.columns):
         second = predictions.drop_duplicates(["flight", "second_window"]).copy()
@@ -278,7 +278,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.ylabel("Predicted second energy (Wh)")
             plt.title("Second-Level Energy Prediction Scatter")
             plt.legend()
-            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_prediction_scatter.png"))
+            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_prediction_scatter.svg"))
 
             residual = second["predicted_second_energy_wh"] - second["actual_second_energy_wh"]
             plt.figure(figsize=(9, 5))
@@ -287,7 +287,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.xlabel("Second-level energy residual (Wh)")
             plt.ylabel("Count")
             plt.title("Second-Level Energy Residual Distribution")
-            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_residual_histogram.png"))
+            outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_residual_histogram.svg"))
 
     selected_window_columns = {
         "flight",
@@ -344,7 +344,7 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.ylabel("Power (W)")
             plt.title(f"Flight {flight_id} Power Prediction")
             plt.legend()
-            outputs.append(save_figure(cfg.prediction_vis_dir / f"flight_{flight_id}_power_timeseries.png"))
+            outputs.append(save_figure(cfg.prediction_vis_dir / f"flight_{flight_id}_power_timeseries.svg"))
     return outputs
 
 
@@ -378,7 +378,7 @@ def plot_rls_parameter_trace(cfg: ExperimentConfig) -> list[Path]:
             for window in part.loc[part["state_changed"].eq(1), x_column]:
                 axis.axvline(window, color="#e15759", alpha=0.3)
         fig.suptitle(f"Flight {flight_id} RLS Parameter Trace")
-        outputs.append(save_figure(cfg.rls_dir / f"flight_{flight_id}_rls_parameter_trace.png"))
+        outputs.append(save_figure(cfg.rls_dir / f"flight_{flight_id}_rls_parameter_trace.svg"))
     return outputs
 
 
@@ -565,7 +565,7 @@ def predict_custom_scenario(
     plt.ylabel("Predicted power (W)")
     plt.title("Custom Scenario Predicted Power")
     plt.legend()
-    power_chart = save_figure(cfg.custom_vis_dir / "custom_power_timeseries.png")
+    power_chart = save_figure(cfg.custom_vis_dir / "custom_power_timeseries.svg")
 
     plt.figure(figsize=(10, 5))
     plt.plot(custom_frame["time"], custom_frame["cumulative_energy_wh"], color="#54a24b", linewidth=2, label="Predicted cumulative energy")
@@ -574,7 +574,7 @@ def predict_custom_scenario(
     plt.ylabel("Cumulative energy (Wh)")
     plt.title("Custom Scenario Cumulative Energy")
     plt.legend()
-    energy_chart = save_figure(cfg.custom_vis_dir / "custom_cumulative_energy.png")
+    energy_chart = save_figure(cfg.custom_vis_dir / "custom_cumulative_energy.svg")
 
     summary = {
         "custom_prediction_csv": str(cfg.custom_prediction_csv),
