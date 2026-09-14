@@ -18,7 +18,7 @@ from predict import calibrate_uncertainty, predict_from_csv, recalculate_predict
 from train import compare_rls_energy_windows, train_fixed_tcn, train_model, tune_rls_only  # 执行固定超参数训练、TCN调参和RLS调参
 from terminal_logger import TerminalLogCapture, log_result  # 保留终端过程并记录阶段结果
 from visualize import generate_all_visualizations, predict_custom_scenario  # 生成图表并预测自定义工况
-from route_visualization import generate_route_products  # 生成18、23、83航线的IMU轨迹和功率能量产物
+from route_visualization import generate_route_products  # 为每种航线代表flight生成三维轨迹和功率能量产物
 from plot_rls_window_analysis import main as plot_rls_window_analysis  # 绘制RLS能量窗变量分析图
 
 
@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode",
         nargs="?",
         default="all",
-        choices=["download", "prepare", "tune-tcn", "train", "train-fixed", "tune-rls", "compare-rls-windows", "route-visualize", "test", "calibrate", "predict", "interval", "evaluate", "visualize", "custom", "all"],
+        choices=["download", "prepare", "tune-tcn", "train", "train-fixed", "tune-rls", "compare-rls-windows", "route-visualize", "test", "calibrate", "predict", "predict-all", "interval", "evaluate", "visualize", "custom", "all"],
         help="运行模式，all会依次完成数据准备、TCN调参、固定训练、RLS调参、校准、评估和可视化。",
     )
     parser.add_argument("--data-dir", type=Path, default=None, help="覆盖原始数据目录。")
@@ -114,22 +114,23 @@ def print_process_intro(mode: str) -> None:
         "tune-tcn": "仅搜索TCN时间窗候选并保存当前最优TCN模型。",
         "tune-rls": "加载当前训练模型，仅搜索RLS遗忘因子和初始协方差，能量窗固定为参考值。",
         "compare-rls-windows": "固定最优RLS参数，比较1、2、5、10、20秒能量反馈窗对误差和更新统计的影响。",
-        "route-visualize": "读取固定模型测试预测和原始IMU，为18、23、83航线生成独立静态图与轨迹动图。",
+        "route-visualize": "读取全航线预测和原始IMU，为每种route的代表flight生成独立静态图与三维轨迹动图。",
         "test": "加载训练好的TCN和RLS参数，运行测试集并生成结果图。",
         "calibrate": "使用验证集残差生成在线RLS和固定RLS的置信区间校准文件。",
         "predict": "加载最优模型，对输入 CSV 逐批预测功率和区间能耗。",
+        "predict-all": "加载最优模型，对全部原始航线处理后数据进行预测。",
         "interval": "读取已有预测 CSV，只重算指定置信度下的功率和累计能耗区间。",
         "evaluate": "生成测试集预测，统计逐点功率和整次飞行能耗误差。",
         "visualize": "读取训练和评估输出，生成损失、误差及预测曲线。",
         "custom": "构造或读取自定义工况，预测功率与累计能耗。",
-        "all": "依次执行数据准备、TCN调参、固定参数训练、RLS调参、校准、测试评估和结果可视化。",
+        "all": "依次执行全航线数据准备、缩小范围的TCN搜索、固定参数训练、缩小范围的RLS搜索、能量窗分析、评估、全航线预测和航线可视化。",
     }
     print("\n" + "=" * 72)
     print("四轴无人机飞行能耗预测实验 3.2：TCN + 秒级能量监督RLS")
     print(f"当前模式: {mode}")
     print(f"运行内容: {descriptions[mode]}")
     if mode == "all":
-        print("执行顺序: prepare -> tune-tcn -> train-fixed -> tune-rls -> calibrate -> evaluate -> visualize")
+        print("执行顺序: prepare -> tune-tcn -> train-fixed -> tune-rls -> compare-rls-windows -> calibrate -> evaluate -> predict-all -> visualize -> route-visualize")
     print("=" * 72)
 
 
@@ -146,7 +147,8 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}，默认置信度={cfg.default_confidence:.1%}"
     )
     print(f"TCN时间窗候选: {list(cfg.window_seconds_candidates)}")
-    print(f"RLS调参候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，共49组；能量窗变量分析={list(cfg.rls_energy_window_candidates)}s，warmup固定为0")
+    rls_candidate_count = len(cfg.rls_forgetting_factors) * len(cfg.rls_initial_covariances)
+    print(f"RLS调参候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，共{rls_candidate_count}组；能量窗变量分析={list(cfg.rls_energy_window_candidates)}s，warmup固定为0")
 
     if args.mode == "download":
         print("\n[下载数据] 检查公开数据仓库和原始压缩包。")
@@ -178,8 +180,8 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         summary = run_timed_stage("compare-rls-windows：RLS能量窗变量分析", lambda: compare_rls_energy_windows(cfg))
         print_dict("compare-rls-windows", summary)
     elif args.mode == "route-visualize":
-        print("\n[航线可视化] 为18、23、83航线生成独立功率、能量、IMU轨迹图和GIF。")
-        summary = run_timed_stage("route-visualize：航线产物生成", generate_route_products)
+        print("\n[航线可视化] 为每种route选择一个代表flight，生成独立功率、能量和三维IMU轨迹GIF。")
+        summary = run_timed_stage("route-visualize：航线产物生成", lambda: generate_route_products(cfg))
         run_timed_stage("route-visualize：RLS能量窗分析图", plot_rls_window_analysis)
         print_dict("route-visualize", {"routes": list(summary), "output_dir": str(cfg.out_dir / "routes")})
     elif args.mode == "test":
@@ -192,6 +194,15 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         print("\n[批量预测] 加载模型并输出预测 CSV。")
         output_path = predict_from_csv(cfg, args.input_csv, args.output_csv, confidence=args.confidence)
         print_dict("predict", {"prediction_file": str(output_path)})
+    elif args.mode == "predict-all":
+        print("\n[全航线预测] 对全部处理后航线逐批生成预测。")
+        output_path = predict_from_csv(
+            cfg,
+            cfg.clean_data_csv,
+            cfg.all_route_prediction_csv,
+            confidence=args.confidence,
+        )
+        print_dict("predict-all", {"prediction_file": str(output_path)})
     elif args.mode == "calibrate":
         print("\n[置信区间校准] 使用验证集误差建立可调置信度校准文件。")
         summary = calibrate_uncertainty(cfg)
@@ -225,22 +236,29 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         )
         print_dict("custom", summary)
     elif args.mode == "all":
-        print("\n[1/7 prepare] 清洗记录、构造特征并划分数据集。")
+        print("\n[1/8 prepare] 清洗全部航线记录、构造特征并按完整flight划分数据集。")
         data_summary = run_timed_stage("prepare：数据准备", lambda: prepare_dataset(cfg, force=args.force_prepare))
-        print("\n[2/7 tune-tcn] 搜索TCN时间窗，并测试每个候选窗口。")
-        tune_summary = run_timed_stage("tune-tcn：TCN时间窗搜索", lambda: train_model(cfg, stop_after_tcn=True))
-        print("\n[3/7 train-fixed] 使用已选TCN参数正式训练，不重复搜索。")
+        print("\n[2/10 tune-tcn] 使用缩小后的候选范围搜索TCN时间窗，每组20轮。")
+        tune_summary = run_timed_stage("tune-tcn：缩小范围TCN搜索", lambda: train_model(cfg, stop_after_tcn=True))
+        print("\n[3/10 train-fixed] 使用TCN搜索结果正式训练。")
         fixed_summary = run_timed_stage("train-fixed：固定TCN参数正式训练", lambda: train_fixed_tcn(cfg))
-        print("\n[4/7 tune-rls] 固定正式TCN模型，搜索RLS参数。")
-        rls_summary = run_timed_stage("tune-rls：RLS参数搜索", lambda: tune_rls_only(cfg))
-        print("\n[5/8 compare-rls-windows] 固定RLS参数，比较五个能量窗。")
+        print("\n[4/10 tune-rls] 使用缩小后的候选范围搜索RLS参数。")
+        rls_summary = run_timed_stage("tune-rls：缩小范围RLS搜索", lambda: tune_rls_only(cfg))
+        print("\n[5/10 compare-rls-windows] 固定最优RLS参数，比较五个能量窗。")
         window_summary = run_timed_stage("compare-rls-windows：RLS能量窗变量分析", lambda: compare_rls_energy_windows(cfg))
-        print("\n[6/8 calibrate] 生成预测区间校准结果。")
+        print("\n[6/10 calibrate] 生成预测区间校准结果。")
         calibration_summary = run_timed_stage("calibrate：置信区间校准", lambda: calibrate_uncertainty(cfg))
-        print("\n[7/8 evaluate] 生成测试预测并计算误差指标。")
+        print("\n[7/10 evaluate] 生成测试预测并计算误差指标。")
         metrics = run_timed_stage("evaluate：测试集评估", lambda: evaluate_model(cfg))
-        print("\n[8/8 visualize] 生成训练、评估和预测图表。")
+        print("\n[8/10 predict-all] 对全部原始航线生成预测。")
+        all_prediction = run_timed_stage(
+            "predict-all：全航线预测",
+            lambda: predict_from_csv(cfg, cfg.clean_data_csv, cfg.all_route_prediction_csv),
+        )
+        print("\n[9/10 visualize] 生成训练、评估和预测图表。")
         visual_summary = run_timed_stage("visualize：结果可视化", lambda: generate_all_visualizations(cfg))
+        print("\n[10/10 route-visualize] 为每种route生成代表flight轨迹和能量产物。")
+        route_summary = run_timed_stage("route-visualize：航线产物生成", lambda: generate_route_products(cfg))
         print_dict("prepare", data_summary)
         print_dict("tune-tcn", tune_summary)
         print_dict("train-fixed", fixed_summary)
@@ -248,7 +266,9 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         print_dict("compare-rls-windows", window_summary)
         print_dict("calibrate", calibration_summary)
         print_dict("evaluate", metrics)
+        print_dict("predict-all", {"prediction_file": str(all_prediction)})
         print_dict("visualize", visual_summary)
+        print_dict("route-visualize", {"routes": list(route_summary), "output_dir": str(cfg.out_dir / "routes")})
 
 
 def main() -> None:

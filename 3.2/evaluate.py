@@ -295,6 +295,11 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     best_tcn = tuning.sort_values("tcn_selection_score").iloc[0]
     checkpoint = torch.load(cfg.best_model_file, map_location="cpu", weights_only=False)
     best_rls = rls_tuning[rls_tuning["candidate"] == checkpoint["best_rls_candidate"]].iloc[0]
+    # 兼容当前 RLS 结果中的 reference_energy_window_seconds 字段和旧版字段名。
+    best_rls_energy_window = best_rls.get(
+        "energy_window_seconds",
+        best_rls.get("reference_energy_window_seconds", cfg.rls_energy_window_seconds),
+    )
     metrics = {
         **sample_metrics,
         **tcn_sample_metrics,
@@ -315,7 +320,7 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         "best_rls_candidate": str(best_rls["candidate"]),
         "best_rls_forgetting_factor": float(best_rls["forgetting_factor"]),
         "best_rls_initial_covariance": float(best_rls["initial_covariance"]),
-        "best_rls_energy_window_seconds": float(best_rls["energy_window_seconds"]),
+        "best_rls_energy_window_seconds": float(best_rls_energy_window),
         "best_rls_warmup_windows": int(best_rls["warmup_windows"]),
         "best_rls_selection_score": float(best_rls["selection_score"]),
         "tcn_candidate_count": int(len(tuning)),
