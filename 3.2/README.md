@@ -16,13 +16,13 @@ python main.py tune-rls
 python main.py test
 ```
 
-3.2 的超参数选择和模型训练已经完成。复现本次补充结果时只需执行 `python main.py prepare`（若缺少切分文件）以及 `python main.py compare-rls-windows`、`python main.py route-visualize`；不要再次执行 `tune-tcn`、`train-fixed` 或 `tune-rls`，除非明确要重做实验。
+当前缩小范围后的超参数搜索和模型训练已经完成。复现结果时可执行 `python main.py evaluate`、`python main.py predict-all`、`python main.py visualize` 和 `python main.py route-visualize`；若要重做搜索，再执行 `tune-tcn`、`train-fixed` 或 `tune-rls`。
 
-`tune-tcn` 只搜索 TCN；`train-fixed` 在终端打印当前参数并跳过搜索完成正式训练；`tune-rls` 只加载现有 TCN 搜索 RLS；`test` 只用固定模型与 RLS 参数测试和制图。本次使用 CUDA，最多训练 80 epoch，批大小 2048，学习率 `3e-4`，权重衰减 `1e-4`，TCN 通道 `[64,64,64,32]`，卷积核 3，Dropout 0.08。
+`tune-tcn` 只搜索 TCN；`train-fixed` 使用选定窗口完成正式训练；`tune-rls` 只加载现有 TCN 搜索 RLS；`test` 只用固定模型与 RLS 参数测试和制图。本次使用 CUDA，TCN 搜索和正式训练均为 20 epoch，批大小 2048，学习率 `3e-4`，权重衰减 `1e-4`，TCN 通道 `[64,64,64,32]`，卷积核 3，Dropout 0.08。
 
 ## 3. 数据处理
 
-固定采样原表位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100`，旧不规则数据备份于同级 `dji_matrice_100_irregular_backup`。项目外一次性脚本已将 257896 条、209 个 flight 的记录重采样为 322904 条，典型间隔为 0.12 s；整理完成后脚本不保留在项目中。项目读取新原表后保留 R1 航线，得到 284758 条有效记录、182 个 flight。train/val/test 分别为 198469/41052/45237 条，对应 126/28/28 个 flight。
+固定采样原表位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100`。项目读取全部 11 种原始航线，共 322904 条记录、209 个 flight；train/val/test 分别为 221220/48841/52843 条，对应 141/34/34 个 flight。R2、R3、R4、R7 等少样本航线仅进入训练集。
 
 项目仍根据相邻时间戳显式计算 `dt_seconds`，而不假设数组下标等价于时间；除 flight 尾点外，其值基本为 0.12 s。功率由电压和非负放电电流计算，区间能量为 `power_w * dt_seconds / 3600`。每秒窗口使用 `floor(time)` 编号，并按真实间隔积分。
 
@@ -114,11 +114,11 @@ $WAPE_{sample,f}$：单个 flight 的逐点功率误差。
 
 $WAPE_{flight,f}$：单个 flight 总能量误差。
 
-3.2 已完成的 RLS 参数来自仅含遗忘因子和初始协方差的 `7 × 7 = 49` 组搜索：遗忘因子候选为 `0.86、0.88、0.90、0.91、0.92、0.94、0.96`，初始协方差候选为 `0.01、0.025、0.05、0.1、0.25、0.5、1.0`，`warmup_windows` 固定为 `0`。当前权重实际保存的参数为遗忘因子 `0.86`、初始协方差 `1.0`、参考能量窗 `20 s`。RLS 能量窗不属于超参数搜索；不同能量窗的影响在后文单独进行变量分析。
+3.2 的 RLS 参数来自仅含遗忘因子和初始协方差的 `3 × 2 = 6` 组搜索：遗忘因子候选为 `0.86、0.92、0.96`，初始协方差候选为 `0.1、1.0`，`warmup_windows` 固定为 `0`。当前权重实际保存的参数为遗忘因子 `0.86`、初始协方差 `1.0`、参考能量窗 `1 s`。RLS 能量窗不属于超参数搜索；不同能量窗的影响在后文单独进行变量分析。
 
 ## 7. 最终训练、测试和结果
 
-本节复用已完成的 `12 s / 100 步` TCN 权重和上述已固定 RLS 参数，不重新训练模型。测试集共 45237 条记录、28 个 flight；参考能量窗为 `20 s`。
+本节使用当前缩小搜索范围后完成的 `2 s / 17 步` TCN 权重和上述固定 RLS 参数。测试集共 52843 条记录、34 个 flight；参考能量窗为 `1 s`。
 
 | 指标 | TCN | TCN + 秒级能量 RLS | 单位 |
 |---|---:|---:|---|
@@ -245,8 +245,8 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 
 红色竖线表示状态切换，切换后参数恢复为 `[0,1]`。
 
-- `out/model/tuning_results_3.2.csv`：10 个 TCN 窗口的 80 轮训练结果和能量选择指标。
-- `out/rls/rls_tuning_results_3.2.csv`：49 组 RLS 遗忘因子和初始协方差候选及尾部惩罚价值函数；能量窗不在该搜索表内。
+- `out/model/tuning_results_3.2.csv`：缩小后的 TCN 窗口候选及 20 轮训练结果和能量选择指标。
+- `out/rls/rls_tuning_results_3.2.csv`：6 组 RLS 遗忘因子和初始协方差候选及尾部惩罚价值函数；能量窗不在该搜索表内。
 - `out/rls/rls_parameter_trace_3.2.csv`：逐秒窗口参数轨迹。
 - `out/rls/rls_parameter_statistics_3.2.csv`：逐 flight 参数统计。
 - `out/model/training_log_3.2.csv`：TCN 候选和最终训练日志。
@@ -272,7 +272,7 @@ flight 83 的结果补充了典型 flight 对比。每秒能量图比逐点功�
 
 ## 11. 3.2 需求与数据流记录
 
-3.2 的约束来自前期设计讨论并全部落实：真实每秒能量只能在窗口结束时得到；当前窗口不能使用当前窗口真实能量更新 RLS；更新后的参数只传给下一个窗口；TCN 输入不增加真实每秒能量，继续使用 2.1 的 22 维输入；每秒能量既参与 TCN/RLS 超参数选择，也作为在线流程的反馈监督，但 TCN 始终输出逐采样点功率；原始采样频率不固定，能量计算必须使用每个样本的 `dt_seconds`；每个 flight 独立重置 RLS；最终同时输出功率曲线、每秒能量曲线、累计能量曲线及真实值对比；3.2 与 2.0 并列保存，不能覆盖 2.0；运行时检查 `out/data`，缺失或不符合标准时从 D 盘原始数据重建；TCN 候选训练和最终训练均为 80 epoch。
+3.2 的约束来自前期设计讨论并全部落实：真实每秒能量只能在窗口结束时得到；当前窗口不能使用当前窗口真实能量更新 RLS；更新后的参数只传给下一个窗口；TCN 输入不增加真实每秒能量，使用 22 维工况特征加 `dt_seconds` 的 23 维输入；TCN/RLS 参数搜索使用验证集，RLS 能量窗不参与搜索而单独做变量分析；原始采样频率不固定，能量计算必须使用每个样本的 `dt_seconds`；每个 flight 独立重置 RLS；最终同时输出功率曲线、每秒能量曲线、累计能量曲线及真实值对比；3.2 与 2.0 并列保存，不能覆盖 2.0；运行时检查 `out/data`，缺失或不符合标准时从 D 盘原始数据重建；当前 TCN 搜索和正式训练均为 20 epoch。
 
 数据传输顺序为：固定网格数据进入特征工程，显式计算 `dt_seconds` 和真实功率，再按 `flight + floor(time)` 汇总真实秒级能量。TCN 接收 23 维序列，经时间门控和因果卷积输出逐点功率。当前窗口用旧 RLS 参数校正；窗口结束后分别积分 TCN、RLS 和真实功率，RLS 再用 TCN 窗口能量与真实能量更新参数。新参数只用于下一窗口，最终输出逐点、秒级和 flight 级结果。
 
@@ -321,15 +321,15 @@ prepare -> tune-tcn -> train-fixed -> tune-rls -> calibrate -> evaluate -> visua
 
 数据按完整 flight 划分为训练集、验证集和测试集，测试集在全部参数固定后才使用。当前测试集有 45237 条采样记录、28 个 flight；TCN 和 RLS 的选择均只依据验证集。
 
-TCN 阶段固定通道 `[64,64,64,32]`、卷积核 3、Dropout 0.08、学习率 `3e-4`、权重衰减 `1e-4` 和 Huber 参数 0.65，搜索 10 个时间窗：`0.25、0.5、1、2、4、6、8、10、12、16 s`。每组候选训练 80 轮，不使用调参早停，然后将验证集逐点功率、完整秒能量和 flight 总能量统一计算为：
+TCN 阶段固定通道 `[64,64,64,32]`、卷积核 3、Dropout 0.08、学习率 `3e-4`、权重衰减 `1e-4` 和 Huber 参数 0.65，当前缩小为 1 个时间窗候选：`2 s`。每组候选训练 20 轮，不使用调参早停，然后将验证集逐点功率、完整秒能量和 flight 总能量统一计算为：
 
 $$
 S_{TCN}=WAPE_{second}+0.2WAPE_{sample}+0.5WAPE_{flight}
 $$
 
-选择分数越小越好。最新最优候选是 `12 s / 100 步`，验证集采样点功率 WAPE 为 `6.4503%`，秒级能量 WAPE 为 `4.8466%`，flight 能量 WAPE 为 `1.7613%`，综合分数为 `7.017347`。候选完整记录见 `out/model/tuning_results_3.2.csv`。
+选择分数越小越好。本次唯一候选为 `2 s / 17 步`，验证集综合选择分数为 `8.867528`；候选完整记录见 `out/model/tuning_results_3.2.csv`。
 
-RLS 阶段复用固定 TCN 在验证集上的逐点预测，不重新训练 TCN。当前只搜索遗忘因子 `0.86、0.88、0.90、0.91、0.92、0.94、0.96` 与初始协方差 `0.01、0.025、0.05、0.1、0.25、0.5、1.0`，共 `7 × 7 = 49` 组；`warmup_windows` 已从候选参数中删除，所有候选均固定为 `0`。已完成的 3.2 权重实际使用 `forgetting_factor=0.86`、`initial_covariance=1.0`、`warmup=0`、参考能量窗 `20 s`；能量窗不参与超参数搜索，单独变量分析见 13.7。完整记录见 `out/rls/rls_tuning_results_3.2.csv`。
+RLS 阶段复用固定 TCN 在验证集上的逐点预测，不重新训练 TCN。当前只搜索遗忘因子 `0.86、0.92、0.96` 与初始协方差 `0.1、1.0`，共 `3 × 2 = 6` 组；`warmup_windows` 固定为 `0`。已完成的 3.2 权重实际使用 `forgetting_factor=0.86`、`initial_covariance=1.0`、`warmup=0`、参考能量窗 `1 s`；能量窗不参与超参数搜索，单独变量分析见 13.7。完整记录见 `out/rls/rls_tuning_results_3.2.csv`。
 
 ### 13.3 数据流与算法边界
 
@@ -359,7 +359,7 @@ $\Delta t_{f,i}$：采样间隔，单位 s；$E_{f,k}$：窗口能量，单位 W
 
 ### 13.4 最新正式训练与测试结果
 
-本次不重复执行 `train-fixed`。直接复用已完成的 `12 s / 100 步` TCN 权重；测试阶段沿用权重中的 RLS 参数 `0.86 / 1.0 / warmup=0` 和参考能量窗 `20 s`。
+本次已执行缩小范围后的 `train-fixed`，使用 `2 s / 17 步`、20 epoch TCN 权重；测试阶段沿用权重中的 RLS 参数 `0.86 / 1.0 / warmup=0` 和参考能量窗 `1 s`。
 
 | 指标 | 纯 TCN | TCN + RLS | 单位 |
 |---|---:|---:|---|
@@ -378,13 +378,13 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 
 ![最新 TCN 候选验证结果](./out/figures/training/candidate_validation_wape.png)
 
-上图按验证集选择分数比较 10 个时间窗。12 s 候选最低；6 s 分数为 `7.132358`，16 s 为 `7.175536`。候选并不随时间窗单调改善，说明历史信息长度和训练误差之间存在折中。
+上图按验证集选择分数比较当前缩小后的 TCN 时间窗候选。本次候选为 2 s，并以 20 轮训练得到最终模型。
 
 ![最新超参数排序](./out/figures/training/hyperparameter_ranking.png)
 
 ![修复后的学习率曲线](./out/figures/training/learning_rate_schedule.png)
 
-学习率图现在只读取 `final_tcn` 的正式训练记录，不再把 10 个候选的 epoch 混在同一条曲线中。图像尺寸为 `1620×720`，正式训练从 `3e-4` 衰减到 `1.875e-5`；这保证横轴 epoch 与 12 s 正式模型一一对应。
+学习率图现在只读取 `final_tcn` 的正式训练记录，不再把候选和正式训练混在同一条曲线中。正式训练使用 20 epoch 的 2 s 窗口模型。
 
 ![最新总体评估指标](./out/figures/results/evaluation_metrics.png)
 
@@ -424,7 +424,7 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 
 - `out/model/tuning_results_3.2.csv`：10 个 TCN 候选的窗口、步数、验证指标和选择分数。
 - `out/model/training_log_3.2.csv`：TCN 候选 epoch 结果及正式训练 epoch 结果；动态进度条不写入该文件。
-- `out/rls/rls_tuning_results_3.2.csv`：49 个 RLS 候选，`warmup_windows` 全部为 0。
+- `out/rls/rls_tuning_results_3.2.csv`：6 个 RLS 候选，`warmup_windows` 全部为 0。
 - `out/model/evaluation_3.2.json/csv`：最新测试指标、最优参数和候选数量。
 - `out/model/flight_energy_summary_3.2.csv`、`power_bin_evaluation_3.2.csv`、`second_energy_evaluation_3.2.csv`：flight、功率分箱和秒级能量明细。
 - `out/predictions/test_predictions_3.2.csv`：逐点功率、秒级能量、累计能量和预测区间。
@@ -453,18 +453,8 @@ RLS 使样本功率 WAPE 下降 `0.9222` 个百分点，相对下降 `11.81%`；
 
 ![RLS 能量窗窗口数量对比](./out/figures/results/rls_energy_window_count_comparison.png)
 
-### 13.8 18、23、83 航线轨迹产物
+### 13.8 全部原始航线轨迹产物
 
-执行 `python main.py route-visualize` 可复用固定 3.2 权重生成航线产物。每条航线均使用原始 `flights.csv` 的 IMU 位置、速度、姿态和风场字段，并与测试预测按时间戳最近邻对齐；静态图和 GIF 的角标显示风速（m/s）与风向（°）。所有产物按航线隔离保存：
+执行 `python main.py route-visualize` 会对全部 11 种原始 route 各选择一个代表 flight，使用原始 `flights.csv` 的 IMU 位置、速度、姿态和风场字段，并与全航线预测按时间戳最近邻对齐。每个 route 的产物独立保存在 `out/routes/route_<route>/flight_<flight>/`，包含功率能量图、局部米制 3D 静态轨迹图、带左右图例的 3D GIF、对齐 CSV 和摘要 JSON。A1/A2/A3 的原始位置字段为 0 时，程序使用 IMU 速度积分恢复轨迹，避免出现经纬度被误当米制坐标的问题。
 
-- `out/routes/flight_18/`：`flight_18_power_energy.png`、`flight_18_imu_trajectory.gif`、`flight_18_imu_aligned.csv`、`flight_18_summary.json`。
-- `out/routes/flight_23/`：`flight_23_power_energy.png`、`flight_23_imu_trajectory.gif`、`flight_23_imu_aligned.csv`、`flight_23_summary.json`。
-- `out/routes/flight_83/`：`flight_83_power_energy.png`、`flight_83_imu_trajectory.gif`、`flight_83_imu_aligned.csv`、`flight_83_summary.json`。
-
-三条航线的总索引为 `out/routes/route_products_summary_3.2.json`，三航线统一对比图为 `out/routes/all_routes_trajectory_energy.png`。功率能量静态图上方展示实际功率、TCN 功率和 RLS 校正功率，下方展示实际、TCN 和 RLS 累计能量；3D GIF 使用 IMU 的局部米制 `position_x_m/position_y_m/position_z_m`，同步显示功率指示点、已飞轨迹、完整参考轨迹和风场角标。
-
-![flight 18 IMU轨迹动图](./out/routes/flight_18/flight_18_imu_trajectory.gif)
-
-![flight 23 IMU轨迹动图](./out/routes/flight_23/flight_23_imu_trajectory.gif)
-
-![flight 83 IMU轨迹动图](./out/routes/flight_83/flight_83_imu_trajectory.gif)
+所有代表 flight 使用同一个共同参考点：有效代表 flight 起点经纬高的算术平均值。坐标定义为 X=东向米、Y=北向米、Z=相对高度米；静态图、GIF 和统一对比图完全一致。风速（m/s）和风向（°）作为角标显示。全部 route 的索引为 `out/routes/route_products_summary_3.2.json`，统一对比图为 `out/routes/all_routes_trajectory_energy.png`。
