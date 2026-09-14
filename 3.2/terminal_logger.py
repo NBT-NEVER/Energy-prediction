@@ -83,14 +83,15 @@ class TeeStream:
 
 class TerminalLogCapture:
     """功能: 在一次程序运行期间保留终端输出并单独保存阶段结果日志。
-    参数: log_path为终端日志保存路径，mode为当前命令行运行模式。
+    参数: log_path为终端日志保存路径，mode为当前命令行运行模式，reset_log控制本次运行前是否清空旧日志。
     返回: 上下文管理器对象。
     调用位置: main。
     """
 
-    def __init__(self, log_path: Path, mode: str) -> None:
+    def __init__(self, log_path: Path, mode: str, reset_log: bool = False) -> None:
         self.log_path = Path(log_path)
         self.mode = mode
+        self.reset_log = reset_log
         self.log_file: TextIO | None = None
         self.original_stdout: TextIO | None = None
         self.original_stderr: TextIO | None = None
@@ -105,16 +106,18 @@ class TerminalLogCapture:
         """
 
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.log_file = self.log_path.open("w", encoding="utf-8", newline="")
+        file_mode = "w" if self.reset_log else "a"
+        self.log_file = self.log_path.open(file_mode, encoding="utf-8", newline="")
         self.original_stdout = sys.stdout
         self.original_stderr = sys.stderr
-        sys.stdout = TeeStream(self.original_stdout)
-        sys.stderr = TeeStream(self.original_stderr)
+        sys.stdout = TeeStream(self.original_stdout, self.log_file)
+        sys.stderr = TeeStream(self.original_stderr, self.log_file)
         global _ACTIVE_CAPTURE
         _ACTIVE_CAPTURE = self
         self.started_at = datetime.now().timestamp()
         started_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        print(f"\n{'=' * 72}\n运行开始: {started_at} | 模式: {self.mode}\n结果日志: {self.log_path}")
+        log_action = "清空后记录" if self.reset_log else "追加记录"
+        print(f"\n{'=' * 72}\n运行开始: {started_at} | 模式: {self.mode} | 日志: {log_action}\n结果日志: {self.log_path}")
         return self
 
     def write_result(self, title: str, payload: object) -> None:

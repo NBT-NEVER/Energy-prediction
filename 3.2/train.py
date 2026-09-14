@@ -756,7 +756,7 @@ def tcn_selection_metrics(base_power: np.ndarray, frame: pd.DataFrame, cfg: Expe
 def rls_candidate_grid(cfg: ExperimentConfig) -> list[dict]:
     """功能: 生成不包含能量窗变量的RLS验证候选组合。
     参数: cfg为实验配置。
-    返回: 3×2共6组遗忘因子和初始协方差，warmup固定为0；能量窗只在独立变量分析中比较。
+    返回: 配置中遗忘因子与初始协方差的笛卡尔积，warmup固定为0；能量窗只在独立变量分析中比较。
     调用位置: train_model、tune_rls_only。
     """
 

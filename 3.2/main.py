@@ -123,7 +123,7 @@ def print_process_intro(mode: str) -> None:
         "evaluate": "生成测试集预测，统计逐点功率和整次飞行能耗误差。",
         "visualize": "读取训练和评估输出，生成损失、误差及预测曲线。",
         "custom": "构造或读取自定义工况，预测功率与累计能耗。",
-        "all": "依次执行全航线数据准备、缩小范围的TCN搜索、固定参数训练、缩小范围的RLS搜索、能量窗分析、评估、全航线预测和航线可视化。",
+        "all": "依次执行全航线数据准备、完整TCN搜索、固定参数训练、RLS搜索、能量窗分析、评估、全航线预测和航线可视化。",
     }
     print("\n" + "=" * 72)
     print("四轴无人机飞行能耗预测实验 3.2：TCN + 秒级能量监督RLS")
@@ -236,14 +236,14 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         )
         print_dict("custom", summary)
     elif args.mode == "all":
-        print("\n[1/8 prepare] 清洗全部航线记录、构造特征并按完整flight划分数据集。")
+        print("\n[1/10 prepare] 清洗全部航线记录、构造特征并按完整flight划分数据集。")
         data_summary = run_timed_stage("prepare：数据准备", lambda: prepare_dataset(cfg, force=args.force_prepare))
-        print("\n[2/10 tune-tcn] 使用缩小后的候选范围搜索TCN时间窗，每组20轮。")
-        tune_summary = run_timed_stage("tune-tcn：缩小范围TCN搜索", lambda: train_model(cfg, stop_after_tcn=True))
+        print("\n[2/10 tune-tcn] 搜索完整TCN时间窗候选，每组80轮。")
+        tune_summary = run_timed_stage("tune-tcn：完整TCN搜索", lambda: train_model(cfg, stop_after_tcn=True))
         print("\n[3/10 train-fixed] 使用TCN搜索结果正式训练。")
         fixed_summary = run_timed_stage("train-fixed：固定TCN参数正式训练", lambda: train_fixed_tcn(cfg))
-        print("\n[4/10 tune-rls] 使用缩小后的候选范围搜索RLS参数。")
-        rls_summary = run_timed_stage("tune-rls：缩小范围RLS搜索", lambda: tune_rls_only(cfg))
+        print("\n[4/10 tune-rls] 搜索完整RLS参数候选。")
+        rls_summary = run_timed_stage("tune-rls：完整RLS搜索", lambda: tune_rls_only(cfg))
         print("\n[5/10 compare-rls-windows] 固定最优RLS参数，比较五个能量窗。")
         window_summary = run_timed_stage("compare-rls-windows：RLS能量窗变量分析", lambda: compare_rls_energy_windows(cfg))
         print("\n[6/10 calibrate] 生成预测区间校准结果。")
@@ -297,8 +297,9 @@ def main() -> None:
         default_confidence=args.confidence,
     )
     ensure_directories(cfg)
-    # 捕获整个业务流程的标准输出、进度刷新和异常信息。
-    with TerminalLogCapture(cfg.terminal_log_file, args.mode) as terminal_log:
+    # 只有包含TCN超参数搜索的模式才清空日志，其余运行均追加。
+    reset_log = args.mode in {"tune-tcn", "train", "all"}
+    with TerminalLogCapture(cfg.terminal_log_file, args.mode, reset_log=reset_log) as terminal_log:
         run_mode(args, cfg)
     if terminal_log.failed:
         raise SystemExit(1)
