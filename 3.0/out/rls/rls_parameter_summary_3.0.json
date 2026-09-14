@@ -1,14 +1,16 @@
 {
   "version": "3.0",
-  "window_count": 5442,
+  "rls_energy_window_seconds": 20.0,
+  "window_count": 286,
+  "complete_window_count": 259,
   "flight_count": 28,
-  "state_switch_count": 63,
-  "bias_mean": 0.02106799095792063,
-  "bias_std": 0.203277473210522,
-  "bias_min": -1.0,
-  "bias_max": 1.0,
-  "scale_mean": 0.9555385617982683,
-  "scale_std": 0.20592171741829424,
-  "scale_min": 0.0,
-  "scale_max": 2.0
+  "state_switch_count": 29,
+  "bias_mean": -0.008723655068450716,
+  "bias_std": 0.013448817199104872,
+  "bias_min": -0.04659608115351202,
+  "bias_max": 0.039968376066776314,
+  "scale_mean": 0.9943663259239865,
+  "scale_std": 0.018459355266157638,
+  "scale_min": 0.9309349891568497,
+  "scale_max": 1.0477258829713312
 }

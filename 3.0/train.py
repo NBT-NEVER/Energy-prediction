@@ -216,6 +216,20 @@ def build_energy_group_arrays(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarr
     return group_ids.astype(np.int64), dt, complete.astype(np.float32)
 
 
+def build_rls_energy_window_ids(frame: pd.DataFrame, window_seconds: float) -> np.ndarray:
+    """功能: 按RLS能量反馈时间区间生成窗口编号。
+    参数: frame为含time列的数据表，window_seconds为RLS反馈窗口长度，单位s。
+    返回: 与frame行对应的RLS能量窗口编号数组。
+    调用位置: apply_rls_correction、predict.py。
+    """
+
+    window_seconds = float(window_seconds)
+    if window_seconds <= 0:
+        raise ValueError(f"RLS能量反馈窗口必须大于0秒，当前为{window_seconds}。")
+    time_values = np.maximum(frame["time"].to_numpy(dtype=float), 0.0)
+    return np.floor(time_values / window_seconds).astype(np.int64)
+
+
 def make_loader(x: np.ndarray, y: np.ndarray, group_ids: np.ndarray, dt: np.ndarray, complete: np.ndarray, batch_size: int, shuffle: bool, device: torch.device) -> DataLoader:
     """功能: 将TCN序列和目标封装为DataLoader。
     参数: x为序列特征，y为目标，batch_size为批量大小，shuffle表示是否打乱，device为训练设备。
@@ -421,21 +435,25 @@ def predict_original_power(model: nn.Module, sequences: np.ndarray, scaler: dict
 
 
 def apply_rls_correction(base_power: np.ndarray, frame: pd.DataFrame, scaler: dict, cfg: ExperimentConfig, initial_theta: list[float] | None = None, update: bool = True, progress_label: str | None = None, rls_params: dict | None = None, trace_path=None) -> tuple[np.ndarray, list[float]]:
-    """功能: 按flight时间顺序执行先预测后更新的RLS实时校正。
+    """功能: 按flight和RLS能量反馈时间区间执行先预测后更新的实时校正。
     参数: base_power为TCN功率，frame为对应数据，scaler为尺度参数，cfg为配置，initial_theta为初始状态，update表示是否使用实测值更新，progress_label为可选进度标题，rls_params为RLS超参数。
     返回: 校正功率数组和最终RLS参数。
     调用位置: train_model、predict.py。
     """
 
-    rls_params = rls_params or {"forgetting_factor": cfg.rls_forgetting_factor, "initial_covariance": cfg.rls_initial_covariance}
+    rls_params = dict(rls_params or {})
+    rls_params.setdefault("forgetting_factor", cfg.rls_forgetting_factor)
+    rls_params.setdefault("initial_covariance", cfg.rls_initial_covariance)
+    energy_window_seconds = float(rls_params.get("energy_window_seconds", cfg.rls_energy_window_seconds))
     corrector = RLSCorrector(float(rls_params["forgetting_factor"]), float(rls_params["initial_covariance"]), scaler["power_scale"], initial_theta)
     corrected = np.empty(len(frame), dtype=np.float64)
-    actual_values = frame[cfg.target_column].to_numpy(dtype=float) if update and cfg.target_column in frame.columns else None
     progress = TerminalProgress(progress_label, max(len(frame), 1)) if progress_label else None
     ordered = frame.reset_index(drop=True)
-    window_ids = np.floor(ordered["time"].to_numpy(dtype=float)).astype(int)
+    window_ids = build_rls_energy_window_ids(ordered, energy_window_seconds)
+    actual_values = ordered[cfg.target_column].to_numpy(dtype=float) if update and cfg.target_column in ordered.columns else None
     trace_rows: list[dict] = []
     processed_windows = 0
+    minimum_complete_duration = 0.95 * energy_window_seconds
     for flight, flight_frame in ordered.groupby("flight", sort=False):
         if update:
             corrector.reset_neutral()
@@ -444,7 +462,7 @@ def apply_rls_correction(base_power: np.ndarray, frame: pd.DataFrame, scaler: di
         previous_state = None
         flight_positions = flight_frame.index.to_numpy(dtype=int)
         marked = flight_frame.assign(_window=window_ids[flight_positions])
-        for window_number, (_, positions_frame) in enumerate(marked.groupby("_window", sort=True)):
+        for _, positions_frame in marked.groupby("_window", sort=True):
             positions = positions_frame.index.to_numpy(dtype=int)
             state = int(float(np.mean(base_power[positions])) >= cfg.flight_state_threshold_w)
             state_changed = previous_state is not None and state != previous_state
@@ -454,26 +472,47 @@ def apply_rls_correction(base_power: np.ndarray, frame: pd.DataFrame, scaler: di
             for index in positions:
                 corrected[index] = corrector.predict(float(base_power[index]))
             dt = ordered.iloc[positions]["dt_seconds"].to_numpy(dtype=float)
+            duration_seconds = float(np.sum(dt))
             predicted_energy = float(np.sum(corrected[positions] * dt) / 3600.0)
             base_energy = float(np.sum(base_power[positions] * dt) / 3600.0)
+            actual_energy = np.nan
+            window_complete = int(duration_seconds >= minimum_complete_duration)
             if actual_values is not None:
                 actual_energy = float(np.sum(actual_values[positions] * dt) / 3600.0)
-                if float(np.sum(dt)) >= 0.95:
+                if window_complete:
                     # 当前窗口结束后才更新，更新结果只会影响下一个窗口。
-                    corrector.update_window(base_energy, actual_energy, float(np.sum(dt)))
-            trace_rows.append({"flight": int(flight), "second_window": int(window_ids[positions[0]]), "flight_state": state, "state_changed": int(state_changed), "theta_bias_before": float(theta_before[0]), "theta_scale_before": float(theta_before[1]), "theta_bias_after": float(corrector.theta[0]), "theta_scale_after": float(corrector.theta[1]), "tcn_energy_wh": base_energy, "predicted_energy_wh": predicted_energy, "actual_energy_wh": actual_energy if actual_values is not None else np.nan})
+                    corrector.update_window(base_energy, actual_energy, duration_seconds)
+            trace_rows.append({
+                "flight": int(flight),
+                "second_window": int(np.floor(float(ordered.iloc[positions[0]]["time"]))),
+                "rls_energy_window": int(window_ids[positions[0]]),
+                "rls_energy_window_seconds": energy_window_seconds,
+                "rls_window_start_seconds": float(ordered.iloc[positions[0]]["time"]),
+                "rls_window_duration_seconds": duration_seconds,
+                "rls_window_complete": window_complete,
+                "flight_state": state,
+                "state_changed": int(state_changed),
+                "theta_bias_before": float(theta_before[0]),
+                "theta_scale_before": float(theta_before[1]),
+                "theta_bias_after": float(corrector.theta[0]),
+                "theta_scale_after": float(corrector.theta[1]),
+                "tcn_energy_wh": base_energy,
+                "predicted_energy_wh": predicted_energy,
+                "actual_energy_wh": actual_energy,
+            })
             previous_state = state
             processed_windows += 1
             if progress and (processed_windows % 100 == 0 or int(positions[-1]) + 1 == len(frame)):
-                progress.update(int(positions[-1]) + 1, f"已完成flight={flight}的窗口{int(window_ids[positions[0]])}")
+                progress.update(int(positions[-1]) + 1, f"已完成flight={flight}的RLS窗口{int(window_ids[positions[0]])}")
     if progress:
-        progress.finish("RLS在线校正完成")
+        progress.finish(f"RLS在线校正完成，反馈区间={energy_window_seconds:g}s")
     if trace_path is not None:
         trace_path.parent.mkdir(parents=True, exist_ok=True)
         trace_frame = pd.DataFrame(trace_rows)
         trace_frame.to_csv(trace_path, index=False, encoding="utf-8")
         statistics = trace_frame.groupby("flight", sort=True).agg(
-            window_count=("second_window", "count"),
+            window_count=("rls_energy_window", "count"),
+            complete_window_count=("rls_window_complete", "sum"),
             state_switch_count=("state_changed", "sum"),
             bias_mean=("theta_bias_after", "mean"),
             bias_std=("theta_bias_after", "std"),
@@ -484,10 +523,13 @@ def apply_rls_correction(base_power: np.ndarray, frame: pd.DataFrame, scaler: di
             scale_min=("theta_scale_after", "min"),
             scale_max=("theta_scale_after", "max"),
         ).reset_index()
+        statistics["rls_energy_window_seconds"] = energy_window_seconds
         statistics.to_csv(cfg.rls_parameter_statistics_csv, index=False, encoding="utf-8")
         save_json(cfg.rls_parameter_summary_json, {
             "version": "3.0",
+            "rls_energy_window_seconds": energy_window_seconds,
             "window_count": int(len(trace_frame)),
+            "complete_window_count": int(trace_frame["rls_window_complete"].sum()),
             "flight_count": int(trace_frame["flight"].nunique()),
             "state_switch_count": int(trace_frame["state_changed"].sum()),
             "bias_mean": float(trace_frame["theta_bias_after"].mean()),
@@ -536,15 +578,16 @@ def selection_metrics(base_power: np.ndarray, corrected_power: np.ndarray, frame
     return {"val_tcn_sample_power_wape": sample_base, "val_sample_power_wape": sample_corrected, "val_tcn_flight_energy_wape": base_energy_wape, "val_flight_energy_wape": corrected_energy_wape, "selection_score": corrected_energy_wape + 0.2 * sample_corrected}
 
 
-def energy_window_selection_metrics(base_power: np.ndarray, corrected_power: np.ndarray, frame: pd.DataFrame, cfg: ExperimentConfig) -> dict:
-    """功能: 按不规则采样间隔计算所有flight的秒级能量价值函数。
-    参数: base_power和corrected_power为TCN及RLS逐点预测，frame为验证数据表，cfg为配置。
-    返回: 按flight等权汇总的逐点、秒级和整flight误差指标。
+def energy_window_selection_metrics(base_power: np.ndarray, corrected_power: np.ndarray, frame: pd.DataFrame, cfg: ExperimentConfig, energy_window_seconds: float | None = None) -> dict:
+    """功能: 按指定RLS能量反馈区间计算所有flight的候选价值函数。
+    参数: base_power和corrected_power为TCN及RLS逐点预测，frame为验证数据表，cfg为配置，energy_window_seconds为RLS反馈区间，单位s。
+    返回: 按flight等权汇总的RLS能量窗口、逐点和整flight误差指标。
     调用位置: train_model的RLS超参数搜索。
     """
 
+    energy_window_seconds = float(energy_window_seconds or cfg.rls_energy_window_seconds)
     work = frame[["flight", "time", "dt_seconds", cfg.target_column]].copy()
-    work["window"] = np.floor(work["time"].to_numpy(dtype=float)).astype(int)
+    work["window"] = build_rls_energy_window_ids(work, energy_window_seconds)
     work["base_energy"] = base_power * work["dt_seconds"] / 3600.0
     work["corrected_energy"] = corrected_power * work["dt_seconds"] / 3600.0
     work["actual_energy"] = work[cfg.target_column] * work["dt_seconds"] / 3600.0
@@ -556,6 +599,9 @@ def energy_window_selection_metrics(base_power: np.ndarray, corrected_power: np.
     score = second_errors + 0.2 * power_errors + 0.5 * flight_errors
     tail_penalty = 0.25 * float(np.quantile(flight_errors, 0.95)) + 0.1 * float(score.std(ddof=0))
     return {
+        "rls_energy_window_seconds": energy_window_seconds,
+        "val_rls_energy_window_wape_mean": float(second_errors.mean()),
+        # 保留旧字段名，便于读取历史脚本；其数值随当前RLS反馈区间变化。
         "val_second_energy_wape_mean": float(second_errors.mean()),
         "val_flight_energy_wape_mean": float(flight_errors.mean()),
         "val_sample_power_wape_mean": float(power_errors.mean()),
@@ -590,12 +636,19 @@ def tcn_selection_metrics(base_power: np.ndarray, frame: pd.DataFrame, cfg: Expe
 def rls_candidate_grid(cfg: ExperimentConfig) -> list[dict]:
     """功能: 生成RLS验证候选参数组合。
     参数: cfg为实验配置。
-    返回: RLS遗忘因子和初始协方差的组合列表，所有候选均在窗口结束后立即更新。
+    返回: RLS遗忘因子、初始协方差和能量反馈区间的组合列表，所有候选均在窗口结束后立即更新。
     调用位置: train_model。
     """
 
     return [
-        {"candidate": f"rls_ff{forgetting:g}_cov{cov:g}", "forgetting_factor": forgetting, "initial_covariance": cov, "warmup_windows": 0}
+        {
+            "candidate": f"rls_ff{forgetting:g}_cov{cov:g}_energy{energy_window:g}s",
+            "forgetting_factor": forgetting,
+            "initial_covariance": cov,
+            "energy_window_seconds": energy_window,
+            "warmup_windows": 0,
+        }
+        for energy_window in cfg.rls_energy_window_candidates
         for forgetting in cfg.rls_forgetting_factors
         for cov in cfg.rls_initial_covariances
     ]
@@ -662,14 +715,19 @@ def tune_rls_only(cfg: ExperimentConfig) -> dict:
     candidates = rls_candidate_grid(cfg)
     print(f"仅搜索RLS：固定TCN={checkpoint.get('best_tcn_candidate', checkpoint.get('window_seconds'))}，候选数={len(candidates)}")
     for index, params in enumerate(candidates, start=1):
+        candidate_started = time.perf_counter()
         corrected, _ = apply_rls_correction(val_base, val_df, scaler, cfg, initial_theta, update=True, rls_params=params)
-        metrics = energy_window_selection_metrics(val_base, corrected, val_df, cfg)
+        metrics = energy_window_selection_metrics(val_base, corrected, val_df, cfg, params["energy_window_seconds"])
         rows.append({"phase": "rls_only", "tcn_window_seconds": checkpoint["window_seconds"], "tcn_window_steps": window_steps, **params, **metrics})
         if metrics["selection_score"] < best_score:
             best_score = metrics["selection_score"]
             best_params = params.copy()
-        if index % max(1, len(candidates) // 10) == 0 or index == len(candidates):
-            print(f"RLS候选 {index}/{len(candidates)}，当前最优分数={best_score:.6f}")
+        elapsed = time.perf_counter() - candidate_started
+        print(
+            f"RLS候选 {index}/{len(candidates)} 测试结果："
+            f"区间={params['energy_window_seconds']:g}s，ff={params['forgetting_factor']:g}，cov={params['initial_covariance']:g}，"
+            f"选择分数={metrics['selection_score']:.6f}，当前最优={best_score:.6f}，耗时={elapsed:.2f}s"
+        )
     if best_params is None:
         raise RuntimeError("RLS参数搜索未得到可用结果。")
     pd.DataFrame(rows).to_csv(cfg.rls_tuning_results_csv, index=False, encoding="utf-8")
@@ -677,6 +735,7 @@ def tune_rls_only(cfg: ExperimentConfig) -> dict:
         "rls_theta": initial_theta,
         "rls_forgetting_factor": best_params["forgetting_factor"],
         "rls_initial_covariance": best_params["initial_covariance"],
+        "rls_energy_window_seconds": best_params["energy_window_seconds"],
         "rls_warmup_windows": 0,
         "best_rls_candidate": best_params["candidate"],
         "rls_selection_score": best_score,
@@ -685,7 +744,7 @@ def tune_rls_only(cfg: ExperimentConfig) -> dict:
     torch.save(checkpoint, cfg.best_model_file)
     torch.save(checkpoint, cfg.final_model_file)
     print(f"RLS最优结果：{best_params['candidate']}，选择分数={best_score:.6f}")
-    return {"version": "3.0", "mode": "tune-rls", "fixed_tcn_candidate": checkpoint.get("best_tcn_candidate"), "best_rls_candidate": best_params["candidate"], "rls_forgetting_factor": best_params["forgetting_factor"], "rls_initial_covariance": best_params["initial_covariance"], "rls_warmup_windows": 0, "best_rls_selection_score": best_score, "rls_candidate_count": len(rows)}
+    return {"version": "3.0", "mode": "tune-rls", "fixed_tcn_candidate": checkpoint.get("best_tcn_candidate"), "best_rls_candidate": best_params["candidate"], "rls_forgetting_factor": best_params["forgetting_factor"], "rls_initial_covariance": best_params["initial_covariance"], "rls_energy_window_seconds": best_params["energy_window_seconds"], "rls_warmup_windows": 0, "best_rls_selection_score": best_score, "rls_candidate_count": len(rows)}
 
 
 def train_fixed_tcn(cfg: ExperimentConfig) -> dict:
@@ -865,17 +924,22 @@ def train_model(cfg: ExperimentConfig, stop_after_tcn: bool = False) -> dict:
     rls_candidate_count = len(rls_candidates)
     print(f"阶段二：固定最优TCN窗口，使用同一份验证预测搜索{rls_candidate_count}组RLS参数。")
     for rls_index, rls_params in enumerate(rls_candidates, start=1):
+        candidate_started = time.perf_counter()
         corrected, _ = apply_rls_correction(best_window_val_base, val_df, scaler, cfg, rls_theta, update=True, rls_params=rls_params)
-        metrics = energy_window_selection_metrics(best_window_val_base, corrected, val_df, cfg)
+        metrics = energy_window_selection_metrics(best_window_val_base, corrected, val_df, cfg, rls_params["energy_window_seconds"])
         row = {"phase": "stage2_rls", "tcn_window_seconds": best_params["window_seconds"], "tcn_window_steps": best_params["window_steps"], **rls_params, **metrics}
         rls_rows.append(row)
         if metrics["selection_score"] < best_rls_score:
             best_rls_score, best_rls = metrics["selection_score"], rls_params.copy()
-        if rls_index % max(1, rls_candidate_count // 10) == 0 or rls_index == rls_candidate_count:
-            print(f"RLS候选 {rls_index}/{rls_candidate_count}，当前最优分数={best_rls_score:.4f}")
+        elapsed = time.perf_counter() - candidate_started
+        print(
+            f"RLS候选 {rls_index}/{rls_candidate_count} 测试结果："
+            f"区间={rls_params['energy_window_seconds']:g}s，ff={rls_params['forgetting_factor']:g}，cov={rls_params['initial_covariance']:g}，"
+            f"选择分数={metrics['selection_score']:.6f}，当前最优={best_rls_score:.6f}，耗时={elapsed:.2f}s"
+        )
     if best_rls is None:
         raise RuntimeError("RLS参数搜索未得到可用候选。")
-    print(f"RLS最优结果：候选={best_rls['candidate']}，遗忘因子={best_rls['forgetting_factor']:g}，初始协方差={best_rls['initial_covariance']:g}，warmup固定为0个完整窗口，选择分数={best_rls_score:.6f}")
+    print(f"RLS最优结果：候选={best_rls['candidate']}，遗忘因子={best_rls['forgetting_factor']:g}，初始协方差={best_rls['initial_covariance']:g}，能量反馈区间={best_rls['energy_window_seconds']:g}s，warmup固定为0个完整窗口，选择分数={best_rls_score:.6f}")
     workflow_progress.update(3, f"窗口={best_params['window_seconds']:g}s，RLS共完成{rls_candidate_count}组")
 
     train_x, train_y = build_sequence_arrays(train_df, scaler, best_params["window_steps"], "最终训练序列")
@@ -907,8 +971,8 @@ def train_model(cfg: ExperimentConfig, stop_after_tcn: bool = False) -> dict:
     pd.DataFrame(rls_rows).to_csv(cfg.rls_tuning_results_csv, index=False, encoding="utf-8")
     pd.DataFrame(all_training_logs).to_csv(cfg.training_log_csv, index=False, encoding="utf-8")
     save_loss_curve(logs, cfg.loss_curve_file)
-    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "dt_feature_index": best_params.get("dt_feature_index"), "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "time_aware_tcn", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_windows": 0, "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "uncertainty_calibration_npz": str(cfg.uncertainty_calibration_npz), "uncertainty_calibration_json": str(cfg.uncertainty_calibration_json), "device_used": str(device), "best_val_loss": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_rls_candidate": best_rls["candidate"], "rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows)}
+    checkpoint = {"model_state_dict": final_model.state_dict(), "input_dim": len(feature_columns), "feature_columns": feature_columns, "dt_feature_index": best_params.get("dt_feature_index"), "target_column": cfg.target_column, "target_transform": cfg.target_transform, "model_type": "time_aware_tcn", "channels": best_params["channels"], "kernel_size": best_params["kernel_size"], "dropout": best_params["dropout"], "learning_rate": best_params["learning_rate"], "weight_decay": best_params["weight_decay"], "huber_delta": best_params["huber_delta"], "window_seconds": best_params["window_seconds"], "window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "rls_theta": rls_theta, "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_energy_window_seconds": best_rls["energy_window_seconds"], "rls_warmup_windows": 0, "power_scale": scaler["power_scale"], "scaler_path": str(cfg.scaler_json), "uncertainty_calibration_npz": str(cfg.uncertainty_calibration_npz), "uncertainty_calibration_json": str(cfg.uncertainty_calibration_json), "device_used": str(device), "best_val_loss": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_rls_candidate": best_rls["candidate"], "rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows)}
     torch.save(checkpoint, cfg.best_model_file)
     torch.save(checkpoint, cfg.final_model_file)
     workflow_progress.finish(f"权重、日志和置信区间校准已保存；深度={len(best_params['channels'])}块")
-    return {"version": "3.0", "device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0) if device.type == "cuda" else "CPU", "best_candidate": best_params["name"], "best_model_type": "tcn_second_energy_rls", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_warmup_windows": 0, "best_rls_candidate": best_rls["candidate"], "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_tcn_selection_score": best_window_row["tcn_selection_score"], "rls_selection_score": best_rls_score, "best_rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows), "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json), "uncertainty_calibration_file": str(cfg.uncertainty_calibration_npz)}
+    return {"version": "3.0", "device": str(device), "cuda_device_name": torch.cuda.get_device_name(device.index or 0) if device.type == "cuda" else "CPU", "best_candidate": best_params["name"], "best_model_type": "tcn_second_energy_rls", "best_window_seconds": best_params["window_seconds"], "best_window_steps": best_params["window_steps"], "best_tcn_candidate": best_params["name"], "best_tcn_window_seconds": best_params["window_seconds"], "best_tcn_window_steps": best_params["window_steps"], "sample_interval_seconds": sample_interval, "best_channels": best_params["channels"], "best_dropout": best_params["dropout"], "best_learning_rate": best_params["learning_rate"], "best_weight_decay": best_params["weight_decay"], "rls_forgetting_factor": best_rls["forgetting_factor"], "rls_initial_covariance": best_rls["initial_covariance"], "rls_energy_window_seconds": best_rls["energy_window_seconds"], "rls_warmup_windows": 0, "best_rls_candidate": best_rls["candidate"], "rls_initial_theta": rls_theta, "target_transform": cfg.target_transform, "best_val_loss_standardized": best_val_loss, "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "tcn_selection_score": best_window_row["tcn_selection_score"], "best_tcn_selection_score": best_window_row["tcn_selection_score"], "rls_selection_score": best_rls_score, "best_rls_selection_score": best_rls_score, "tcn_candidate_count": len(window_rows), "rls_candidate_count": len(rls_rows), "epochs_run": len(logs), "model_file": str(cfg.best_model_file), "scaler_file": str(cfg.scaler_json), "uncertainty_calibration_file": str(cfg.uncertainty_calibration_npz)}

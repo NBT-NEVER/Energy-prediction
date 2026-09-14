@@ -1,124 +1,124 @@
 
 [prepare：数据准备]
-started_at: 2026-09-07T17:34:22+08:00
-finished_at: 2026-09-07T17:34:22+08:00
-elapsed_seconds: 0.002
+started_at: 2026-09-13T10:27:51+08:00
+finished_at: 2026-09-13T10:27:51+08:00
+elapsed_seconds: 0.012
 status: 完成
 
 [tune-tcn候选结果]
 candidate: tcn_window_0.25s
 window_seconds: 0.25
 window_steps: 2
-best_val_loss: 0.020222559526256335
-tcn_selection_score: 7.710353851518918
-elapsed_seconds: 545.576
+best_val_loss: 0.02066215776066026
+tcn_selection_score: 7.9215299716731264
+elapsed_seconds: 2032.267
 
 [tune-tcn候选结果]
 candidate: tcn_window_0.5s
 window_seconds: 0.5
 window_steps: 4
-best_val_loss: 0.01940892990901783
-tcn_selection_score: 7.701544332823982
-elapsed_seconds: 571.764
+best_val_loss: 0.01911772388144914
+tcn_selection_score: 7.512625953542582
+elapsed_seconds: 1403.907
 
 [tune-tcn候选结果]
 candidate: tcn_window_1s
 window_seconds: 1.0
 window_steps: 8
-best_val_loss: 0.01843455743106685
-tcn_selection_score: 7.4365392240997314
-elapsed_seconds: 594.94
+best_val_loss: 0.018159627147809485
+tcn_selection_score: 7.442578505593528
+elapsed_seconds: 1101.805
 
 [tune-tcn候选结果]
 candidate: tcn_window_2s
 window_seconds: 2.0
 window_steps: 17
-best_val_loss: 0.018000601514161916
-tcn_selection_score: 7.38293744510726
-elapsed_seconds: 587.973
+best_val_loss: 0.018049653250374526
+tcn_selection_score: 7.433135637314389
+elapsed_seconds: 1086.086
 
 [tune-tcn候选结果]
 candidate: tcn_window_4s
 window_seconds: 4.0
 window_steps: 33
-best_val_loss: 0.017533881499569144
-tcn_selection_score: 7.492006906229449
-elapsed_seconds: 713.59
+best_val_loss: 0.017514864139060674
+tcn_selection_score: 7.490266143599353
+elapsed_seconds: 1240.088
 
 [tune-tcn候选结果]
 candidate: tcn_window_6s
 window_seconds: 6.0
 window_steps: 50
-best_val_loss: 0.01710077899247829
-tcn_selection_score: 7.132358124850033
-elapsed_seconds: 885.919
+best_val_loss: 0.017072256668657283
+tcn_selection_score: 7.114112264550139
+elapsed_seconds: 1809.566
 
 [tune-tcn候选结果]
 candidate: tcn_window_8s
 window_seconds: 8.0
 window_steps: 67
-best_val_loss: 0.017071306618359032
-tcn_selection_score: 7.200492076130975
-elapsed_seconds: 933.819
+best_val_loss: 0.01707142407371672
+tcn_selection_score: 7.1966271935181085
+elapsed_seconds: 1836.626
 
 [tune-tcn候选结果]
 candidate: tcn_window_10s
 window_seconds: 10.0
 window_steps: 83
-best_val_loss: 0.017689774494752845
-tcn_selection_score: 7.286467140948751
-elapsed_seconds: 1036.532
+best_val_loss: 0.017776264754533883
+tcn_selection_score: 7.404413184129122
+elapsed_seconds: 2050.359
 
 [tune-tcn候选结果]
 candidate: tcn_window_12s
 window_seconds: 12.0
 window_steps: 100
-best_val_loss: 0.01709585776166889
-tcn_selection_score: 7.0173468692790495
-elapsed_seconds: 1114.299
+best_val_loss: 0.017116086845171217
+tcn_selection_score: 7.022410982808947
+elapsed_seconds: 2161.824
 
 [tune-tcn候选结果]
 candidate: tcn_window_16s
 window_seconds: 16.0
 window_steps: 133
-best_val_loss: 0.01714493774663841
-tcn_selection_score: 7.175536446294067
-elapsed_seconds: 1343.213
+best_val_loss: 0.01716919153461235
+tcn_selection_score: 7.193063134288919
+elapsed_seconds: 2875.339
 
 [tune-tcn：TCN时间窗搜索]
-started_at: 2026-09-07T17:34:22+08:00
-finished_at: 2026-09-07T19:53:09+08:00
-elapsed_seconds: 8330.77
+started_at: 2026-09-13T10:27:51+08:00
+finished_at: 2026-09-13T15:21:23+08:00
+elapsed_seconds: 17612.587
 status: 完成
 
 [train-fixed：固定TCN参数正式训练]
-started_at: 2026-09-07T19:53:09+08:00
-finished_at: 2026-09-07T20:05:00+08:00
-elapsed_seconds: 710.814
+started_at: 2026-09-13T15:21:23+08:00
+finished_at: 2026-09-13T15:45:15+08:00
+elapsed_seconds: 1431.992
 status: 完成
 
 [tune-rls：RLS参数搜索]
-started_at: 2026-09-07T20:05:00+08:00
-finished_at: 2026-09-07T20:07:36+08:00
-elapsed_seconds: 155.923
+started_at: 2026-09-13T15:45:15+08:00
+finished_at: 2026-09-13T15:57:03+08:00
+elapsed_seconds: 707.832
 status: 完成
 
 [calibrate：置信区间校准]
-started_at: 2026-09-07T20:07:36+08:00
-finished_at: 2026-09-07T20:07:42+08:00
-elapsed_seconds: 6.54
+started_at: 2026-09-13T15:57:03+08:00
+finished_at: 2026-09-13T15:57:07+08:00
+elapsed_seconds: 3.48
 status: 完成
 
 [evaluate：测试集评估]
-started_at: 2026-09-07T20:07:42+08:00
-finished_at: 2026-09-07T20:07:49+08:00
-elapsed_seconds: 6.862
+started_at: 2026-09-13T15:57:07+08:00
+finished_at: 2026-09-13T15:57:13+08:00
+elapsed_seconds: 6.322
 status: 完成
 
 [visualize：结果可视化]
-started_at: 2026-09-07T20:07:49+08:00
-finished_at: 2026-09-07T20:07:52+08:00
-elapsed_seconds: 3.44
+started_at: 2026-09-13T15:57:13+08:00
+finished_at: 2026-09-13T15:57:20+08:00
+elapsed_seconds: 6.853
 status: 完成
 
 [prepare]
@@ -150,7 +150,7 @@ mode: tune-tcn
 best_tcn_candidate: tcn_window_12s
 best_tcn_window_seconds: 12.0
 best_tcn_window_steps: 100
-best_tcn_selection_score: 7.0173468692790495
+best_tcn_selection_score: 7.022410982808947
 tcn_candidate_count: 10
 model_file: D:\Python-files\Energy-prediction\model\best_energy_tcn_rls_3.0.pt
 
@@ -162,56 +162,67 @@ window_seconds: 12.0
 window_steps: 100
 epochs_run: 50
 best_epoch: 40
-best_val_loss: 0.017335612395464137
+best_val_loss: 0.01732783506665327
 model_file: D:\Python-files\Energy-prediction\model\best_energy_tcn_rls_3.0.pt
 
 [tune-rls]
 version: 3.0
 mode: tune-rls
 fixed_tcn_candidate: tcn_window_12s
-best_rls_candidate: rls_ff0.9_cov0.25
-rls_forgetting_factor: 0.9
-rls_initial_covariance: 0.25
+best_rls_candidate: rls_ff0.86_cov1_energy20s
+rls_forgetting_factor: 0.86
+rls_initial_covariance: 1.0
+rls_energy_window_seconds: 20.0
 rls_warmup_windows: 0
-best_rls_selection_score: 6.481503319853194
-rls_candidate_count: 49
+best_rls_selection_score: 4.940901800776567
+rls_candidate_count: 245
 
 [calibrate]
 method: split_conformal_absolute_residual
 default_confidence: 0.95
 online_samples: 41052
 static_samples: 41052
-online_default_radius_w: 80.88341522216797
-static_default_radius_w: 83.30735778808594
+online_default_radius_w: 83.09947967529297
+static_default_radius_w: 84.08228302001953
 npz_file: I:\STUDY\python\project\Energy-prediction\3.0\out\rls\uncertainty_calibration_3.0.npz
 
 [evaluate]
-sample_power_w_mae: 27.99111402409267
-sample_power_w_rmse: 43.454577220350586
-sample_power_w_r2: 0.9622980887385895
-sample_power_w_mape_percent: 140.67291214450478
-sample_power_w_wape_percent: 6.889166197214474
-tcn_sample_power_w_mae: 31.738194350922267
-tcn_sample_power_w_rmse: 46.78628297718713
-tcn_sample_power_w_r2: 0.9562951740031177
-tcn_sample_power_w_mape_percent: 260.2962709479124
-tcn_sample_power_w_wape_percent: 7.811396698780896
-flight_energy_wh_mae: 0.06395606481595209
-flight_energy_wh_rmse: 0.08899357709776824
-flight_energy_wh_r2: 0.9996411284881861
-flight_energy_wh_mape_percent: 0.29484043447594893
-flight_energy_wh_wape_percent: 0.29229260363007953
-tcn_flight_energy_wh_mae: 0.5968428403695192
-tcn_flight_energy_wh_rmse: 0.8422905311004508
-tcn_flight_energy_wh_r2: 0.9678526266553072
-tcn_flight_energy_wh_mape_percent: 2.8247386568435866
-tcn_flight_energy_wh_wape_percent: 2.727696712916993
+sample_power_w_mae: 30.372466181351275
+sample_power_w_rmse: 45.07186479382512
+sample_power_w_r2: 0.9594394941422593
+sample_power_w_mape_percent: 244.07824014614232
+sample_power_w_wape_percent: 7.475264012804418
+tcn_sample_power_w_mae: 31.76814214910066
+tcn_sample_power_w_rmse: 46.805133386059566
+tcn_sample_power_w_r2: 0.9562599491570919
+tcn_sample_power_w_mape_percent: 262.8673216931789
+tcn_sample_power_w_wape_percent: 7.818767443607771
+flight_energy_wh_mae: 0.18586113756695896
+flight_energy_wh_rmse: 0.25286394628902326
+flight_energy_wh_r2: 0.9971026865675466
+flight_energy_wh_mape_percent: 0.8292150700489905
+flight_energy_wh_wape_percent: 0.8494243035344589
+tcn_flight_energy_wh_mae: 0.5985949951331111
+tcn_flight_energy_wh_rmse: 0.8429406795647795
+tcn_flight_energy_wh_r2: 0.9678029795774405
+tcn_flight_energy_wh_mape_percent: 2.832527904037057
+tcn_flight_energy_wh_wape_percent: 2.7357044269514152
+rls_energy_window_wh_mae: 0.07247032318362097
+rls_energy_window_wh_rmse: 0.0979406891477666
+rls_energy_window_wh_r2: 0.9930805844559911
+rls_energy_window_wh_mape_percent: 384.21881952184765
+rls_energy_window_wh_wape_percent: 3.3830178687735755
+tcn_rls_energy_window_wh_mae: 0.08669790718868221
+tcn_rls_energy_window_wh_rmse: 0.11873089069701928
+tcn_rls_energy_window_wh_r2: 0.9898311801526167
+tcn_rls_energy_window_wh_mape_percent: 425.6297739262395
+tcn_rls_energy_window_wh_wape_percent: 4.047181747229655
 confidence_level: 0.95
-power_interval_radius_w: 80.88341522216797
-sample_power_interval_coverage_percent: 93.68658399098084
-sample_power_interval_mean_width_w: 145.97770971182788
+power_interval_radius_w: 83.09947967529297
+sample_power_interval_coverage_percent: 93.28204788115923
+sample_power_interval_mean_width_w: 150.7810036416387
 flight_energy_interval_coverage_percent: 100.0
-flight_energy_interval_mean_width_wh: 7.8603339816923725
+flight_energy_interval_mean_width_wh: 8.118934175636749
 test_rows: 45237
 test_flights: 28
 prediction_file: I:\STUDY\python\project\Energy-prediction\3.0\out\predictions\test_predictions_3.0.csv
@@ -220,21 +231,24 @@ power_bin_evaluation_file: I:\STUDY\python\project\Energy-prediction\3.0\out\mod
 best_tcn_candidate: tcn_window_12s
 best_tcn_window_seconds: 12.0
 best_tcn_window_steps: 100
-best_tcn_selection_score: 7.0173468692790495
-best_rls_candidate: rls_ff0.9_cov0.25
-best_rls_forgetting_factor: 0.9
-best_rls_initial_covariance: 0.25
+best_tcn_selection_score: 7.022410982808947
+best_rls_candidate: rls_ff0.86_cov1_energy20s
+best_rls_forgetting_factor: 0.86
+best_rls_initial_covariance: 1.0
+best_rls_energy_window_seconds: 20.0
 best_rls_warmup_windows: 0
-best_rls_selection_score: 6.481503319853194
+best_rls_selection_score: 4.940901800776567
 tcn_candidate_count: 10
-rls_candidate_count: 49
+rls_candidate_count: 245
+rls_energy_window_count: 286
+rls_energy_window_evaluation_file: I:\STUDY\python\project\Energy-prediction\3.0\out\model\rls_energy_window_evaluation_3.0.csv
 
 [visualize]
-figure_count: 20
-figures: ['I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\learning_rate_schedule.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\hyperparameter_ranking.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\candidate_validation_wape.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\evaluation_metrics.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_actual_vs_predicted.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_error.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\power_bin_mae.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_18_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_23_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_83_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\power_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\power_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_18_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_23_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_83_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_18_rls_parameter_trace.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_23_rls_parameter_trace.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_83_rls_parameter_trace.png']
+figure_count: 23
+figures: ['I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\learning_rate_schedule.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\hyperparameter_ranking.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\candidate_validation_wape.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\rls_energy_window_selection.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\evaluation_metrics.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_actual_vs_predicted.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_error.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\power_bin_mae.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_18_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_23_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_83_second_energy_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\power_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\power_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\rls_energy_window_prediction_scatter.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\rls_energy_window_residual_histogram.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_18_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_23_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_83_power_timeseries.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_18_rls_parameter_trace.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_23_rls_parameter_trace.png', 'I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\flight_83_rls_parameter_trace.png']
 out_dir: I:\STUDY\python\project\Energy-prediction\3.0\out
 
 [运行结果]
-finished_at: 2026-09-07T20:07:52+08:00
+finished_at: 2026-09-13T15:57:20+08:00
 status: 完成
-elapsed_seconds: 9210.832
+elapsed_seconds: 19769.101

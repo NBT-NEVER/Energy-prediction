@@ -3,7 +3,7 @@
   "default_confidence": 0.95,
   "online_samples": 41052,
   "static_samples": 41052,
-  "online_default_radius_w": 80.88341522216797,
-  "static_default_radius_w": 83.30735778808594,
+  "online_default_radius_w": 83.09947967529297,
+  "static_default_radius_w": 84.08228302001953,
   "npz_file": "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\rls\\uncertainty_calibration_3.0.npz"
 }

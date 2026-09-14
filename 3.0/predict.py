@@ -17,7 +17,7 @@ from data_utils import load_json, prepare_prediction_frame
 from device_utils import describe_cuda_device, select_cuda_device
 from model import RLSCorrector, build_model
 from progress import TerminalProgress
-from train import apply_rls_correction, build_sequence_arrays, inverse_target_transform
+from train import apply_rls_correction, build_rls_energy_window_ids, build_sequence_arrays, inverse_target_transform
 from uncertainty import (
     add_prediction_intervals,
     interval_summary,
@@ -124,7 +124,8 @@ def predict_from_csv(
     if online_update is None:
         online_update = cfg.target_column in frame.columns
     initial_theta = None if online_update else checkpoint.get("rls_theta")
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance)}
+    rls_energy_window_seconds = float(checkpoint.get("rls_energy_window_seconds", cfg.rls_energy_window_seconds))
+    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance), "energy_window_seconds": rls_energy_window_seconds}
     corrected_power, theta = apply_rls_correction(base_power, frame, scaler, cfg, initial_theta, update=bool(online_update), progress_label="RLS在线校正", rls_params=rls_params, trace_path=cfg.rls_parameter_trace_csv)
     workflow_progress.update(4, f"RLS校正完成，在线更新={'开启' if online_update else '关闭'}")
     output = frame.copy()
@@ -133,6 +134,7 @@ def predict_from_csv(
     output["predicted_power_w"] = corrected_power
     output["rls_correction_w"] = corrected_power - base_power
     output["rls_update_enabled"] = bool(online_update)
+    output["rls_energy_window_seconds"] = rls_energy_window_seconds
     if "dt_seconds" in output.columns:
         output["tcn_predicted_energy_wh"] = output["tcn_predicted_power_w"] * output["dt_seconds"] / 3600.0
         output["predicted_energy_wh"] = output["predicted_power_w"] * output["dt_seconds"] / 3600.0
@@ -142,9 +144,15 @@ def predict_from_csv(
         output["predicted_second_energy_wh"] = grouped["predicted_energy_wh"].transform("sum")
         output["tcn_cumulative_energy_wh"] = output.groupby("flight", sort=False)["tcn_predicted_energy_wh"].cumsum()
         output["predicted_cumulative_energy_wh"] = output.groupby("flight", sort=False)["predicted_energy_wh"].cumsum()
+        output["rls_energy_window"] = build_rls_energy_window_ids(output, rls_energy_window_seconds)
+        rls_grouped = output.groupby(["flight", "rls_energy_window"], sort=False)
+        output["rls_energy_window_duration_seconds"] = rls_grouped["dt_seconds"].transform("sum")
+        output["tcn_rls_window_energy_wh"] = rls_grouped["tcn_predicted_energy_wh"].transform("sum")
+        output["predicted_rls_window_energy_wh"] = rls_grouped["predicted_energy_wh"].transform("sum")
     if cfg.target_column in output.columns and "dt_seconds" in output.columns:
         output["actual_energy_wh"] = output[cfg.target_column] * output["dt_seconds"] / 3600.0
         output["actual_second_energy_wh"] = output.groupby(["flight", "second_window"], sort=False)["actual_energy_wh"].transform("sum")
+        output["actual_rls_window_energy_wh"] = output.groupby(["flight", "rls_energy_window"], sort=False)["actual_energy_wh"].transform("sum")
         output["actual_cumulative_energy_wh"] = output.groupby("flight", sort=False)["actual_energy_wh"].cumsum()
     output["rls_final_theta_0"] = float(theta[0])
     output["rls_final_theta_1"] = float(theta[1])
@@ -218,7 +226,11 @@ def calibrate_uncertainty(cfg: ExperimentConfig) -> dict:
     base_power = predict_array(model, sequences, scaler, device, cfg.batch_size, "校准TCN前向")
     progress.update(3, "TCN校准预测已完成")
     actual = val_frame[cfg.target_column].to_numpy(dtype=float)
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance)}
+    rls_params = {
+        "forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor),
+        "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance),
+        "energy_window_seconds": checkpoint.get("rls_energy_window_seconds", cfg.rls_energy_window_seconds),
+    }
     online, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, None, update=True, progress_label="在线RLS校准", rls_params=rls_params)
     static, _ = apply_rls_correction(base_power, val_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="固定RLS校准", rls_params=rls_params)
     progress.update(4, "在线和固定RLS残差已计算")

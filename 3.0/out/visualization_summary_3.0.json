@@ -1,9 +1,10 @@
 {
-  "figure_count": 20,
+  "figure_count": 23,
   "figures": [
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\learning_rate_schedule.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\hyperparameter_ranking.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\candidate_validation_wape.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\training\\rls_energy_window_selection.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\evaluation_metrics.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_actual_vs_predicted.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\results\\flight_energy_error.png",
@@ -15,6 +16,8 @@
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\power_residual_histogram.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_prediction_scatter.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\second_energy_residual_histogram.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\rls_energy_window_prediction_scatter.png",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\rls_energy_window_residual_histogram.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_18_power_timeseries.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_23_power_timeseries.png",
     "I:\\STUDY\\python\\project\\Energy-prediction\\3.0\\out\\figures\\prediction\\flight_83_power_timeseries.png",

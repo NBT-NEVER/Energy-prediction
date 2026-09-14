@@ -108,6 +108,45 @@ def build_power_bin_summary(prediction_frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_rls_energy_window_summary(prediction_frame: pd.DataFrame) -> pd.DataFrame:
+    """功能: 按最终RLS反馈区间汇总窗口能量和误差。
+    参数: prediction_frame为包含RLS反馈窗口能量字段的预测结果表。
+    返回: 按flight和RLS能量窗口汇总的评估明细表。
+    调用位置: evaluate_model。
+    """
+
+    required = {
+        "flight",
+        "rls_energy_window",
+        "rls_energy_window_seconds",
+        "rls_energy_window_duration_seconds",
+        "actual_rls_window_energy_wh",
+        "tcn_rls_window_energy_wh",
+        "predicted_rls_window_energy_wh",
+    }
+    missing = sorted(required - set(prediction_frame.columns))
+    if missing:
+        raise ValueError(f"预测结果缺少RLS能量窗口评估字段: {missing}")
+    columns = [
+        "flight",
+        "rls_energy_window",
+        "rls_energy_window_seconds",
+        "rls_energy_window_duration_seconds",
+        "actual_rls_window_energy_wh",
+        "tcn_rls_window_energy_wh",
+        "predicted_rls_window_energy_wh",
+    ]
+    summary = prediction_frame[columns].drop_duplicates(["flight", "rls_energy_window"]).copy()
+    summary["rls_energy_window_error_wh"] = summary["predicted_rls_window_energy_wh"] - summary["actual_rls_window_energy_wh"]
+    summary["rls_energy_window_abs_error_wh"] = summary["rls_energy_window_error_wh"].abs()
+    summary["rls_energy_window_abs_percent_error"] = (
+        summary["rls_energy_window_abs_error_wh"]
+        / summary["actual_rls_window_energy_wh"].abs().clip(lower=1e-6)
+        * 100.0
+    )
+    return summary.sort_values(["flight", "rls_energy_window"]).reset_index(drop=True)
+
+
 def evaluation_field_descriptions() -> dict[str, str]:
     """功能: 返回evaluation JSON中各指标字段的含义说明。
     参数: 无。
@@ -142,6 +181,19 @@ def evaluation_field_descriptions() -> dict[str, str]:
         "sample_power_interval_mean_width_w": "测试集样本级功率预测区间平均宽度，单位W。",
         "flight_energy_interval_coverage_percent": "flight级真实能耗落入预测区间的比例，单位%。",
         "flight_energy_interval_mean_width_wh": "flight级能耗预测区间平均宽度，单位Wh。",
+        "rls_energy_window_wh_mae": "最终RLS能量反馈区间的窗口能量平均绝对误差，单位Wh。",
+        "rls_energy_window_wh_rmse": "最终RLS能量反馈区间的窗口能量均方根误差，单位Wh。",
+        "rls_energy_window_wh_r2": "最终RLS能量反馈区间的窗口能量决定系数，无量纲。",
+        "rls_energy_window_wh_mape_percent": "最终RLS能量反馈区间的窗口能量平均绝对百分比误差，单位%。",
+        "rls_energy_window_wh_wape_percent": "最终RLS能量反馈区间的窗口能量加权绝对百分比误差，单位%。",
+        "tcn_rls_energy_window_wh_mae": "同一RLS能量反馈区间内TCN原始窗口能量平均绝对误差，单位Wh。",
+        "tcn_rls_energy_window_wh_rmse": "同一RLS能量反馈区间内TCN原始窗口能量均方根误差，单位Wh。",
+        "tcn_rls_energy_window_wh_r2": "同一RLS能量反馈区间内TCN原始窗口能量决定系数，无量纲。",
+        "tcn_rls_energy_window_wh_mape_percent": "同一RLS能量反馈区间内TCN原始窗口能量平均绝对百分比误差，单位%。",
+        "tcn_rls_energy_window_wh_wape_percent": "同一RLS能量反馈区间内TCN原始窗口能量加权绝对百分比误差，单位%。",
+        "rls_energy_window_seconds": "最终RLS能量反馈时间区间，单位s。",
+        "rls_energy_window_count": "测试集中最终RLS能量反馈窗口数量。",
+        "rls_energy_window_evaluation_file": "按flight和最终RLS能量反馈窗口保存的评估明细CSV文件路径。",
         "test_rows": "参与最终测试评估的采样记录数，单位为行。",
         "test_flights": "参与最终测试评估的不重复flight数量，单位为次。",
         "prediction_file": "测试集逐样本预测结果CSV文件路径。",
@@ -155,6 +207,7 @@ def evaluation_field_descriptions() -> dict[str, str]:
         "best_rls_forgetting_factor": "最终固定使用的RLS遗忘因子。",
         "best_rls_initial_covariance": "最终固定使用的RLS初始协方差。",
         "best_rls_warmup_windows": "兼容旧字段，当前版本固定为0个完整秒窗口，不参与RLS候选搜索。",
+        "best_rls_energy_window_seconds": "验证集选择的RLS能量反馈时间区间，单位s。",
         "best_rls_selection_score": "阶段二汇总所有验证flight后的RLS选择价值函数。",
         "tcn_candidate_count": "TCN时间窗候选数量。",
         "rls_candidate_count": "RLS参数组合候选数量。",
@@ -194,7 +247,8 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     ).reset_index()
     second_summary["energy_error_wh"] = second_summary["predicted_energy_wh"] - second_summary["actual_energy_wh"]
     power_bin_summary = build_power_bin_summary(predictions)
-    progress.update(3, f"已汇总 {len(flight_summary)} 个flight、{len(power_bin_summary)} 个功率区间")
+    rls_energy_summary = build_rls_energy_window_summary(predictions)
+    progress.update(3, f"已汇总 {len(flight_summary)} 个flight、{len(rls_energy_summary)} 个RLS能量窗口")
     flight_metrics = regression_metrics(
         flight_summary["actual_energy_wh"].to_numpy(),
         flight_summary["predicted_energy_wh"].to_numpy(),
@@ -204,6 +258,16 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         flight_summary["actual_energy_wh"].to_numpy(),
         flight_summary["tcn_predicted_energy_wh"].to_numpy(),
         "tcn_flight_energy_wh",
+    )
+    rls_energy_metrics = regression_metrics(
+        rls_energy_summary["actual_rls_window_energy_wh"].to_numpy(),
+        rls_energy_summary["predicted_rls_window_energy_wh"].to_numpy(),
+        "rls_energy_window_wh",
+    )
+    tcn_rls_energy_metrics = regression_metrics(
+        rls_energy_summary["actual_rls_window_energy_wh"].to_numpy(),
+        rls_energy_summary["tcn_rls_window_energy_wh"].to_numpy(),
+        "tcn_rls_energy_window_wh",
     )
     interval_metrics = {}
     if {"predicted_power_lower_w", "predicted_power_upper_w"}.issubset(predictions.columns):
@@ -236,6 +300,8 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         **tcn_sample_metrics,
         **flight_metrics,
         **tcn_flight_metrics,
+        **rls_energy_metrics,
+        **tcn_rls_energy_metrics,
         **interval_metrics,
         "test_rows": int(len(predictions)),
         "test_flights": int(flight_summary["flight"].nunique()),
@@ -249,10 +315,13 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
         "best_rls_candidate": str(best_rls["candidate"]),
         "best_rls_forgetting_factor": float(best_rls["forgetting_factor"]),
         "best_rls_initial_covariance": float(best_rls["initial_covariance"]),
+        "best_rls_energy_window_seconds": float(best_rls["energy_window_seconds"]),
         "best_rls_warmup_windows": int(best_rls["warmup_windows"]),
         "best_rls_selection_score": float(best_rls["selection_score"]),
         "tcn_candidate_count": int(len(tuning)),
         "rls_candidate_count": int(len(rls_tuning)),
+        "rls_energy_window_count": int(len(rls_energy_summary)),
+        "rls_energy_window_evaluation_file": str(cfg.rls_energy_window_evaluation_csv),
     }
     progress.update(4, f"flight能耗 WAPE={flight_metrics['flight_energy_wh_wape_percent']:.4f}%")
 
@@ -260,6 +329,7 @@ def evaluate_model(cfg: ExperimentConfig) -> dict:
     flight_summary.to_csv(cfg.flight_energy_summary_csv, index=False, encoding="utf-8")
     power_bin_summary.to_csv(cfg.power_bin_evaluation_csv, index=False, encoding="utf-8")
     second_summary.to_csv(cfg.second_energy_evaluation_csv, index=False, encoding="utf-8")
+    rls_energy_summary.to_csv(cfg.rls_energy_window_evaluation_csv, index=False, encoding="utf-8")
     evaluation_json = {
         "_文件说明": "本文件汇总实验3.0测试集上的TCN原始输出、秒级能量监督RLS校正结果、预测区间覆盖率及相关输出文件路径。功率指标单位为W，能耗指标单位为Wh，百分比指标单位为%。",
         "_字段说明": evaluation_field_descriptions(),

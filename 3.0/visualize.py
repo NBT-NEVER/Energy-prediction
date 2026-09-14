@@ -122,7 +122,42 @@ def plot_training_history(cfg: ExperimentConfig) -> list[Path]:
             plt.title("Validation WAPE by Candidate")
             plt.legend()
             outputs.append(save_figure(cfg.training_vis_dir / "candidate_validation_wape.png"))
+    outputs.extend(plot_rls_energy_window_selection(cfg))
     return outputs
+
+
+def plot_rls_energy_window_selection(cfg: ExperimentConfig) -> list[Path]:
+    """功能: 绘制RLS能量反馈时间区间候选的选择分数和区间指标。
+    参数: cfg为实验配置对象。
+    返回: 已生成的RLS能量区间选择图路径列表。
+    调用位置: plot_training_history。
+    """
+
+    if not cfg.rls_tuning_results_csv.exists():
+        return []
+    tuning = pd.read_csv(cfg.rls_tuning_results_csv)
+    required = {"energy_window_seconds", "selection_score", "val_rls_energy_window_wape_mean"}
+    if tuning.empty or not required.issubset(tuning.columns):
+        return []
+    grouped = tuning.groupby("energy_window_seconds", sort=True).agg(
+        best_selection_score=("selection_score", "min"),
+        mean_selection_score=("selection_score", "mean"),
+        best_energy_wape=("val_rls_energy_window_wape_mean", "min"),
+    ).reset_index()
+    x = np.arange(len(grouped))
+    width = 0.28
+    set_plot_style()
+    plt.figure(figsize=(10, 5))
+    plt.bar(x - width, grouped["best_selection_score"], width=width, label="Best selection score", color="#4c78a8")
+    plt.bar(x, grouped["mean_selection_score"], width=width, label="Mean selection score", color="#9ecae9")
+    plt.bar(x + width, grouped["best_energy_wape"], width=width, label="Best energy-window WAPE", color="#f28e2b")
+    labels = [f"{value:g}s" for value in grouped["energy_window_seconds"]]
+    plt.xticks(x, labels)
+    plt.xlabel("RLS energy feedback window")
+    plt.ylabel("Validation score / WAPE (%)")
+    plt.title("RLS Energy Feedback Window Selection")
+    plt.legend()
+    return [save_figure(cfg.rls_energy_window_selection_figure)]
 
 
 def plot_result_summary(cfg: ExperimentConfig) -> list[Path]:
@@ -254,6 +289,38 @@ def plot_prediction_outputs(cfg: ExperimentConfig, max_flights: int = 3) -> list
             plt.title("Second-Level Energy Residual Distribution")
             outputs.append(save_figure(cfg.prediction_vis_dir / "second_energy_residual_histogram.png"))
 
+    selected_window_columns = {
+        "flight",
+        "rls_energy_window",
+        "rls_energy_window_seconds",
+        "actual_rls_window_energy_wh",
+        "predicted_rls_window_energy_wh",
+    }
+    if selected_window_columns.issubset(predictions.columns):
+        window_frame = predictions.drop_duplicates(["flight", "rls_energy_window"]).dropna(
+            subset=["actual_rls_window_energy_wh", "predicted_rls_window_energy_wh"]
+        )
+        if not window_frame.empty:
+            interval = float(window_frame["rls_energy_window_seconds"].iloc[0])
+            plt.figure(figsize=(6, 6))
+            plt.scatter(window_frame["actual_rls_window_energy_wh"], window_frame["predicted_rls_window_energy_wh"], s=12, alpha=0.4, color="#b279a2")
+            max_value = float(max(window_frame["actual_rls_window_energy_wh"].max(), window_frame["predicted_rls_window_energy_wh"].max()))
+            plt.plot([0, max_value], [0, max_value], color="#e45756", linewidth=2, label="Ideal")
+            plt.xlabel("Actual RLS-window energy (Wh)")
+            plt.ylabel("Predicted RLS-window energy (Wh)")
+            plt.title(f"RLS Energy Window Scatter ({interval:g}s)")
+            plt.legend()
+            outputs.append(save_figure(cfg.rls_energy_window_scatter_figure))
+
+            residual = window_frame["predicted_rls_window_energy_wh"] - window_frame["actual_rls_window_energy_wh"]
+            plt.figure(figsize=(9, 5))
+            limit = max(float(np.quantile(np.abs(residual), 0.99)), 1e-6)
+            plt.hist(residual.clip(-limit, limit), bins=80, color="#b279a2", alpha=0.85)
+            plt.xlabel("RLS-window energy residual (Wh)")
+            plt.ylabel("Count")
+            plt.title(f"RLS Energy Window Residual Distribution ({interval:g}s)")
+            outputs.append(save_figure(cfg.rls_energy_window_residual_figure))
+
     if {"flight", "time", "predicted_power_w"}.issubset(predictions.columns):
         flight_ids = predictions["flight"].drop_duplicates().head(max_flights).tolist()
         for flight_id in flight_ids:
@@ -297,17 +364,18 @@ def plot_rls_parameter_trace(cfg: ExperimentConfig) -> list[Path]:
     set_plot_style()
     selected = trace["flight"].drop_duplicates().head(3)
     for flight_id in selected:
-        part = trace[trace["flight"] == flight_id].sort_values("second_window")
+        x_column = "rls_window_start_seconds" if "rls_window_start_seconds" in trace.columns else "second_window"
+        part = trace[trace["flight"] == flight_id].sort_values(x_column)
         fig, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
-        axes[0].plot(part["second_window"], part["theta_bias_after"], label="Bias")
+        axes[0].plot(part[x_column], part["theta_bias_after"], label="Bias")
         axes[0].axhline(0.0, color="#777777", linewidth=1)
         axes[0].set_ylabel("Bias coefficient")
-        axes[1].plot(part["second_window"], part["theta_scale_after"], label="Scale", color="#f28e2b")
+        axes[1].plot(part[x_column], part["theta_scale_after"], label="Scale", color="#f28e2b")
         axes[1].axhline(1.0, color="#777777", linewidth=1)
         axes[1].set_ylabel("Scale coefficient")
-        axes[1].set_xlabel("Second window")
+        axes[1].set_xlabel("RLS feedback window start (s)")
         for axis in axes:
-            for window in part.loc[part["state_changed"].eq(1), "second_window"]:
+            for window in part.loc[part["state_changed"].eq(1), x_column]:
                 axis.axvline(window, color="#e15759", alpha=0.3)
         fig.suptitle(f"Flight {flight_id} RLS Parameter Trace")
         outputs.append(save_figure(cfg.rls_dir / f"flight_{flight_id}_rls_parameter_trace.png"))
@@ -467,12 +535,17 @@ def predict_custom_scenario(
     progress.update(3, f"已构造 {len(sequences)} 条输入序列")
     tcn_power = predict_array(model, sequences, scaler, device, cfg.batch_size)
     progress.update(4, "TCN前向推理完成")
-    rls_params = {"forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor), "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance)}
+    rls_params = {
+        "forgetting_factor": checkpoint.get("rls_forgetting_factor", cfg.rls_forgetting_factor),
+        "initial_covariance": checkpoint.get("rls_initial_covariance", cfg.rls_initial_covariance),
+        "energy_window_seconds": checkpoint.get("rls_energy_window_seconds", cfg.rls_energy_window_seconds),
+    }
     corrected_power, _ = apply_rls_correction(tcn_power, custom_frame, scaler, cfg, checkpoint.get("rls_theta"), update=False, progress_label="自定义RLS校正", rls_params=rls_params)
     custom_frame["tcn_predicted_power_w"] = tcn_power
     custom_frame["rls_corrected_power_w"] = corrected_power
     custom_frame["predicted_power_w"] = corrected_power
     custom_frame["rls_update_enabled"] = False
+    custom_frame["rls_energy_window_seconds"] = float(rls_params["energy_window_seconds"])
     confidence = cfg.default_confidence if confidence is None else float(confidence)
     scores = load_calibration_scores(cfg.uncertainty_calibration_npz, online_update=False)
     custom_frame, radius = add_prediction_intervals(custom_frame, scores, confidence)

@@ -63,6 +63,7 @@ EVALUATION_CSV = OUT_MODEL_DIR / "evaluation_3.0.csv"
 FLIGHT_ENERGY_SUMMARY_CSV = OUT_MODEL_DIR / "flight_energy_summary_3.0.csv"
 POWER_BIN_EVALUATION_CSV = OUT_MODEL_DIR / "power_bin_evaluation_3.0.csv"
 SECOND_ENERGY_EVALUATION_CSV = OUT_MODEL_DIR / "second_energy_evaluation_3.0.csv"
+RLS_ENERGY_WINDOW_EVALUATION_CSV = OUT_MODEL_DIR / "rls_energy_window_evaluation_3.0.csv"
 PREDICTION_CSV = PREDICTION_DIR / "test_predictions_3.0.csv"
 UNCERTAINTY_CALIBRATION_NPZ = RLS_DIR / "uncertainty_calibration_3.0.npz"
 UNCERTAINTY_CALIBRATION_JSON = RLS_DIR / "uncertainty_calibration_3.0.json"
@@ -73,6 +74,9 @@ TRAINING_VIS_DIR = FIGURE_DIR / "training"
 RESULT_VIS_DIR = FIGURE_DIR / "results"
 PREDICTION_VIS_DIR = FIGURE_DIR / "prediction"
 CUSTOM_VIS_DIR = FIGURE_DIR / "custom"
+RLS_ENERGY_WINDOW_SELECTION_FIGURE = TRAINING_VIS_DIR / "rls_energy_window_selection.png"
+RLS_ENERGY_WINDOW_SCATTER_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_prediction_scatter.png"
+RLS_ENERGY_WINDOW_RESIDUAL_FIGURE = PREDICTION_VIS_DIR / "rls_energy_window_residual_histogram.png"
 CUSTOM_SCENARIO_CSV = CUSTOM_DIR / "custom_scenarios_3.0.csv"
 CUSTOM_PREDICTION_CSV = CUSTOM_DIR / "custom_predictions_3.0.csv"
 CUSTOM_PREDICTION_SUMMARY_JSON = CUSTOM_DIR / "custom_prediction_summary_3.0.json"
@@ -102,6 +106,8 @@ TCN_CHANNELS = (64, 64, 64, 32)
 # RLS候选范围只搜索遗忘因子和初始协方差；warmup固定为0个完整秒窗口。
 RLS_FORGETTING_FACTORS = (0.86, 0.88, 0.90, 0.91, 0.92, 0.94, 0.96)
 RLS_INITIAL_COVARIANCES = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
+RLS_ENERGY_WINDOW_SECONDS = (1.0, 2.0, 5.0, 10.0, 20.0)
+RLS_DEFAULT_ENERGY_WINDOW_SECONDS = 1.0
 RLS_FORGETTING_FACTOR = 0.97
 RLS_INITIAL_COVARIANCE = 10.0
 FLIGHT_STATE_THRESHOLD_W = 50.0
@@ -158,6 +164,7 @@ class ExperimentConfig:
     flight_energy_summary_csv: Path = FLIGHT_ENERGY_SUMMARY_CSV
     power_bin_evaluation_csv: Path = POWER_BIN_EVALUATION_CSV
     second_energy_evaluation_csv: Path = SECOND_ENERGY_EVALUATION_CSV
+    rls_energy_window_evaluation_csv: Path = RLS_ENERGY_WINDOW_EVALUATION_CSV
     prediction_csv: Path = PREDICTION_CSV
     uncertainty_calibration_npz: Path = UNCERTAINTY_CALIBRATION_NPZ
     uncertainty_calibration_json: Path = UNCERTAINTY_CALIBRATION_JSON
@@ -165,6 +172,9 @@ class ExperimentConfig:
     result_vis_dir: Path = RESULT_VIS_DIR
     prediction_vis_dir: Path = PREDICTION_VIS_DIR
     custom_vis_dir: Path = CUSTOM_VIS_DIR
+    rls_energy_window_selection_figure: Path = RLS_ENERGY_WINDOW_SELECTION_FIGURE
+    rls_energy_window_scatter_figure: Path = RLS_ENERGY_WINDOW_SCATTER_FIGURE
+    rls_energy_window_residual_figure: Path = RLS_ENERGY_WINDOW_RESIDUAL_FIGURE
     custom_scenario_csv: Path = CUSTOM_SCENARIO_CSV
     custom_prediction_csv: Path = CUSTOM_PREDICTION_CSV
     visualization_summary_json: Path = VISUALIZATION_SUMMARY_JSON
@@ -190,6 +200,8 @@ class ExperimentConfig:
     rls_initial_covariance: float = RLS_INITIAL_COVARIANCE
     rls_forgetting_factors: tuple[float, ...] = RLS_FORGETTING_FACTORS
     rls_initial_covariances: tuple[float, ...] = RLS_INITIAL_COVARIANCES
+    rls_energy_window_seconds: float = RLS_DEFAULT_ENERGY_WINDOW_SECONDS
+    rls_energy_window_candidates: tuple[float, ...] = RLS_ENERGY_WINDOW_SECONDS
     flight_state_threshold_w: float = FLIGHT_STATE_THRESHOLD_W
     resampled_interval_seconds: float = RESAMPLED_INTERVAL_SECONDS
     custom_prediction_summary_json: Path = CUSTOM_PREDICTION_SUMMARY_JSON
@@ -261,6 +273,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("flight_energy_summary_csv", out_model_dir / "flight_energy_summary_3.0.csv")
         normalized.setdefault("power_bin_evaluation_csv", out_model_dir / "power_bin_evaluation_3.0.csv")
         normalized.setdefault("second_energy_evaluation_csv", out_model_dir / "second_energy_evaluation_3.0.csv")
+        normalized.setdefault("rls_energy_window_evaluation_csv", out_model_dir / "rls_energy_window_evaluation_3.0.csv")
         normalized.setdefault("prediction_csv", prediction_dir / "test_predictions_3.0.csv")
         normalized.setdefault("uncertainty_calibration_npz", rls_dir / "uncertainty_calibration_3.0.npz")
         normalized.setdefault("uncertainty_calibration_json", rls_dir / "uncertainty_calibration_3.0.json")
@@ -269,6 +282,9 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("result_vis_dir", figure_dir / "results")
         normalized.setdefault("prediction_vis_dir", figure_dir / "prediction")
         normalized.setdefault("custom_vis_dir", figure_dir / "custom")
+        normalized.setdefault("rls_energy_window_selection_figure", figure_dir / "training" / "rls_energy_window_selection.png")
+        normalized.setdefault("rls_energy_window_scatter_figure", figure_dir / "prediction" / "rls_energy_window_prediction_scatter.png")
+        normalized.setdefault("rls_energy_window_residual_figure", figure_dir / "prediction" / "rls_energy_window_residual_histogram.png")
         normalized.setdefault("custom_scenario_csv", custom_dir / "custom_scenarios_3.0.csv")
         normalized.setdefault("custom_prediction_csv", custom_dir / "custom_predictions_3.0.csv")
         normalized.setdefault("visualization_summary_json", out_dir / "visualization_summary_3.0.json")

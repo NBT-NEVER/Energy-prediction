@@ -142,7 +142,7 @@ def run_mode(args: argparse.Namespace, cfg) -> None:
         f"调参轮数={cfg.tune_epochs}，最终轮数={cfg.epochs}，批大小={cfg.batch_size}，默认置信度={cfg.default_confidence:.1%}"
     )
     print(f"TCN时间窗候选: {list(cfg.window_seconds_candidates)}")
-    print(f"RLS候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，窗口结束后立即更新（warmup=0）")
+    print(f"RLS候选: 遗忘因子={list(cfg.rls_forgetting_factors)}，初始协方差={list(cfg.rls_initial_covariances)}，能量反馈区间={list(cfg.rls_energy_window_candidates)}s，窗口结束后立即更新（warmup=0）")
 
     if args.mode == "download":
         print("\n[下载数据] 检查公开数据仓库和原始压缩包。")
