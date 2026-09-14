@@ -39,7 +39,6 @@ RAW_README_FILE = RAW_DATA_DIR / "README.txt"
 PROCESSED_DIR = OUT_DATA_DIR / "processed_3.2"
 CLEAN_DATA_CSV = PROCESSED_DIR / "uav_energy_features.csv"
 SECOND_ENERGY_CSV = PROCESSED_DIR / "second_energy_3.2.csv"
-EXCLUDED_ROUTES_CSV = PROCESSED_DIR / "excluded_routes_3.2.csv"
 TRAIN_CSV = PROCESSED_DIR / "train.csv"
 VAL_CSV = PROCESSED_DIR / "val.csv"
 TEST_CSV = PROCESSED_DIR / "test.csv"
@@ -66,6 +65,7 @@ POWER_BIN_EVALUATION_CSV = OUT_MODEL_DIR / "power_bin_evaluation_3.2.csv"
 SECOND_ENERGY_EVALUATION_CSV = OUT_MODEL_DIR / "second_energy_evaluation_3.2.csv"
 RLS_ENERGY_WINDOW_EVALUATION_CSV = OUT_MODEL_DIR / "rls_energy_window_evaluation_3.2.csv"
 PREDICTION_CSV = PREDICTION_DIR / "test_predictions_3.2.csv"
+ALL_ROUTE_PREDICTION_CSV = PREDICTION_DIR / "all_route_predictions_3.2.csv"
 UNCERTAINTY_CALIBRATION_NPZ = RLS_DIR / "uncertainty_calibration_3.2.npz"
 UNCERTAINTY_CALIBRATION_JSON = RLS_DIR / "uncertainty_calibration_3.2.json"
 
@@ -92,33 +92,34 @@ TERMINAL_LOG_FILE = LOG_DIR / "terminal_3.2.log"
 
 # 训练和切分默认参数
 TARGET_COLUMN = "power_w"
-TRAINING_ROUTE = "R1"
 TARGET_TRANSFORM = "none"
 RANDOM_SEED = 42
 TEST_RATIO = 0.15
 VAL_RATIO = 0.15
 BATCH_SIZE = 2048
-EPOCHS = 80
-TUNE_EPOCHS = 80
+EPOCHS = 20
+TUNE_EPOCHS = 20
 LEARNING_RATE = 3e-4
 WEIGHT_DECAY = 1e-4
 PATIENCE = 10
 DEFAULT_DEVICE = "cuda"
 # TCN/RLS短时间窗候选值，单位为秒；训练时会折算为采样步数并写入调参结果。
-WINDOW_SECONDS_CANDIDATES = (0.25, 0.5, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 16.0)
-DEFAULT_WINDOW_SECONDS = 1.5
+WINDOW_SECONDS_CANDIDATES = (2.0,)
+# 当前缩小后的TCN候选和正式训练均使用2秒时间窗。
+DEFAULT_WINDOW_SECONDS = 2.0
 DEFAULT_CONFIDENCE = 0.95
 # TCN残差块通道；4个块对应更深的时间特征提取网络
 TCN_CHANNELS = (64, 64, 64, 32)
 # RLS候选范围只搜索遗忘因子和初始协方差；warmup固定为0个完整秒窗口。
-RLS_FORGETTING_FACTORS = (0.86, 0.88, 0.90, 0.91, 0.92, 0.94, 0.96)
-RLS_INITIAL_COVARIANCES = (0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0)
+RLS_FORGETTING_FACTORS = (0.86, 0.92, 0.96)
+RLS_INITIAL_COVARIANCES = (0.1, 1.0)
 # 能量反馈窗只用于固定RLS参数后的变量对比，不参与RLS超参数搜索。
 RLS_ENERGY_WINDOW_COMPARISON_SECONDS = (1.0, 2.0, 5.0, 10.0, 20.0)
 RLS_ENERGY_WINDOW_SECONDS = RLS_ENERGY_WINDOW_COMPARISON_SECONDS
 RLS_DEFAULT_ENERGY_WINDOW_SECONDS = 1.0
-RLS_FORGETTING_FACTOR = 0.97
-RLS_INITIAL_COVARIANCE = 10.0
+# 沿用实验3.2已完成RLS选择得到的固定参数；能量窗仍只作对比变量。
+RLS_FORGETTING_FACTOR = 0.86
+RLS_INITIAL_COVARIANCE = 1.0
 FLIGHT_STATE_THRESHOLD_W = 50.0
 RESAMPLED_INTERVAL_SECONDS = 0.12
 
@@ -152,7 +153,6 @@ class ExperimentConfig:
     processed_dir: Path = PROCESSED_DIR
     clean_data_csv: Path = CLEAN_DATA_CSV
     second_energy_csv: Path = SECOND_ENERGY_CSV
-    excluded_routes_csv: Path = EXCLUDED_ROUTES_CSV
     train_csv: Path = TRAIN_CSV
     val_csv: Path = VAL_CSV
     test_csv: Path = TEST_CSV
@@ -176,6 +176,7 @@ class ExperimentConfig:
     second_energy_evaluation_csv: Path = SECOND_ENERGY_EVALUATION_CSV
     rls_energy_window_evaluation_csv: Path = RLS_ENERGY_WINDOW_EVALUATION_CSV
     prediction_csv: Path = PREDICTION_CSV
+    all_route_prediction_csv: Path = ALL_ROUTE_PREDICTION_CSV
     uncertainty_calibration_npz: Path = UNCERTAINTY_CALIBRATION_NPZ
     uncertainty_calibration_json: Path = UNCERTAINTY_CALIBRATION_JSON
     training_vis_dir: Path = TRAINING_VIS_DIR
@@ -196,7 +197,6 @@ class ExperimentConfig:
     visualization_summary_json: Path = VISUALIZATION_SUMMARY_JSON
     terminal_log_file: Path = TERMINAL_LOG_FILE
     target_column: str = TARGET_COLUMN
-    training_route: str = TRAINING_ROUTE
     target_transform: str = TARGET_TRANSFORM
     random_seed: int = RANDOM_SEED
     test_ratio: float = TEST_RATIO
@@ -271,7 +271,6 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
         normalized.setdefault("second_energy_csv", processed_dir / "second_energy_3.2.csv")
-        normalized.setdefault("excluded_routes_csv", processed_dir / "excluded_routes_3.2.csv")
         normalized.setdefault("train_csv", processed_dir / "train.csv")
         normalized.setdefault("val_csv", processed_dir / "val.csv")
         normalized.setdefault("test_csv", processed_dir / "test.csv")
@@ -292,6 +291,7 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("second_energy_evaluation_csv", out_model_dir / "second_energy_evaluation_3.2.csv")
         normalized.setdefault("rls_energy_window_evaluation_csv", out_model_dir / "rls_energy_window_evaluation_3.2.csv")
         normalized.setdefault("prediction_csv", prediction_dir / "test_predictions_3.2.csv")
+        normalized.setdefault("all_route_prediction_csv", prediction_dir / "all_route_predictions_3.2.csv")
         normalized.setdefault("uncertainty_calibration_npz", rls_dir / "uncertainty_calibration_3.2.npz")
         normalized.setdefault("uncertainty_calibration_json", rls_dir / "uncertainty_calibration_3.2.json")
         normalized.setdefault("loss_curve_file", figure_dir / "training" / "loss_curve_3.2.png")

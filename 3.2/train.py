@@ -756,7 +756,7 @@ def tcn_selection_metrics(base_power: np.ndarray, frame: pd.DataFrame, cfg: Expe
 def rls_candidate_grid(cfg: ExperimentConfig) -> list[dict]:
     """功能: 生成不包含能量窗变量的RLS验证候选组合。
     参数: cfg为实验配置。
-    返回: 7×7共49组遗忘因子和初始协方差，warmup固定为0；能量窗只在独立变量分析中比较。
+    返回: 3×2共6组遗忘因子和初始协方差，warmup固定为0；能量窗只在独立变量分析中比较。
     调用位置: train_model、tune_rls_only。
     """
 
@@ -1031,6 +1031,14 @@ def train_fixed_tcn(cfg: ExperimentConfig) -> dict:
         "dropout": params["dropout"], "learning_rate": params["learning_rate"], "weight_decay": params["weight_decay"],
         "huber_delta": params["huber_delta"], "window_seconds": window_seconds, "window_steps": params["window_steps"],
         "sample_interval_seconds": sample_interval, "rls_theta": initial_theta, "power_scale": scaler["power_scale"],
+        "rls_forgetting_factor": cfg.rls_forgetting_factor,
+        "rls_initial_covariance": cfg.rls_initial_covariance,
+        "rls_energy_window_seconds": cfg.rls_energy_window_seconds,
+        "rls_warmup_windows": 0,
+        "best_rls_candidate": (
+            f"rls_ff{cfg.rls_forgetting_factor:g}_cov{cfg.rls_initial_covariance:g}_"
+            f"energy{cfg.rls_energy_window_seconds:g}s"
+        ),
         "scaler_path": str(cfg.scaler_json), "best_val_loss": best_val,
         "best_epoch": min(logs, key=lambda item: item["val_loss"])["epoch"], "best_tcn_candidate": params["name"],
         "best_tcn_window_seconds": window_seconds, "best_tcn_window_steps": params["window_steps"],
