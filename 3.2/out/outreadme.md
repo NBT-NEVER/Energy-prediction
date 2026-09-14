@@ -393,6 +393,22 @@ flight 1、18、23 分别对应 R5、R1、R1 航线，保留用于与既有报�
 
 每个 `*_power_energy.svg` 的上面板横轴为时间 (s)、纵轴为功率 (W)，图例为实际/TCN/RLS；下面板纵轴为累计能量 (Wh)。每个 `*_imu_trajectory.html` 可用鼠标旋转、缩放和悬停，轨迹颜色表示 IMU 路径，角标显示时间、无人机速度 (m/s)、风速 (m/s) 和风向 (°)。对应 GIF 左侧为功率时间曲线，右侧为 3D 轨迹；两侧均有图例，动画点表示当前时刻，灰线表示完整参考轨迹，蓝线表示已飞轨迹。A3 的 RLS 能量明显高于实际值，提示低能量、短航线对在线反馈较敏感；R1、R4、R5、R6 的累计能量较贴近实际，说明在持续飞行且功率较高的航线中校正更稳定。
 
+航线文件逐项清单如下；三列文件使用同一代表 flight 和同一对齐 IMU 数据，SVG/HTML/GIF 的差异仅在交互方式和时间呈现方式：
+
+| 航线 | 功率能量 SVG | 交互 3D HTML | 高清 3D GIF |
+| --- | --- | --- | --- |
+| A1 / 212 | [`flight_212_power_energy.svg`](./routes/route_A1/flight_212/flight_212_power_energy.svg) | [`flight_212_imu_trajectory.html`](./routes/route_A1/flight_212/flight_212_imu_trajectory.html) | [`flight_212_imu_trajectory.gif`](./routes/route_A1/flight_212/flight_212_imu_trajectory.gif) |
+| A2 / 216 | [`flight_216_power_energy.svg`](./routes/route_A2/flight_216/flight_216_power_energy.svg) | [`flight_216_imu_trajectory.html`](./routes/route_A2/flight_216/flight_216_imu_trajectory.html) | [`flight_216_imu_trajectory.gif`](./routes/route_A2/flight_216/flight_216_imu_trajectory.gif) |
+| A3 / 217 | [`flight_217_power_energy.svg`](./routes/route_A3/flight_217/flight_217_power_energy.svg) | [`flight_217_imu_trajectory.html`](./routes/route_A3/flight_217/flight_217_imu_trajectory.html) | [`flight_217_imu_trajectory.gif`](./routes/route_A3/flight_217/flight_217_imu_trajectory.gif) |
+| H / 222 | [`flight_222_power_energy.svg`](./routes/route_H/flight_222/flight_222_power_energy.svg) | [`flight_222_imu_trajectory.html`](./routes/route_H/flight_222/flight_222_imu_trajectory.html) | [`flight_222_imu_trajectory.gif`](./routes/route_H/flight_222/flight_222_imu_trajectory.gif) |
+| R1 / 86 | [`flight_86_power_energy.svg`](./routes/route_R1/flight_86/flight_86_power_energy.svg) | [`flight_86_imu_trajectory.html`](./routes/route_R1/flight_86/flight_86_imu_trajectory.html) | [`flight_86_imu_trajectory.gif`](./routes/route_R1/flight_86/flight_86_imu_trajectory.gif) |
+| R2 / 5 | [`flight_5_power_energy.svg`](./routes/route_R2/flight_5/flight_5_power_energy.svg) | [`flight_5_imu_trajectory.html`](./routes/route_R2/flight_5/flight_5_imu_trajectory.html) | [`flight_5_imu_trajectory.gif`](./routes/route_R2/flight_5/flight_5_imu_trajectory.gif) |
+| R3 / 6 | [`flight_6_power_energy.svg`](./routes/route_R3/flight_6/flight_6_power_energy.svg) | [`flight_6_imu_trajectory.html`](./routes/route_R3/flight_6/flight_6_imu_trajectory.html) | [`flight_6_imu_trajectory.gif`](./routes/route_R3/flight_6/flight_6_imu_trajectory.gif) |
+| R4 / 7 | [`flight_7_power_energy.svg`](./routes/route_R4/flight_7/flight_7_power_energy.svg) | [`flight_7_imu_trajectory.html`](./routes/route_R4/flight_7/flight_7_imu_trajectory.html) | [`flight_7_imu_trajectory.gif`](./routes/route_R4/flight_7/flight_7_imu_trajectory.gif) |
+| R5 / 1 | [`flight_1_power_energy.svg`](./routes/route_R5/flight_1/flight_1_power_energy.svg) | [`flight_1_imu_trajectory.html`](./routes/route_R5/flight_1/flight_1_imu_trajectory.html) | [`flight_1_imu_trajectory.gif`](./routes/route_R5/flight_1/flight_1_imu_trajectory.gif) |
+| R6 / 270 | [`flight_270_power_energy.svg`](./routes/route_R6/flight_270/flight_270_power_energy.svg) | [`flight_270_imu_trajectory.html`](./routes/route_R6/flight_270/flight_270_imu_trajectory.html) | [`flight_270_imu_trajectory.gif`](./routes/route_R6/flight_270/flight_270_imu_trajectory.gif) |
+| R7 / 278 | [`flight_278_power_energy.svg`](./routes/route_R7/flight_278/flight_278_power_energy.svg) | [`flight_278_imu_trajectory.html`](./routes/route_R7/flight_278/flight_278_imu_trajectory.html) | [`flight_278_imu_trajectory.gif`](./routes/route_R7/flight_278/flight_278_imu_trajectory.gif) |
+
 ## D. 产物完整性与复现边界
 
 最终 `out/` 清单为 40 个 SVG、11 个交互 HTML、11 个 GIF、0 个 PNG；所有图片类产物均已改为 SVG，未发现旧 PNG 被 README 引用。每条航线目录同时包含功率能量 SVG、交互 HTML、3D GIF、对齐 CSV 和摘要 JSON；总览 SVG 位于 `routes/all_routes_trajectory_energy.svg`。模型权重为 `D:/Python-files/Energy-prediction/model/best_energy_tcn_rls_3.2.pt` 与 `final_energy_tcn_rls_3.2.pt`，项目内结构化结果和图表位于本目录相对路径。
