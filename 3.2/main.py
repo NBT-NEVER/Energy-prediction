@@ -297,8 +297,8 @@ def main() -> None:
         default_confidence=args.confidence,
     )
     ensure_directories(cfg)
-    # 只有包含TCN超参数搜索的模式才清空日志，其余运行均追加。
-    reset_log = args.mode in {"tune-tcn", "train", "all"}
+    # 只有实际重新执行 TCN 超参搜索时清空日志；单独训练、评估和制图均追加记录。
+    reset_log = args.mode in {"tune-tcn", "all"}
     with TerminalLogCapture(cfg.terminal_log_file, args.mode, reset_log=reset_log) as terminal_log:
         run_mode(args, cfg)
     if terminal_log.failed:
