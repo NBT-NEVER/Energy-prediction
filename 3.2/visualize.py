@@ -401,6 +401,10 @@ def build_default_custom_conditions(
 
     meta = load_json(cfg.feature_meta_json)
     feature_columns = meta["feature_columns"]
+    supported_routes = {column.removeprefix("route_") for column in feature_columns if column.startswith("route_")}
+    route = str(route).strip()
+    if route not in supported_routes:
+        raise ValueError(f"自定义工况航线{route}不在模型训练航线中: {sorted(supported_routes)}")
     times = np.arange(0.0, duration_s + sample_dt, sample_dt)
     progress = np.clip(times / max(duration_s, sample_dt), 0.0, 1.0)
     vertical_speed = np.where(progress < 0.15, 1.8, np.where(progress > 0.85, -1.5, 0.0))
@@ -476,13 +480,14 @@ def normalize_custom_input(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.Dat
         frame["time"] = np.arange(len(frame)) * frame["dt_seconds"].astype(float)
     if "flight" not in frame.columns:
         frame["flight"] = 999001
+    supported_routes = {column.removeprefix("route_") for column in feature_columns if column.startswith("route_")}
     if "route" not in frame.columns:
-        frame["route"] = cfg.training_route
+        frame["route"] = "R1" if "R1" in supported_routes else sorted(supported_routes)[0]
     routes = frame["route"].astype(str).str.strip()
-    invalid_routes = sorted(set(routes) - {cfg.training_route})
+    invalid_routes = sorted(set(routes) - supported_routes)
     if invalid_routes:
-        raise ValueError(f"实验3.2自定义工况仅支持{cfg.training_route}航线，输入包含: {invalid_routes}")
-    frame["route"] = cfg.training_route
+        raise ValueError(f"自定义工况包含模型未训练航线: {invalid_routes}；已训练航线: {sorted(supported_routes)}")
+    frame["route"] = routes
     for column in feature_columns:
         if column.startswith("route_"):
             route_name = column.replace("route_", "", 1)
