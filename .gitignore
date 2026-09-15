@@ -71,3 +71,9 @@ output/
 3.0/out/data/processed_3.0/train.csv
 3.0/out/data/processed_3.0/val.csv
 3.0/out/data/processed_3.0/test.csv
+
+# 纳入实验3.2的图表、统计结果、预测结果和日志，数据目录仅保留本地
+!3.2/out/
+!3.2/out/**/
+!3.2/out/**/*
+3.2/out/data/

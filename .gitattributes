@@ -9,3 +9,5 @@
 .gitignore text eol=lf
 3.0/out/**/*.csv filter=lfs diff=lfs merge=lfs -text
 3.0/out/**/*.npz filter=lfs diff=lfs merge=lfs -text
+3.2/out/**/*.csv filter=lfs diff=lfs merge=lfs -text
+3.2/out/**/*.npz filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,16 @@
+{
+  "version": "3.2",
+  "rls_energy_window_seconds": 20.0,
+  "window_count": 307,
+  "complete_window_count": 275,
+  "flight_count": 34,
+  "state_switch_count": 35,
+  "bias_mean": 0.004179777625335026,
+  "bias_std": 0.015151768410855465,
+  "bias_min": -0.10286987243945969,
+  "bias_max": 0.05241774063479536,
+  "scale_mean": 1.0036128917050944,
+  "scale_std": 0.01319630309285722,
+  "scale_min": 0.9629066170082844,
+  "scale_max": 1.0638181663192956
+}

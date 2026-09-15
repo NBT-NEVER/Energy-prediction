@@ -1,0 +1,29 @@
+{
+  "version": "3.2",
+  "route": "R1",
+  "flight": 86,
+  "rows": 1524,
+  "duration_seconds": 182.69,
+  "common_origin": {
+    "longitude_deg": -79.8031616454605,
+    "latitude_deg": 40.4567950523268,
+    "altitude_m": 267.14217275070894,
+    "definition": "各类航线代表flight起点经度、纬度和高度的算术平均值"
+  },
+  "coordinate_definition": {
+    "position_x_m": "共同参考点向东为正，单位m",
+    "position_y_m": "共同参考点向北为正，单位m",
+    "position_z_m": "相对共同参考高度，单位m"
+  },
+  "wind_speed_mps_mean": 5.696855941394147,
+  "wind_angle_deg_mean": 177.32456880998998,
+  "actual_energy_wh": 19.90471483793954,
+  "tcn_energy_wh": 20.682398758443917,
+  "rls_energy_wh": 19.911337139917023,
+  "products": [
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R1\\flight_86\\flight_86_power_energy.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R1\\flight_86\\flight_86_imu_trajectory.html",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R1\\flight_86\\flight_86_imu_trajectory.gif",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R1\\flight_86\\flight_86_imu_aligned.csv"
+  ]
+}

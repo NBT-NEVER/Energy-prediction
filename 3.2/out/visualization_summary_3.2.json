@@ -1,0 +1,28 @@
+{
+  "figure_count": 22,
+  "figures": [
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\training\\learning_rate_schedule.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\training\\hyperparameter_ranking.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\training\\candidate_validation_wape.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\results\\evaluation_metrics.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\results\\flight_energy_actual_vs_predicted.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\results\\flight_energy_error.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\results\\power_bin_mae.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_1_second_energy_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_18_second_energy_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_23_second_energy_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\power_prediction_scatter.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\power_residual_histogram.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\second_energy_prediction_scatter.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\second_energy_residual_histogram.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\rls_energy_window_prediction_scatter.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\rls_energy_window_residual_histogram.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_1_power_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_18_power_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\figures\\prediction\\flight_23_power_timeseries.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\rls\\flight_1_rls_parameter_trace.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\rls\\flight_2_rls_parameter_trace.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\rls\\flight_3_rls_parameter_trace.svg"
+  ],
+  "out_dir": "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out"
+}

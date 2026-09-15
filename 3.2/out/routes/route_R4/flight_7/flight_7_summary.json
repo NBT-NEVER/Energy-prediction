@@ -1,0 +1,29 @@
+{
+  "version": "3.2",
+  "route": "R4",
+  "flight": 7,
+  "rows": 1498,
+  "duration_seconds": 179.61,
+  "common_origin": {
+    "longitude_deg": -79.8031616454605,
+    "latitude_deg": 40.4567950523268,
+    "altitude_m": 267.14217275070894,
+    "definition": "各类航线代表flight起点经度、纬度和高度的算术平均值"
+  },
+  "coordinate_definition": {
+    "position_x_m": "共同参考点向东为正，单位m",
+    "position_y_m": "共同参考点向北为正，单位m",
+    "position_z_m": "相对共同参考高度，单位m"
+  },
+  "wind_speed_mps_mean": 4.885199259644974,
+  "wind_angle_deg_mean": 213.2633445692866,
+  "actual_energy_wh": 21.525185136466067,
+  "tcn_energy_wh": 21.04745817565997,
+  "rls_energy_wh": 21.534446309905565,
+  "products": [
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R4\\flight_7\\flight_7_power_energy.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R4\\flight_7\\flight_7_imu_trajectory.html",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R4\\flight_7\\flight_7_imu_trajectory.gif",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\3.2\\out\\routes\\route_R4\\flight_7\\flight_7_imu_aligned.csv"
+  ]
+}
