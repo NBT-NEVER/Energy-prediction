@@ -77,3 +77,10 @@ output/
 !3.2/out/**/
 !3.2/out/**/*
 3.2/out/data/
+
+# 实验4.0追踪图表、报告与评估；逐采样训练数据和权重仅保留本地
+!4.0/out/
+!4.0/out/**/
+!4.0/out/**/*
+4.0/out/data/processed_4.0/*.csv
+4.0/out/logs/*.log

@@ -1,0 +1,52 @@
+{
+  "version": "4.0",
+  "target_column": "base_power_w",
+  "base_residual_std_w": 47.648131455874164,
+  "confidence": 0.95,
+  "interval_method": "逐时刻条件残差方差合成；任务级标准差按方差平方和计算，不线性累加固定半径",
+  "condition_features": [
+    "wind_speed_mps",
+    "wind_sin",
+    "wind_cos",
+    "payload_kg",
+    "task_duration_s",
+    "task_progress",
+    "planned_speed_norm_mps"
+  ],
+  "feature_mean": [
+    4.452049790968646,
+    0.3063378373202199,
+    0.03791445344522428,
+    0.23023216049851813,
+    191.083760544142,
+    0.5000094936545703,
+    3.1341851802991667
+  ],
+  "feature_std": [
+    3.4771788560743517,
+    0.7052403981975112,
+    0.6382441573536992,
+    0.2011303721697351,
+    41.63558439209063,
+    0.28899889238843385,
+    3.186519527837149
+  ],
+  "log_abs_error_coefficients": [
+    2.161672909220145,
+    0.7407298979398209,
+    -0.13104946330346298,
+    0.0774827492730489,
+    -0.06836920395992821,
+    -0.0809935099209852,
+    -0.34059102155139226,
+    0.15606080590347274
+  ],
+  "sigma_scale": 1.6052304724189426,
+  "sigma_floor_w": 4.764813145587417,
+  "calibration_rows": 26318,
+  "task_energy_interval_method": "按验证集完整flight总能耗残差进行有限样本共形校准",
+  "task_energy_radius_multiplier": 44.440027766548916,
+  "task_energy_calibration_flights": 29,
+  "task_energy_conformal_rank": 29,
+  "task_energy_calibration_coverage_percent": 100.0
+}

@@ -1,0 +1,24 @@
+{
+  "version": "4.0",
+  "route": "R5",
+  "flight": 1,
+  "rows": 1004,
+  "duration_seconds": 200.6,
+  "coordinate_definition": {
+    "trajectory_x_m": "任务起点局部ENU坐标系东向为正，单位m",
+    "trajectory_y_m": "任务起点局部ENU坐标系北向为正，单位m",
+    "trajectory_z_m": "相对任务起点高度，单位m"
+  },
+  "wind_speed_mps_mean": 3.8986029344390176,
+  "wind_direction_deg_circular_mean": 69.79734839502339,
+  "actual_energy_wh": 21.741605896454104,
+  "tcn_energy_wh": 22.16146652899843,
+  "rls_energy_wh": 22.721588828205533,
+  "products": [
+    "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\routes\\route_R5\\flight_1\\flight_1_imu_aligned.csv",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\routes\\route_R5\\flight_1\\flight_1_power_energy.svg",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\routes\\route_R5\\flight_1\\flight_1_imu_trajectory.html",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\routes\\route_R5\\flight_1\\flight_1_imu_trajectory.gif",
+    "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\routes\\route_R5\\flight_1\\flight_1_summary.json"
+  ]
+}

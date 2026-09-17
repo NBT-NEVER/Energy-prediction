@@ -1,0 +1,35 @@
+{
+  "version": "4.0",
+  "task_id": "demo_new_route_001",
+  "step_count": 200,
+  "predicted_base_energy_wh": 4.415877209133573,
+  "known_auxiliary_energy_wh": 0.08888888888888888,
+  "total_energy_wh": 4.504766098022461,
+  "total_energy_lower_wh": 3.6672213801167732,
+  "total_energy_upper_wh": 5.3423108159281405,
+  "confidence": 0.95,
+  "confidence_interval_method": "条件残差方差合成并按验证集完整flight残差进行共形校准，不对固定半径线性累加",
+  "available_energy_wh": 80.0,
+  "return_energy_upper_wh": 8.0,
+  "safety_reserve_wh": 1.0,
+  "required_energy_wh": 14.34231081592814,
+  "battery_feasible": true,
+  "charge_or_replace_required": false,
+  "decision": "continue",
+  "wind_forecast": {
+    "sources": [
+      "demo_forecast_service"
+    ],
+    "timestamps": [
+      "2026-09-16T18:00:00+08:00"
+    ],
+    "coordinate_systems": [
+      "ENU_TRUE_NORTH"
+    ],
+    "direction_conventions": [
+      "VECTOR_TO"
+    ],
+    "max_speed_error_mps": 0.5,
+    "max_direction_error_deg": 8.0
+  }
+}

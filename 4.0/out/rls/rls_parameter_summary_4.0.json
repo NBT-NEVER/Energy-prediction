@@ -1,0 +1,9 @@
+{
+  "version": "4.0",
+  "parameter_trace_file": "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\rls\\rls_parameter_trace_4.0.csv",
+  "correction_trace_file": "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\rls\\rls_future_correction_trace_4.0.csv",
+  "parameter_rows": 9728,
+  "correction_rows": 9815,
+  "interval_update_count": 9728,
+  "trajectory_definition": "每个完整1秒窗口先使用任务前TCN基线预测，窗口结束拿到实际能耗后更新，再重算该窗口之后的全部剩余路线"
+}

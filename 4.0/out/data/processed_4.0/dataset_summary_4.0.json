@@ -1,0 +1,45 @@
+{
+  "version": "4.0",
+  "resample_seconds": 0.2,
+  "processed_rows": 188879,
+  "flights": 200,
+  "train_rows": 113822,
+  "val_rows": 26318,
+  "test_rows": 48739,
+  "train_flights": 124,
+  "val_flights": 29,
+  "test_flights": 47,
+  "feature_count": 23,
+  "routes": [
+    "H",
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+  ],
+  "excluded_routes": [
+    "A1",
+    "A2",
+    "A3"
+  ],
+  "unseen_route_test_routes": [
+    "R2",
+    "R3",
+    "R4",
+    "R7"
+  ],
+  "unseen_route_test_flights": 5,
+  "unseen_wind_test_flights": 9,
+  "unseen_payload_test_flights": 1,
+  "unseen_duration_test_flights": 3,
+  "raw_sampling_period_seconds": {
+    "median_seconds": 0.12000000000000455,
+    "min_seconds": 0.03999999999069814,
+    "max_seconds": 0.12000000000011823,
+    "sample_count": 314580
+  },
+  "auxiliary_power_historical_value_w": 0.0
+}

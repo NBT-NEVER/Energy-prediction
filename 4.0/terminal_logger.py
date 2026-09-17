@@ -140,7 +140,7 @@ class TerminalLogCapture:
     def __exit__(self, exc_type, exc_value, traceback) -> bool:
         """功能: 记录运行结束状态并恢复原始输出流。
         参数: exc_type、exc_value和traceback为上下文中的异常信息。
-        返回: 发生异常时返回True，回溯已记录并由main设置非零退出状态。
+        返回: False，使异常在记录后继续向上传播并产生非零退出状态。
         调用位置: main。
         """
 
@@ -159,4 +159,4 @@ class TerminalLogCapture:
         _ACTIVE_CAPTURE = None
         if self.log_file is not None:
             self.log_file.close()
-        return exc_type is not None
+        return False

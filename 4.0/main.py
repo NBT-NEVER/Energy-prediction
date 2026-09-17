@@ -9,19 +9,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 from config import build_config, ensure_directories
 from data_utils import prepare_dataset
 from evaluate import evaluate_model
 from task_api import OnlineTaskSession, predict_task_before
-from terminal_logger import TerminalLogCapture
-from train import fit_scaler, train_tcn, tune_rls, tune_tcn
+from terminal_logger import TerminalLogCapture, log_result
+from train import fit_scaler, resolve_cuda_device, train_tcn, tune_rls, tune_tcn
 from visualize import generate_all_visualizations
 
 
@@ -52,11 +54,52 @@ def _config(args):
     return cfg
 
 
+def _reset_generated_outputs(cfg) -> list[str]:
+    """功能: 在完整重跑前清除4.0中会被本轮重新生成的旧产物目录。
+    参数: cfg为实验配置对象。
+    返回: 已清理目录名称列表。
+    调用位置: main。
+    """
+
+    out_root = cfg.out_dir.resolve()
+    targets = [cfg.out_model_dir, cfg.out_prediction_dir, cfg.out_task_dir,
+               cfg.out_figure_dir, cfg.out_route_dir, cfg.out_rls_dir]
+    removed = []
+    for path in targets:
+        resolved = path.resolve()
+        if resolved.parent != out_root:
+            raise RuntimeError(f"拒绝清理OUT_DIR边界之外的目录: {resolved}")
+        if resolved.exists():
+            shutil.rmtree(resolved)
+            removed.append(resolved.name)
+    if cfg.visualization_summary_json.exists():
+        cfg.visualization_summary_json.unlink()
+    ensure_directories(cfg)
+    return removed
+
+
 def _stage(name: str, action):
     started = time.perf_counter()
-    print(f"\n>>> {name} 开始: {datetime.now().astimezone().isoformat(timespec='seconds')}")
-    result = action()
-    print(f">>> {name} 完成，耗时 {time.perf_counter() - started:.2f}s")
+    started_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    print(f"\n>>> {name} 开始: {started_at}")
+    try:
+        result = action()
+    except Exception as exc:
+        finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        log_result(f"{name}阶段", {
+            "started_at": started_at, "finished_at": finished_at,
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            "status": "失败", "exception_type": type(exc).__name__, "message": str(exc),
+        })
+        raise
+    finished_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    elapsed = time.perf_counter() - started
+    log_result(f"{name}结果", result)
+    log_result(f"{name}阶段", {
+        "started_at": started_at, "finished_at": finished_at,
+        "elapsed_seconds": round(elapsed, 3), "status": "完成",
+    })
+    print(f">>> {name} 完成，耗时 {elapsed:.2f}s")
     return result
 
 
@@ -73,17 +116,33 @@ def _demo_task(cfg) -> pd.DataFrame:
     times = np.arange(0.0, 40.0, dt)
     speed = np.where(times < 8, 4.0 + times * 0.25, np.where(times < 30, 6.0, 6.0 - (times - 30) * 0.15))
     altitude = 25.0 + 4.0 * np.sin(times / 8.0)
+    heading = 70.0 + 15.0 * np.sin(times / 8.0)
+    heading_rad = np.deg2rad(heading)
+    lateral_speed = 0.2 * np.sin(times / 5.0)
     ax = np.gradient(speed, dt)
     az = np.gradient(np.gradient(altitude, dt), dt)
+    vy = lateral_speed
+    vx = speed
+    vz = np.gradient(altitude, dt)
+    east_velocity = vx * np.sin(heading_rad) - vy * np.cos(heading_rad)
+    north_velocity = vx * np.cos(heading_rad) + vy * np.sin(heading_rad)
+    position_x = np.cumsum(east_velocity * dt)
+    position_y = np.cumsum(north_velocity * dt)
     task = pd.DataFrame({
         "task_id": "demo_new_route_001", "route": "NEW_ROUTE_X", "time_s": times, "dt_seconds": dt,
-        "planned_vx_mps": speed, "planned_vy_mps": 0.5 * np.sin(times / 5.0),
-        "planned_vz_mps": np.gradient(altitude, dt), "planned_speed_mps": speed,
-        "planned_ax_mps2": ax, "planned_ay_mps2": np.gradient(0.5 * np.sin(times / 5.0), dt),
+        "planned_position_x_m": position_x, "planned_position_y_m": position_y,
+        "planned_vx_mps": vx, "planned_vy_mps": vy, "planned_vz_mps": vz,
+        "planned_ax_mps2": ax, "planned_ay_mps2": np.gradient(vy, dt),
         "planned_az_mps2": az, "planned_altitude_m": altitude,
+        "planned_heading_deg": heading,
         "wind_speed_mps": 3.0 + 0.5 * np.sin(times / 10.0), "wind_direction_deg": 35.0,
-        "payload_kg": 0.22, "payload_camera_enabled": 1.0, "payload_communication_enabled": 1.0,
-        "payload_compute_enabled": 0.0, "payload_delivery_enabled": 0.0, "payload_rated_power_w": 8.0,
+        "wind_forecast_source": "demo_forecast_service",
+        "wind_forecast_timestamp": "2026-09-16T18:00:00+08:00",
+        "wind_speed_error_mps": 0.5, "wind_direction_error_deg": 8.0,
+        "wind_coordinate_system": "ENU_TRUE_NORTH", "wind_direction_convention": "VECTOR_TO",
+        "payload_kg": 0.22,
+        # 已知设备额定功率不进入TCN，仅在基础动力功率预测后确定性相加。
+        "auxiliary_power_w": 8.0,
     })
     return task
 
@@ -137,9 +196,16 @@ def run(mode: str, cfg, force_prepare: bool = False) -> dict:
 def main() -> None:
     args = build_parser().parse_args()
     cfg = _config(args)
+    removed = _reset_generated_outputs(cfg) if args.mode == "all" else []
     reset = args.mode in {"all", "tune-tcn"}
     with TerminalLogCapture(cfg.terminal_log_file, args.mode, reset_log=reset):
         print(f"实验4.0 | mode={args.mode} | device={cfg.device} | resample={cfg.resample_seconds}s")
+        if removed:
+            print(f"已清理并重建旧产物目录: {', '.join(removed)}")
+        if args.mode != "prepare":
+            device = resolve_cuda_device(cfg)
+            properties = torch.cuda.get_device_properties(device)
+            print(f"CUDA设备={properties.name} | 显存={properties.total_memory / 1024 ** 3:.2f} GiB")
         print(f"TCN候选={list(cfg.tcn_window_seconds)}s | RLS组合={len(cfg.rls_forgetting_factors) * len(cfg.rls_initial_covariances)}")
         result = run(args.mode, cfg, args.force_prepare)
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))

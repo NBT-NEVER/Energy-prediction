@@ -1,0 +1,65 @@
+{
+  "version": "4.0",
+  "updated_window": 0,
+  "executed_end_row": 5,
+  "window_baseline_energy_wh": 0.10065056864420574,
+  "window_actual_energy_wh": 0.10568309707641603,
+  "window_actual_base_energy_wh": 0.10346087485419381,
+  "executed_energy_wh": 0.10568309707641603,
+  "remaining_energy_wh": 4.4052698028697295,
+  "remaining_energy_lower_wh": 3.9740760488661206,
+  "remaining_energy_upper_wh": 4.836463556873338,
+  "predicted_final_energy_wh": 4.510952899946146,
+  "predicted_final_lower_wh": 4.079759145942536,
+  "predicted_final_upper_wh": 4.942146653949754,
+  "confidence": 0.95,
+  "interval_width_wh": 0.8623875080072172,
+  "interval_update_count": 1,
+  "recent_residual_wh": 0.005032528432210304,
+  "last_observation_impact": {
+    "remaining_prediction_change_wh": 0.0011542734914735675,
+    "remaining_interval_width_before_wh": 0.9119333672600014,
+    "remaining_interval_width_after_wh": 0.8623875080072172
+  },
+  "parameter_state": {
+    "theta_bias": 2.691496606605248e-07,
+    "theta_bias_wh_per_window": 2.691496606605248e-07,
+    "theta_scale": 1.0002649195603885,
+    "covariance": [
+      [
+        5.376056548413752e-05,
+        -2.8301851265264624e-06
+      ],
+      [
+        -2.8301851265264624e-06,
+        0.5348487041814296
+      ]
+    ],
+    "residual_ema": 0.0007548792648315455,
+    "residual_std": 0.010177661408139946,
+    "last_residual_wh": 0.005032528432210304,
+    "covariance_trace": 0.5349024647469137,
+    "bias_prior_std_wh": 0.01,
+    "interval_scale": 3.0863577585721242,
+    "window_interval_scale": 1.1538792982156072,
+    "initial_residual_std_wh": 0.010834902229564604,
+    "update_count": 1
+  },
+  "available_energy_wh": 80.0,
+  "return_energy_upper_wh": 8.0,
+  "safety_reserve_wh": 1.0,
+  "required_energy_wh": 13.836463556873337,
+  "battery_feasible": true,
+  "window_energy_deviation_wh": 0.00503252843221029,
+  "window_energy_relative_deviation_percent": 5.000000000000003,
+  "decision_thresholds": {
+    "replan_relative_deviation": 0.15,
+    "degrade_relative_deviation": 0.3,
+    "pause_relative_deviation": 0.5
+  },
+  "replan_required": false,
+  "degraded_execution_recommended": false,
+  "pause_required": false,
+  "return_or_charge_required": false,
+  "decision": "continue"
+}

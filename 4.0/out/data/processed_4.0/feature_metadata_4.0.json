@@ -1,0 +1,613 @@
+{
+  "version": "4.0",
+  "feature_count": 23,
+  "feature_columns": [
+    "time_s",
+    "dt_seconds",
+    "task_progress",
+    "task_duration_s",
+    "planned_position_x_m",
+    "planned_position_y_m",
+    "planned_altitude_m",
+    "planned_vx_mps",
+    "planned_vy_mps",
+    "planned_vz_mps",
+    "planned_ax_mps2",
+    "planned_ay_mps2",
+    "planned_az_mps2",
+    "cumulative_distance_m",
+    "cumulative_climb_m",
+    "cumulative_descent_m",
+    "wind_speed_mps",
+    "wind_sin",
+    "wind_cos",
+    "relative_air_speed_mps",
+    "headwind_mps",
+    "crosswind_mps",
+    "payload_kg"
+  ],
+  "target_fields": {
+    "base_power_w": "TCN监督目标；历史auxiliary_power_w为0",
+    "power_w": "仅用于离线总功率标签和评估",
+    "energy_interval_wh": "power_w * 0.2 / 3600 Wh"
+  },
+  "interface_only_fields": {
+    "task_id": {
+      "unit": "string",
+      "meaning": "上层调度器分配的任务标识",
+      "enters_tcn": false
+    },
+    "route": {
+      "unit": "string",
+      "meaning": "来源追踪和分路线统计字段",
+      "enters_tcn": false
+    },
+    "wind_direction_deg": {
+      "unit": "deg",
+      "meaning": "全局规划坐标中的风矢量指向角；气象学来向必须先加180度",
+      "enters_tcn": false
+    },
+    "planned_heading_deg": {
+      "unit": "deg",
+      "meaning": "机体系X轴相对全局规划坐标的航向；只用于把风矢量转换到机体系，不进入TCN",
+      "enters_tcn": false
+    },
+    "wind_forecast_source": {
+      "unit": "string",
+      "meaning": "风预报发布机构或服务标识",
+      "enters_tcn": false
+    },
+    "wind_forecast_timestamp": {
+      "unit": "ISO-8601",
+      "meaning": "风预报发布时间或有效时刻",
+      "enters_tcn": false
+    },
+    "wind_speed_error_mps": {
+      "unit": "m/s",
+      "meaning": "风速预报误差范围的非负半宽",
+      "enters_tcn": false
+    },
+    "wind_direction_error_deg": {
+      "unit": "deg",
+      "meaning": "风向预报误差范围的非负半宽",
+      "enters_tcn": false
+    },
+    "wind_coordinate_system": {
+      "unit": "enum",
+      "meaning": "风向和规划航向共同采用的坐标基准",
+      "enters_tcn": false
+    },
+    "wind_direction_convention": {
+      "unit": "enum",
+      "meaning": "VECTOR_TO或METEOROLOGICAL_FROM；接口统一转换为风矢量吹向",
+      "enters_tcn": false
+    },
+    "segment_distance_m": {
+      "unit": "m",
+      "meaning": "三轴规划速度模长乘固定0.2 s；保留为路线距离派生量，与速度分量重复，不进入TCN",
+      "enters_tcn": false
+    },
+    "auxiliary_power_w": {
+      "unit": "W",
+      "meaning": "规划阶段已知设备额定功率之和；不进入TCN，确定性加到基础动力功率预测",
+      "enters_tcn": false
+    }
+  },
+  "feature_dimensions": [
+    {
+      "dimension": 1,
+      "field": "time_s",
+      "unit": "s",
+      "meaning": "任务开始后的相对时间",
+      "historical_source": "原始time减去本flight首个time",
+      "runtime_source": "任务规划器时间轴",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 2,
+      "field": "dt_seconds",
+      "unit": "s",
+      "meaning": "固定离散时间步长",
+      "historical_source": "统一重采样为0.2 s",
+      "runtime_source": "任务规划器固定为0.2 s",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 3,
+      "field": "task_progress",
+      "unit": "1",
+      "meaning": "当前规划时刻占任务总时长的比例",
+      "historical_source": "time_s/task_duration_s",
+      "runtime_source": "由完整候选路线时长计算",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 4,
+      "field": "task_duration_s",
+      "unit": "s",
+      "meaning": "完整候选任务的计划总时长",
+      "historical_source": "本flight重采样后的末时刻",
+      "runtime_source": "任务规划器给出的完整路线时长",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 5,
+      "field": "planned_position_x_m",
+      "unit": "m",
+      "meaning": "以任务起点为原点的东向局部位置",
+      "historical_source": "原始经度position_x换算为局部米制坐标",
+      "runtime_source": "规划器ENU东向局部坐标",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 6,
+      "field": "planned_position_y_m",
+      "unit": "m",
+      "meaning": "以任务起点为原点的北向局部位置",
+      "historical_source": "原始纬度position_y换算为局部米制坐标",
+      "runtime_source": "规划器ENU北向局部坐标",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 7,
+      "field": "planned_altitude_m",
+      "unit": "m",
+      "meaning": "计划飞行高度",
+      "historical_source": "原始position_z海拔高度",
+      "runtime_source": "规划器高度轨迹",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 8,
+      "field": "planned_vx_mps",
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系X轴速度分量",
+      "historical_source": "直接使用原始velocity_x，不使用原始speed设定值",
+      "runtime_source": "中层轨迹规划器逐时刻机体系X轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 9,
+      "field": "planned_vy_mps",
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系Y轴速度分量",
+      "historical_source": "直接使用原始velocity_y，不使用原始speed设定值",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Y轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 10,
+      "field": "planned_vz_mps",
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系Z轴速度分量",
+      "historical_source": "直接使用原始velocity_z",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Z轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 11,
+      "field": "planned_ax_mps2",
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系X轴线加速度",
+      "historical_source": "直接使用原始linear_acceleration_x",
+      "runtime_source": "中层轨迹规划器逐时刻机体系X轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 12,
+      "field": "planned_ay_mps2",
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系Y轴线加速度",
+      "historical_source": "直接使用原始linear_acceleration_y",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Y轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 13,
+      "field": "planned_az_mps2",
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系剔除重力后的Z轴线加速度",
+      "historical_source": "原始linear_acceleration_z静止时接近-9.80665，逐点加9.80665剔除重力",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Z轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 14,
+      "field": "cumulative_distance_m",
+      "unit": "m",
+      "meaning": "从任务起点累计的计划飞行距离",
+      "historical_source": "segment_distance_m累计",
+      "runtime_source": "由完整规划轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 15,
+      "field": "cumulative_climb_m",
+      "unit": "m",
+      "meaning": "任务开始后累计上升高度",
+      "historical_source": "高度正向差分累计",
+      "runtime_source": "由规划高度轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 16,
+      "field": "cumulative_descent_m",
+      "unit": "m",
+      "meaning": "任务开始后累计下降高度",
+      "historical_source": "高度负向差分绝对值累计",
+      "runtime_source": "由规划高度轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 17,
+      "field": "wind_speed_mps",
+      "unit": "m/s",
+      "meaning": "规划时可获得的风速预报",
+      "historical_source": "原始wind_speed传感器记录",
+      "runtime_source": "任务时空位置对应的风预报",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 18,
+      "field": "wind_sin",
+      "unit": "1",
+      "meaning": "机体系横向风单位分量，正值指向机体左侧",
+      "historical_source": "姿态四元数航向减全局wind_angle后取正弦",
+      "runtime_source": "规划航向减全局风预报方向后派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 19,
+      "field": "wind_cos",
+      "unit": "1",
+      "meaning": "机体系纵向风单位分量，正值指向机头前方",
+      "historical_source": "姿态四元数航向减全局wind_angle后取余弦",
+      "runtime_source": "规划航向减全局风预报方向后派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 20,
+      "field": "relative_air_speed_mps",
+      "unit": "m/s",
+      "meaning": "三轴规划速度与水平风矢量之差的模长",
+      "historical_source": "原始速度和风场派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 21,
+      "field": "headwind_mps",
+      "unit": "m/s",
+      "meaning": "沿水平规划速度反方向的风分量，正值表示逆风",
+      "historical_source": "速度与风矢量点积派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 22,
+      "field": "crosswind_mps",
+      "unit": "m/s",
+      "meaning": "垂直于水平规划速度的风分量绝对值",
+      "historical_source": "速度与风矢量叉积派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    {
+      "dimension": 23,
+      "field": "payload_kg",
+      "unit": "kg",
+      "meaning": "任务携带的有效载荷质量",
+      "historical_source": "原始payload由g换算为kg",
+      "runtime_source": "任务要求中的载荷质量",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    }
+  ],
+  "field_metadata": {
+    "time_s": {
+      "unit": "s",
+      "meaning": "任务开始后的相对时间",
+      "historical_source": "原始time减去本flight首个time",
+      "runtime_source": "任务规划器时间轴",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "dt_seconds": {
+      "unit": "s",
+      "meaning": "固定离散时间步长",
+      "historical_source": "统一重采样为0.2 s",
+      "runtime_source": "任务规划器固定为0.2 s",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "task_progress": {
+      "unit": "1",
+      "meaning": "当前规划时刻占任务总时长的比例",
+      "historical_source": "time_s/task_duration_s",
+      "runtime_source": "由完整候选路线时长计算",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "task_duration_s": {
+      "unit": "s",
+      "meaning": "完整候选任务的计划总时长",
+      "historical_source": "本flight重采样后的末时刻",
+      "runtime_source": "任务规划器给出的完整路线时长",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_position_x_m": {
+      "unit": "m",
+      "meaning": "以任务起点为原点的东向局部位置",
+      "historical_source": "原始经度position_x换算为局部米制坐标",
+      "runtime_source": "规划器ENU东向局部坐标",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_position_y_m": {
+      "unit": "m",
+      "meaning": "以任务起点为原点的北向局部位置",
+      "historical_source": "原始纬度position_y换算为局部米制坐标",
+      "runtime_source": "规划器ENU北向局部坐标",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_altitude_m": {
+      "unit": "m",
+      "meaning": "计划飞行高度",
+      "historical_source": "原始position_z海拔高度",
+      "runtime_source": "规划器高度轨迹",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_vx_mps": {
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系X轴速度分量",
+      "historical_source": "直接使用原始velocity_x，不使用原始speed设定值",
+      "runtime_source": "中层轨迹规划器逐时刻机体系X轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_vy_mps": {
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系Y轴速度分量",
+      "historical_source": "直接使用原始velocity_y，不使用原始speed设定值",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Y轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_vz_mps": {
+      "unit": "m/s",
+      "meaning": "规划轨迹机体系Z轴速度分量",
+      "historical_source": "直接使用原始velocity_z",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Z轴速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_ax_mps2": {
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系X轴线加速度",
+      "historical_source": "直接使用原始linear_acceleration_x",
+      "runtime_source": "中层轨迹规划器逐时刻机体系X轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_ay_mps2": {
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系Y轴线加速度",
+      "historical_source": "直接使用原始linear_acceleration_y",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Y轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "planned_az_mps2": {
+      "unit": "m/s^2",
+      "meaning": "规划轨迹机体系剔除重力后的Z轴线加速度",
+      "historical_source": "原始linear_acceleration_z静止时接近-9.80665，逐点加9.80665剔除重力",
+      "runtime_source": "中层轨迹规划器逐时刻机体系Z轴无重力加速度",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "cumulative_distance_m": {
+      "unit": "m",
+      "meaning": "从任务起点累计的计划飞行距离",
+      "historical_source": "segment_distance_m累计",
+      "runtime_source": "由完整规划轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "cumulative_climb_m": {
+      "unit": "m",
+      "meaning": "任务开始后累计上升高度",
+      "historical_source": "高度正向差分累计",
+      "runtime_source": "由规划高度轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "cumulative_descent_m": {
+      "unit": "m",
+      "meaning": "任务开始后累计下降高度",
+      "historical_source": "高度负向差分绝对值累计",
+      "runtime_source": "由规划高度轨迹派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "wind_speed_mps": {
+      "unit": "m/s",
+      "meaning": "规划时可获得的风速预报",
+      "historical_source": "原始wind_speed传感器记录",
+      "runtime_source": "任务时空位置对应的风预报",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "wind_sin": {
+      "unit": "1",
+      "meaning": "机体系横向风单位分量，正值指向机体左侧",
+      "historical_source": "姿态四元数航向减全局wind_angle后取正弦",
+      "runtime_source": "规划航向减全局风预报方向后派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "wind_cos": {
+      "unit": "1",
+      "meaning": "机体系纵向风单位分量，正值指向机头前方",
+      "historical_source": "姿态四元数航向减全局wind_angle后取余弦",
+      "runtime_source": "规划航向减全局风预报方向后派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "relative_air_speed_mps": {
+      "unit": "m/s",
+      "meaning": "三轴规划速度与水平风矢量之差的模长",
+      "historical_source": "原始速度和风场派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "headwind_mps": {
+      "unit": "m/s",
+      "meaning": "沿水平规划速度反方向的风分量，正值表示逆风",
+      "historical_source": "速度与风矢量点积派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "crosswind_mps": {
+      "unit": "m/s",
+      "meaning": "垂直于水平规划速度的风分量绝对值",
+      "historical_source": "速度与风矢量叉积派生",
+      "runtime_source": "由规划速度和风预报派生",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    },
+    "payload_kg": {
+      "unit": "kg",
+      "meaning": "任务携带的有效载荷质量",
+      "historical_source": "原始payload由g换算为kg",
+      "runtime_source": "任务要求中的载荷质量",
+      "task_before_available": true,
+      "flight_only_observation": false,
+      "enters_tcn": true
+    }
+  },
+  "coordinate_system": {
+    "position": "位置采用任务起点局部ENU坐标：X向东、Y向北、Z为高度",
+    "motion": "速度和加速度按用户要求直接使用原始机体系X/Y/Z分量；历史Z加速度加9.80665剔除重力",
+    "wind_direction_convention": "接口角度表示风矢量吹向；若预报源给出气象学风来向，接入层必须加180度后再归一化到0至360度",
+    "historical_wind_reference_limit": "公开数据只说明wind_angle相对north，未说明真北或磁北；部署接入时必须先把预报风向转换到规划器ENU坐标，不能直接混用地理、磁北或机体系角度",
+    "runtime_requirement": "规划器须提供全局风向和planned_heading_deg；接口先求相对风角，再与机体系速度计算相对空速、逆风和侧风"
+  },
+  "sampling": {
+    "raw_period_seconds": {
+      "median_seconds": 0.12000000000000455,
+      "min_seconds": 0.03999999999069814,
+      "max_seconds": 0.12000000000011823,
+      "sample_count": 314580
+    },
+    "resample_seconds": 0.2,
+    "mapping_file": "I:\\STUDY\\python\\project\\Energy-prediction\\4.0\\out\\data\\processed_4.0\\resample_map_4.0.csv",
+    "energy_aggregation": "电压和电流先按时间戳插值；电流负值截为0后计算非负功率，再乘0.2/3600得到Wh",
+    "wind_angle_interpolation": "对原始风向角先做2π圆周展开，再按真实时间戳插值并映射回0至360度"
+  },
+  "excluded_routes": [
+    "A1",
+    "A2",
+    "A3"
+  ],
+  "unseen_route_test_routes": [
+    "R2",
+    "R3",
+    "R4",
+    "R7"
+  ],
+  "unseen_condition_holdouts": {
+    "mean_wind_speed_mps_greater_or_equal": 6.0,
+    "payload_kg_greater_or_equal": 0.75,
+    "task_duration_s_greater_than": 300.0,
+    "selection_uses_power_label": false
+  },
+  "removed_inputs": [
+    "speed",
+    "planned_speed_mps",
+    "planned_horizontal_speed_mps",
+    "planned_acceleration_mps2",
+    "segment_distance_m",
+    "payload_camera_enabled",
+    "payload_communication_enabled",
+    "payload_compute_enabled",
+    "payload_delivery_enabled",
+    "payload_rated_power_w",
+    "thermal_load_proxy",
+    "vision_energy_proxy_w",
+    "communication_energy_proxy_w",
+    "route one-hot"
+  ],
+  "historical_to_planning_assumption": "离线训练把历史飞行的原始机体系速度、去重力加速度、位置、姿态航向和环境记录视为当时规划轨迹的可观测替代。部署时由上层调度和中层轨迹规划器提供同字段。"
+}
