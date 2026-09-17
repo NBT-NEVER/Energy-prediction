@@ -72,9 +72,9 @@ $$
 
 ### A.2 数据来源、重采样与监督标签
 
-原始数据来自 `D:/Python-files/Energy-prediction/data/dji_matrice_100/flights.csv`。4.0 只把 H、R1--R7 当作正常飞行数据，A1、A2、A3 是地面辅助测试，未进入训练集、验证集、测试集、总体指标或航线展示。处理后的独立数据位于 [`data/processed_4.0/`](./data/processed_4.0/)，不读取 3.2 的 scaler、权重、预测表或置信区间文件。
+原始数据来自 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/raw/flights.csv`。4.0 只把 H、R1--R7 当作正常飞行数据，A1、A2、A3 是地面辅助测试，未进入训练集、验证集、测试集、总体指标或航线展示。处理后的独立数据位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/`，不读取 3.2 的 scaler、权重、预测表或置信区间文件。
 
-原始记录并非统一 0.2 s。程序按每个完整 flight 的真实时间戳排序、去重，再构造间隔 0.2 s 的新时间网格。连续字段按时间线性插值；风向角先执行 $2\pi$ 圆周展开，再插值并映射回 $[0,360)$，避免 359° 与 1° 被错误插值到 180°。每个新时间步对应的原始左右索引、原始时间范围和能量处理方式记录在 [`resample_map_4.0.csv`](./data/processed_4.0/resample_map_4.0.csv)。
+原始记录并非统一 0.2 s。程序按每个完整 flight 的真实时间戳排序、去重，再构造间隔 0.2 s 的新时间网格。连续字段按时间线性插值；风向角先执行 $2\pi$ 圆周展开，再插值并映射回 $[0,360)$，避免 359° 与 1° 被错误插值到 180°。每个新时间步对应的原始左右索引、原始时间范围和能量处理方式记录在 4.0 数据目录 `processed/resample_map_4.0.csv`。
 
 固定离散步能量采用矩形积分：
 
@@ -146,7 +146,7 @@ $$
 
 ### A.4 任务前 23 维输入契约
 
-TCN 的最终输入为 23 维。速度模长、水平速度、加速度模长和单步距离均可由三轴状态确定，不重复进入模型；`segment_distance_m` 仍保留在路线表中，用于累计距离和结果查询。逐维定义以 [`feature_metadata_4.0.json`](./data/processed_4.0/feature_metadata_4.0.json) 为准。
+TCN 的最终输入为 23 维。速度模长、水平速度、加速度模长和单步距离均可由三轴状态确定，不重复进入模型；`segment_distance_m` 仍保留在路线表中，用于累计距离和结果查询。逐维定义以 4.0 数据目录 `processed/feature_metadata_4.0.json` 为准。
 
 | 维度 | 字段 | 单位 | 物理含义 | 历史训练来源 | 部署来源 |
 | ---: | --- | --- | --- | --- | --- |
@@ -506,7 +506,7 @@ $$
 原始 flights.csv
 -> data_utils.py 排除A1/A2/A3、按真实时间戳重采样到0.2 s
 -> 位置转任务起点局部ENU、机体系速度/加速度直接保留、Z轴加9.80665去重力、航向转换机体系相对风
--> out/data/processed_4.0/{train,val,test}.csv（23维TCN输入）
+-> D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/{train,val,test}_4.0.csv（23维TCN输入）
 -> train.py 在GPU上搜索8个TCN时间窗（每组20轮）
 -> 最优窗口正式GPU训练80轮，保存4.0独立权重
 -> 验证集条件残差模型与完整flight任务区间校准
@@ -538,7 +538,7 @@ $$
 | 统一离散步长 | 0.200 s | 按真实时间戳插值，能量按固定时间积分 |
 | 可视化产物 | 39 个 SVG、9 个 GIF、8 个 HTML | 全部直接位于 `4.0/out/`，无 PNG、无 `runs/` |
 
-数据规模来自 [`dataset_summary_4.0.json`](./data/processed_4.0/dataset_summary_4.0.json)，每一维的含义、单位、历史来源和部署来源见 [`feature_metadata_4.0.json`](./data/processed_4.0/feature_metadata_4.0.json)。后者已明确区分 23 维 TCN 输入、接口字段、路线派生字段和离线标签。
+数据规模来自 4.0 数据目录 `processed/dataset_summary_4.0.json`，每一维的含义、单位、历史来源和部署来源见同目录的 `feature_metadata_4.0.json`。后者已明确区分 23 维 TCN 输入、接口字段、路线派生字段和离线标签。
 
 ### B.2 TCN 与 RLS 参数选择
 
@@ -645,7 +645,7 @@ RLS 对瞬时功率、窗口能耗和 flight 总能耗均有改善，其中 flig
 
 ### B.9 启动阶段偏差专项诊断
 
-本节针对图 C-47 中 Flight 278 开头的明显偏差补充专项统计。数据来自 [`test_predictions_4.0.csv`](./predictions/test_predictions_4.0.csv)、[`train_4.0.csv`](./data/processed_4.0/train_4.0.csv) 和 [`flight_energy_summary_4.0.csv`](./model/flight_energy_summary_4.0.csv)。统计覆盖独立测试集 48,739 个 0.2 s 时间步、47 个完整 flight。为避免单点噪声把瞬时尖峰误判为起飞，起飞时刻定义为功率连续 5 个时间步，即连续 1 s 不低于 100 W；“提前量”等于实际达到阈值的时刻减去 TCN 达到阈值的时刻，正值表示模型提前抬升。
+本节针对图 C-47 中 Flight 278 开头的明显偏差补充专项统计。数据来自 [`test_predictions_4.0.csv`](./predictions/test_predictions_4.0.csv)、4.0 数据目录 `processed/train_4.0.csv` 和 [`flight_energy_summary_4.0.csv`](./model/flight_energy_summary_4.0.csv)。统计覆盖独立测试集 48,739 个 0.2 s 时间步、47 个完整 flight。为避免单点噪声把瞬时尖峰误判为起飞，起飞时刻定义为功率连续 5 个时间步，即连续 1 s 不低于 100 W；“提前量”等于实际达到阈值的时刻减去 TCN 达到阈值的时刻，正值表示模型提前抬升。
 
 #### B.9.1 Flight 278 的阶段误差
 
@@ -1217,14 +1217,14 @@ Flight 278 在地面等待阶段仍有高度抖动，累计爬升和累计下降
 
 | 文件 | 内容与使用边界 |
 | --- | --- |
-| [`planning_energy_features_4.0.csv`](./data/processed_4.0/planning_energy_features_4.0.csv) | 全部正常 flight 的 0.2 s 建模表，含离线标签、追踪字段、23 维输入和路线派生量。 |
-| [`train_4.0.csv`](./data/processed_4.0/train_4.0.csv) | 完整 flight 训练集，用于 scaler 和 TCN 权重拟合。 |
-| [`val_4.0.csv`](./data/processed_4.0/val_4.0.csv) | 完整 flight 验证集，用于时间窗、RLS 参数和区间校准。 |
-| [`test_4.0.csv`](./data/processed_4.0/test_4.0.csv) | 最终测试集，只用于冻结后的评价。 |
-| [`resample_map_4.0.csv`](./data/processed_4.0/resample_map_4.0.csv) | 每个 0.2 s 新时间点对应的原始索引、原始时间范围和能量处理方法。 |
-| [`feature_analysis_4.0.csv`](./data/processed_4.0/feature_analysis_4.0.csv) | 候选字段的唯一值数、零值比例、均值、标准差、是否进入 TCN 和保留/删除理由。 |
-| [`feature_metadata_4.0.json`](./data/processed_4.0/feature_metadata_4.0.json) | 23 维逐字段单位、含义、历史来源、部署来源、坐标约定、禁止输入和采样说明。 |
-| [`dataset_summary_4.0.json`](./data/processed_4.0/dataset_summary_4.0.json) | 数据行数、flight 数、切分规模、未见条件数量、原始与重采样周期。 |
+| `processed/planning_energy_features_4.0.csv` | 全部正常 flight 的 0.2 s 建模表，含离线标签、追踪字段、23 维输入和路线派生量。 |
+| `processed/train_4.0.csv` | 完整 flight 训练集，用于 scaler 和 TCN 权重拟合。 |
+| `processed/val_4.0.csv` | 完整 flight 验证集，用于时间窗、RLS 参数和区间校准。 |
+| `processed/test_4.0.csv` | 最终测试集，只用于冻结后的评价。 |
+| `processed/resample_map_4.0.csv` | 每个 0.2 s 新时间点对应的原始索引、原始时间范围和能量处理方法。 |
+| `processed/feature_analysis_4.0.csv` | 候选字段的唯一值数、零值比例、均值、标准差、是否进入 TCN 和保留/删除理由。 |
+| `processed/feature_metadata_4.0.json` | 23 维逐字段单位、含义、历史来源、部署来源、坐标约定、禁止输入和采样说明。 |
+| `processed/dataset_summary_4.0.json` | 数据行数、flight 数、切分规模、未见条件数量、原始与重采样周期。 |
 
 ### D.2 模型评估与预测表
 

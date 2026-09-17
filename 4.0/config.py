@@ -13,10 +13,11 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DATA_DIR = Path("D:/Python-files/Energy-prediction/data")
+DATA_ROOT = Path("D:/Python-files/Energy-prediction/data/dji_matrice_100_data")
+DATA_DIR = DATA_ROOT / "4.0"
 SAVE_DIR = PROJECT_ROOT / "model"
 OUT_DIR = PROJECT_ROOT / "out"
-OUT_DATA_DIR = OUT_DIR / "data"
+OUT_DATA_DIR = DATA_DIR
 OUT_MODEL_DIR = OUT_DIR / "model"
 OUT_PREDICTION_DIR = OUT_DIR / "predictions"
 OUT_TASK_DIR = OUT_DIR / "tasks"
@@ -25,9 +26,9 @@ OUT_FIGURE_DIR = OUT_DIR / "figures"
 OUT_ROUTE_DIR = OUT_DIR / "routes"
 LOG_DIR = OUT_DIR / "logs"
 
-RAW_DATA_DIR = DATA_DIR / "dji_matrice_100"
+RAW_DATA_DIR = DATA_DIR / "raw"
 RAW_FLIGHTS_CSV = RAW_DATA_DIR / "flights.csv"
-PROCESSED_DIR = OUT_DATA_DIR / "processed_4.0"
+PROCESSED_DIR = DATA_DIR / "processed"
 CLEAN_DATA_CSV = PROCESSED_DIR / "planning_energy_features_4.0.csv"
 TRAIN_CSV = PROCESSED_DIR / "train_4.0.csv"
 VAL_CSV = PROCESSED_DIR / "val_4.0.csv"
@@ -194,20 +195,24 @@ def build_config(**overrides) -> ExperimentConfig:
         if value is not None and hasattr(cfg, key):
             cfg = replace(cfg, **{key: value})
     root = cfg.out_dir
+    data_root = cfg.data_dir
+    raw_data_dir = data_root / "raw"
+    processed_dir = data_root / "processed"
     return replace(
         cfg,
-        out_data_dir=root / "data", out_model_dir=root / "model",
+        out_data_dir=data_root, out_model_dir=root / "model",
         out_prediction_dir=root / "predictions", out_task_dir=root / "tasks",
         out_rls_dir=root / "rls", out_figure_dir=root / "figures", out_route_dir=root / "routes",
-        log_dir=root / "logs", processed_dir=root / "data" / "processed_4.0",
-        clean_data_csv=root / "data" / "processed_4.0" / "planning_energy_features_4.0.csv",
-        train_csv=root / "data" / "processed_4.0" / "train_4.0.csv",
-        val_csv=root / "data" / "processed_4.0" / "val_4.0.csv",
-        test_csv=root / "data" / "processed_4.0" / "test_4.0.csv",
-        feature_meta_json=root / "data" / "processed_4.0" / "feature_metadata_4.0.json",
-        feature_analysis_csv=root / "data" / "processed_4.0" / "feature_analysis_4.0.csv",
-        dataset_summary_json=root / "data" / "processed_4.0" / "dataset_summary_4.0.json",
-        resample_map_csv=root / "data" / "processed_4.0" / "resample_map_4.0.csv",
+        log_dir=root / "logs", raw_flights_csv=raw_data_dir / "flights.csv",
+        processed_dir=processed_dir,
+        clean_data_csv=processed_dir / "planning_energy_features_4.0.csv",
+        train_csv=processed_dir / "train_4.0.csv",
+        val_csv=processed_dir / "val_4.0.csv",
+        test_csv=processed_dir / "test_4.0.csv",
+        feature_meta_json=processed_dir / "feature_metadata_4.0.json",
+        feature_analysis_csv=processed_dir / "feature_analysis_4.0.csv",
+        dataset_summary_json=processed_dir / "dataset_summary_4.0.json",
+        resample_map_csv=processed_dir / "resample_map_4.0.csv",
         training_log_csv=root / "model" / "training_log_4.0.csv",
         tcn_tuning_csv=root / "model" / "tcn_window_tuning_4.0.csv",
         rls_tuning_csv=root / "rls" / "rls_tuning_4.0.csv",

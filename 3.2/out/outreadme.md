@@ -54,7 +54,7 @@ $$
 
 ### A.2 数据来源与无泄漏切分
 
-程序读取 `D:/Python-files/Energy-prediction/data/dji_matrice_100/flights.csv` 和 `parameters.csv`，处理结果写入 [`data/processed_3.2/`](./data/processed_3.2/)。特征工程覆盖原始数据中的全部 11 种 route，不从项目内旧 `data/` 目录读取副本。
+程序读取 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/raw/flights.csv` 和同目录的 `parameters.csv`，处理结果写入 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/`。特征工程覆盖原始数据中的全部 11 种 route，不从其他版本目录读取数据。
 
 切分以完整 flight 为最小单位，并按 route 分层。对 flight 数不少于 3 的 route，验证集与测试集数量分别按比例向上取整，同时至少保留 1 个训练 flight；不足 3 个 flight 的 route 全部进入训练集，避免模型从未见过该 route。随机数种子固定为 42，同一 flight 不会跨集合，从而避免相邻采样点泄漏。
 
@@ -558,7 +558,7 @@ $$
 ```text
 原始 flights.csv + parameters.csv
 -> data_utils.py 清洗、特征工程、dt_seconds、flight切分
--> out/data/processed_3.2/{train,val,test}.csv
+-> D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/{train,val,test}.csv
 -> train.py 搜索10个TCN窗口
 -> 外部 best_energy_tcn_rls_3.2.pt
 -> train.py 正式TCN训练（最多80轮）

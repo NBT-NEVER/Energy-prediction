@@ -12,13 +12,15 @@ from pathlib import Path
 
 # 项目代码目录
 PROJECT_ROOT = Path(__file__).resolve().parent
-# 原始公开数据目录，只存放下载或解压的源数据
-DATA_DIR = Path("D:/Python-files/Energy-prediction/data")
+# 各版本无人机数据的统一根目录
+DATA_ROOT = Path("D:/Python-files/Energy-prediction/data/dji_matrice_100_data")
+# 实验2.1的原始数据、处理后数据和数据切分目录
+DATA_DIR = DATA_ROOT / "2.1"
 # 模型训练权重目录，只保存 .pt 权重文件
 SAVE_DIR = Path("D:/Python-files/Energy-prediction/model")
-# 统一输出目录，处理后数据、日志、评估、预测和可视化都写入这里
+# 运行产物输出目录；处理后数据由DATA_DIR独立管理
 OUT_DIR = PROJECT_ROOT / "out"
-OUT_DATA_DIR = OUT_DIR / "data"
+OUT_DATA_DIR = DATA_DIR
 OUT_MODEL_DIR = OUT_DIR / "model"
 FIGURE_DIR = OUT_DIR / "figures"
 PREDICTION_DIR = OUT_DIR / "predictions"
@@ -27,15 +29,15 @@ LOG_DIR = OUT_DIR / "logs"
 
 # 在线数据源和原始数据文件
 SOURCE_REPO_URL = "https://www.modelscope.cn/datasets/OmniData/Data_Collected_with_Package_etc.git"
-SOURCE_REPO_DIR = DATA_DIR / "Data_Collected_with_Package_etc"
+SOURCE_REPO_DIR = DATA_ROOT / "Source" / "Data_Collected_with_Package_etc"
 RAW_ZIP_FILE = SOURCE_REPO_DIR / "raw" / "12683453.zip"
-RAW_DATA_DIR = DATA_DIR / "dji_matrice_100"
+RAW_DATA_DIR = DATA_DIR / "raw"
 RAW_FLIGHTS_CSV = RAW_DATA_DIR / "flights.csv"
 RAW_PARAMETERS_CSV = RAW_DATA_DIR / "parameters.csv"
 RAW_README_FILE = RAW_DATA_DIR / "README.txt"
 
 # 处理后数据和数据切分文件
-PROCESSED_DIR = OUT_DATA_DIR / "processed_2.1"
+PROCESSED_DIR = DATA_DIR / "processed"
 CLEAN_DATA_CSV = PROCESSED_DIR / "uav_energy_features.csv"
 EXCLUDED_ROUTES_CSV = PROCESSED_DIR / "excluded_routes_2.1.csv"
 TRAIN_CSV = PROCESSED_DIR / "train.csv"
@@ -196,33 +198,16 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized[key] = Path(value) if isinstance(current, Path) else value
     if "data_dir" in normalized:
         data_dir = normalized["data_dir"]
-        source_repo_dir = data_dir / "Data_Collected_with_Package_etc"
-        raw_data_dir = data_dir / "dji_matrice_100"
+        source_repo_dir = data_dir.parent / "Source" / "Data_Collected_with_Package_etc"
+        raw_data_dir = data_dir / "raw"
+        processed_dir = data_dir / "processed"
+        normalized.setdefault("out_data_dir", data_dir)
         normalized.setdefault("source_repo_dir", source_repo_dir)
         normalized.setdefault("raw_zip_file", source_repo_dir / "raw" / "12683453.zip")
         normalized.setdefault("raw_data_dir", raw_data_dir)
         normalized.setdefault("raw_flights_csv", raw_data_dir / "flights.csv")
         normalized.setdefault("raw_parameters_csv", raw_data_dir / "parameters.csv")
         normalized.setdefault("raw_readme_file", raw_data_dir / "README.txt")
-    if "save_dir" in normalized:
-        save_dir = normalized["save_dir"]
-        normalized.setdefault("best_model_file", save_dir / "best_energy_tcn_rls_2.1.pt")
-        normalized.setdefault("final_model_file", save_dir / "final_energy_tcn_rls_2.1.pt")
-    if "out_dir" in normalized:
-        out_dir = normalized["out_dir"]
-        out_data_dir = out_dir / "data"
-        out_model_dir = out_dir / "model"
-        figure_dir = out_dir / "figures"
-        prediction_dir = out_dir / "predictions"
-        custom_dir = out_dir / "custom"
-        log_dir = out_dir / "logs"
-        processed_dir = out_data_dir / "processed_2.1"
-        normalized.setdefault("out_data_dir", out_data_dir)
-        normalized.setdefault("out_model_dir", out_model_dir)
-        normalized.setdefault("figure_dir", figure_dir)
-        normalized.setdefault("prediction_dir", prediction_dir)
-        normalized.setdefault("custom_dir", custom_dir)
-        normalized.setdefault("log_dir", log_dir)
         normalized.setdefault("processed_dir", processed_dir)
         normalized.setdefault("clean_data_csv", processed_dir / "uav_energy_features.csv")
         normalized.setdefault("excluded_routes_csv", processed_dir / "excluded_routes_2.1.csv")
@@ -231,6 +216,22 @@ def build_config(**overrides: object) -> ExperimentConfig:
         normalized.setdefault("test_csv", processed_dir / "test.csv")
         normalized.setdefault("feature_meta_json", processed_dir / "feature_metadata.json")
         normalized.setdefault("dataset_summary_json", processed_dir / "dataset_summary.json")
+    if "save_dir" in normalized:
+        save_dir = normalized["save_dir"]
+        normalized.setdefault("best_model_file", save_dir / "best_energy_tcn_rls_2.1.pt")
+        normalized.setdefault("final_model_file", save_dir / "final_energy_tcn_rls_2.1.pt")
+    if "out_dir" in normalized:
+        out_dir = normalized["out_dir"]
+        out_model_dir = out_dir / "model"
+        figure_dir = out_dir / "figures"
+        prediction_dir = out_dir / "predictions"
+        custom_dir = out_dir / "custom"
+        log_dir = out_dir / "logs"
+        normalized.setdefault("out_model_dir", out_model_dir)
+        normalized.setdefault("figure_dir", figure_dir)
+        normalized.setdefault("prediction_dir", prediction_dir)
+        normalized.setdefault("custom_dir", custom_dir)
+        normalized.setdefault("log_dir", log_dir)
         normalized.setdefault("scaler_json", out_model_dir / "scaler_2.1.json")
         normalized.setdefault("training_log_csv", out_model_dir / "training_log_2.1.csv")
         normalized.setdefault("tuning_results_csv", out_model_dir / "tuning_results_2.1.csv")
@@ -273,6 +274,7 @@ def ensure_directories(cfg: ExperimentConfig | None = None) -> None:
         cfg.prediction_dir,
         cfg.custom_dir,
         cfg.log_dir,
+        cfg.source_repo_dir.parent,
         cfg.raw_data_dir,
         cfg.processed_dir,
         cfg.training_vis_dir,

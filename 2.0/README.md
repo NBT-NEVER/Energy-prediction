@@ -576,7 +576,7 @@ $$S_{TCN}=\mathrm{WAPE}_{flight}+0.2\,\mathrm{WAPE}_{sample}$$
 
 ## 输出说明
 
-- `out/data/processed_2.1/`：R1 特征表、数据切分、字段元数据和排除航线记录。
+- `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/2.1/processed/`：R1 特征表、数据切分、字段元数据和排除航线记录。
 - `out/model/scaler_2.1.json`：训练集标准化参数、典型采样间隔和功率尺度。
 - `out/model/training_log_2.1.csv`：10 个窗口各 30 轮调参记录及最终训练记录。
 - `out/model/tuning_results_2.1.csv`：10 个 TCN 窗口的采样步数和验证指标。

@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="实验4.0：面向任务规划和充电决策的无人机能耗预测")
     parser.add_argument("mode", nargs="?", default="all",
                         choices=["prepare", "tune-tcn", "train", "tune-rls", "evaluate", "task-demo", "online-demo", "visualize", "all"])
-    parser.add_argument("--data-dir", type=Path, default=None)
+    parser.add_argument("--data-dir", type=Path, default=None, help="覆盖实验4.0版本数据目录。")
     parser.add_argument("--save-dir", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--device", default=None)
@@ -44,12 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _config(args):
     overrides = {"device": args.device, "epochs": args.epochs, "tune_epochs": args.tune_epochs,
-                 "batch_size": args.batch_size, "save_dir": args.save_dir, "out_dir": args.out_dir}
+                 "batch_size": args.batch_size, "save_dir": args.save_dir, "out_dir": args.out_dir,
+                 "data_dir": args.data_dir}
     cfg = build_config(**{k: v for k, v in overrides.items() if v is not None})
-    if args.data_dir is not None:
-        cfg = build_config(device=cfg.device, epochs=cfg.epochs, tune_epochs=cfg.tune_epochs,
-                           batch_size=cfg.batch_size, save_dir=cfg.save_dir, out_dir=cfg.out_dir,
-                           data_dir=args.data_dir, raw_flights_csv=args.data_dir / "dji_matrice_100" / "flights.csv")
     ensure_directories(cfg)
     return cfg
 

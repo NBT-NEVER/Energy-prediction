@@ -77,16 +77,16 @@ python -m pip install -r 4.0/requirements.txt
 | 内容 | 默认位置 | 用途 |
 |---|---|---|
 | 原始数据根目录 | `D:/Python-files/Energy-prediction/data` | 项目外长期保存的只读数据源 |
-| 原始飞行记录 | `D:/Python-files/Energy-prediction/data/dji_matrice_100/flights.csv` | 历史轨迹、环境记录和离线监督标签来源 |
-| 处理后数据 | `4.0/out/data/processed_4.0/` | 0.2 s 特征表、train/val/test、元数据和重采样映射 |
+| 原始飞行记录 | `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/raw/flights.csv` | 历史轨迹、环境记录和离线监督标签来源 |
+| 处理后数据 | `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/` | 0.2 s 特征表、train/val/test、元数据和重采样映射 |
 | 最优阶段权重 | `4.0/model/best_planning_tcn_4.0.pt` | 当前最优窗口的阶段 checkpoint |
 | 最终权重 | `4.0/model/final_planning_tcn_4.0.pt` | 任务前预测和离线评估使用的正式权重 |
 | 标准化参数 | `4.0/model/planning_scaler_4.0.json` | 只用训练集估计的 23 维输入和基础功率缩放参数 |
 | 当前运行产物 | `4.0/out/` | 数据、评估、预测、接口示例、RLS、图表、路线产物和日志 |
 
-执行 `prepare --force-prepare` 会按当前原始数据重新生成 4.0 的处理后数据。具体行数、flight 数、路线集合和切分数量以 [`dataset_summary_4.0.json`](./out/data/processed_4.0/dataset_summary_4.0.json) 为准；逐维来源、单位、可获得时机和坐标约定以 [`feature_metadata_4.0.json`](./out/data/processed_4.0/feature_metadata_4.0.json) 为准。
+执行 `prepare --force-prepare` 会按当前原始数据重新生成 4.0 的处理后数据。具体行数、flight 数、路线集合和切分数量以 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/dataset_summary_4.0.json` 为准；逐维来源、单位、可获得时机和坐标约定以同目录的 `feature_metadata_4.0.json` 为准。
 
-`--data-dir` 应指向包含 `dji_matrice_100/flights.csv` 的数据根目录；`--save-dir` 只改变 4.0 权重与 scaler 位置；`--out-dir` 会重新派生全部处理后数据和产物子目录。不得把这三个参数指向 3.2 的版本目录。
+`--data-dir` 应指向当前版本的数据目录，其下必须包含 `raw/flights.csv`，处理后数据固定写入同目录的 `processed/`；`--save-dir` 只改变 4.0 权重与 scaler 位置；`--out-dir` 只重新派生日志、评估、预测、图表和任务产物目录。不得把这些参数指向 3.2 的版本目录。
 
 ## 5. 数据策略与离散化
 
@@ -194,7 +194,7 @@ $$
 - `thermal_load_proxy`、`vision_energy_proxy_w`、`communication_energy_proxy_w`：属于经验构造代理，量纲或标定依据不足，不参与 TCN 精度评价。
 - `obstacle_agility_index` 和 route 独热：前者重复组合运动量，后者会把模型限制在已见路线编号。
 
-特征的非空数、唯一值数量、零值比例、均值、标准差和保留理由写入 [`feature_analysis_4.0.csv`](./out/data/processed_4.0/feature_analysis_4.0.csv)，可用于检查零列、常量列和重复输入是否重新出现。
+特征的非空数、唯一值数量、零值比例、均值、标准差和保留理由写入 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/feature_analysis_4.0.csv`，可用于检查零列、常量列和重复输入是否重新出现。
 
 ## 8. 坐标、风向与历史数据映射
 
@@ -425,7 +425,7 @@ RLS 初始参数为偏置 0、缩放 1。区间同时使用参数协方差和近
 ```text
 out/
 ├── outreadme.md                 # 当前产物对应的算法、结果和逐图分析
-├── data/processed_4.0/          # 特征、切分、逐维元数据、关系分析和重采样映射
+├── D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.0/processed/  # 特征、切分、逐维元数据、关系分析和重采样映射
 ├── model/                       # 搜索日志、评估指标、flight/window/route汇总和区间模型
 ├── predictions/                 # 测试集与全部正常路线逐步预测
 ├── tasks/                       # 调度器可读取的任务前/在线CSV与JSON

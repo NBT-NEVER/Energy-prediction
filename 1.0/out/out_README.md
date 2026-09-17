@@ -154,11 +154,11 @@ custom 模式可以生成默认工况，也可以读取自定义 CSV。自定义
 
 | 文件                                                                  | 主要内容                               | 读取重点                       |
 | --------------------------------------------------------------------- | -------------------------------------- | ------------------------------ |
-| [uav_energy_features.csv](data/processed_1.0/uav_energy_features.csv) | 全部清洗后样本、标签和 28 个特征       | 检查特征值、功率标签和采样间隔 |
-| [train.csv](data/processed_1.0/train.csv)                             | 训练集                                 | 用于计算标准化参数和拟合权重   |
-| [val.csv](data/processed_1.0/val.csv)                                 | 验证集                                 | 用于调参、学习率调整和早停     |
-| [test.csv](data/processed_1.0/test.csv)                               | 测试集                                 | 只用于最终评估                 |
-| [feature_metadata.json](data/processed_1.0/feature_metadata.json)     | 特征顺序、目标列和代理特征             | 推理时必须保持相同列顺序       |
+| `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/1.0/processed/uav_energy_features.csv` | 全部清洗后样本、标签和 28 个特征 | 检查特征值、功率标签和采样间隔 |
+| `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/1.0/processed/train.csv` | 训练集 | 用于计算标准化参数和拟合权重 |
+| `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/1.0/processed/val.csv` | 验证集 | 用于调参、学习率调整和早停 |
+| `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/1.0/processed/test.csv` | 测试集 | 只用于最终评估 |
+| `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/1.0/processed/feature_metadata.json` | 特征顺序、目标列和代理特征 | 推理时必须保持相同列顺序 |
 | [scaler_1.0.json](model/scaler_1.0.json)                              | 训练集均值和标准差                     | 还原模型输入输出尺度           |
 | [tuning_results_1.0.csv](model/tuning_results_1.0.csv)                | 5 个候选模型的验证结果                 | selection_score 越小越好       |
 | [training_log_1.0.csv](model/training_log_1.0.csv)                    | 每轮训练损失、验证损失、学习率         | 判断收敛、平台期和早停位置     |

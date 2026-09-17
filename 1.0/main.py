@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["download", "prepare", "train", "predict", "evaluate", "visualize", "custom", "all"],
         help="运行模式，all会依次完成数据处理、训练、评估和可视化。",
     )
-    parser.add_argument("--data-dir", type=Path, default=None, help="覆盖原始数据目录。")
+    parser.add_argument("--data-dir", type=Path, default=None, help="覆盖实验1.0版本数据目录。")
     parser.add_argument("--save-dir", type=Path, default=None, help="覆盖模型权重保存目录。")
     parser.add_argument("--out-dir", type=Path, default=None, help="覆盖统一输出目录。")
     parser.add_argument("--epochs", type=int, default=None, help="最终训练轮数。")

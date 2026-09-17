@@ -46,7 +46,7 @@
 ├── improve.md                   # 追加式改进日志
 └── out/
     ├── outreadme.md             # 当前输出对应的详细算法与结果报告
-    ├── data/processed_3.2/      # 处理后数据、切分和元数据
+    ├── D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/  # 处理后数据、切分和元数据
     ├── model/                   # 调参、训练、评估和能量窗结果
     ├── rls/                     # RLS搜索、参数轨迹和区间校准
     ├── predictions/             # 测试集与全航线预测
@@ -75,14 +75,14 @@ python -m pip install -r requirements.txt
 | 内容 | 默认位置 | 说明 |
 |---|---|---|
 | 原始数据根目录 | `D:/Python-files/Energy-prediction/data` | 项目外长期保存，不复制进版本目录 |
-| 原始飞行记录 | `D:/Python-files/Energy-prediction/data/dji_matrice_100/flights.csv` | 全部原始航线的逐采样记录 |
-| 原始工况参数 | `D:/Python-files/Energy-prediction/data/dji_matrice_100/parameters.csv` | flight级工况参数 |
-| 处理后数据 | `3.2/out/data/processed_3.2/` | 特征表、秒级能量表和重新划分的数据集 |
+| 原始飞行记录 | `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/raw/flights.csv` | 全部原始航线的逐采样记录 |
+| 原始工况参数 | `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/raw/parameters.csv` | flight级工况参数 |
+| 处理后数据 | `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/` | 特征表、秒级能量表和重新划分的数据集 |
 | 最优阶段权重 | `D:/Python-files/Energy-prediction/model/best_energy_tcn_rls_3.2.pt` | TCN搜索阶段的最优 checkpoint |
 | 最终权重 | `D:/Python-files/Energy-prediction/model/final_energy_tcn_rls_3.2.pt` | 正式训练及选定RLS参数 |
 | 运行产物 | `3.2/out/` | 评估、预测、日志和全部可视化 |
 
-处理后数据按完整 `flight` 划分，单个 flight 不跨训练、验证和测试集合。执行 `prepare --force-prepare` 或完整 `all --force-prepare` 时会根据当前原始数据重新生成划分；具体记录数、flight 数、航线分布和切分清单以 `out/data/processed_3.2/dataset_summary.json` 为准。
+处理后数据按完整 `flight` 划分，单个 flight 不跨训练、验证和测试集合。执行 `prepare --force-prepare` 或完整 `all --force-prepare` 时会根据当前原始数据重新生成划分；具体记录数、flight 数、航线分布和切分清单以 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/dataset_summary.json` 为准。
 
 仓库不把原始数据、逐采样大 CSV 和外部模型权重当作源码管理。复现实验时应保持上述默认目录，或同时通过 `--data-dir`、`--save-dir` 和 `--out-dir` 指向新的明确位置。
 
@@ -172,7 +172,7 @@ RLS 在每个 flight 开始和飞行状态切换时恢复中性参数。当前�
 
 `out/` 是 3.2 唯一的运行产物根目录。各类产物不得散落到代码目录：
 
-- `out/data/processed_3.2/`：处理后特征、切分 CSV、数据摘要和特征元数据。
+- `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/3.2/processed/`：处理后特征、切分 CSV、数据摘要和特征元数据。
 - `out/model/`：TCN 调参表、训练日志、评估指标、分箱统计和能量窗比较结果。
 - `out/rls/`：RLS 调参表、逐窗口参数轨迹、参数统计和区间校准文件。
 - `out/predictions/`：测试集预测与全部原始航线预测。
