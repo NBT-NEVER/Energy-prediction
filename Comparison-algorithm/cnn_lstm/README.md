@@ -1,42 +1,42 @@
-# CNN-LSTM
+# CNN-LSTM（Convolutional Neural Network–Long Short-Term Memory，卷积神经网络-长短期记忆网络）
 
 **算法来源：** Luo 等，2025，RF-TLATT 论文表 8 列出的 CNN-LSTM 对比名称（二手来源）。正文引用 <sup>[A1]</sup>。
 
 ## 1. 方法概述
 
-Luo 等仅在表 8 给出 CNN-LSTM 的对比结果，正文将其归于“Xuebing et al. (2024)”，但所给论文的参考文献表缺少相应完整条目，因而无法核实原模型层数与参数。当前目录实现的是可复现的 CNN-LSTM 工程基线，不冒充该未知原模型的直接复现。验证集在 48/64 通道候选中选中卷积通道 $C=48$、LSTM 隐层 $H=48$、Dropout 0.10，共 29,377 个可训练参数。
+Luo 等仅在表 8 给出 CNN-LSTM 的对比结果，正文将其归于“Xuebing et al. (2024)”，但所给论文的参考文献表缺少相应完整条目，因而无法核实原模型层数与参数。当前目录实现的是可复现的 CNN-LSTM 工程基线，不冒充该未知原模型的直接复现。验证集在 48/64 通道候选中选中卷积通道 $C=64$、LSTM隐层 $H=64$、Dropout 0.15，共 29,377 个可训练参数。
 
-1. **输入与填充层**：当前点与同一 flight 的前 16 点组成 $B\times17\times23$ 标准化序列；flight 开头不足部分复制最早记录。转置后得到 Conv1d 所需的 $B\times23\times17$。
-2. **卷积层 1**：`Conv1d(23,48,k=3,padding=1)` 同时汇总 23 个输入通道和相邻 3 个时间位置，输出 $B\times48\times17$；随后执行 `BatchNorm1d(48) → LeakyReLU(0.05) → Dropout(0.10)`。
-3. **卷积层 2**：`Conv1d(48,48,k=3,padding=1) → BatchNorm1d(48) → LeakyReLU(0.05)`，继续组合第一层局部模式，输出形状仍为 $B\times48\times17$。第二层后没有额外 Dropout。
-4. **单层 LSTM**：转回 $B\times17\times48$，由 48 个记忆单元顺序聚合卷积特征；输出整个序列并取最后时间位置的 $B\times48$ 向量。
-5. **回归头**：对最后时刻向量执行 `Dropout(0.10) → Linear(48,1)`，得到标准化功率，再还原为 W 并截断为非负值。
-6. **时间信息边界**：两层卷积使用对称 `padding=1`，中间位置会组合其左右相邻位置；但送入模型的 17 步缓冲区以当前预测时刻结束，所以不会访问该时刻之后的数据。训练使用 AdamW、SmoothL1 和梯度裁剪，本次最佳状态保存于第 20 轮。
+1. **输入与填充层**：当前点与同一 flight 的前19点组成 $B\times20\times10$ 标准化序列；flight 开头不足部分复制最早记录。转置后得到 Conv1d 所需的 $B\times10\times20$。
+2. **卷积层 1**：`Conv1d(10,64,k=3,padding=1)` 同时汇总 10 个输入通道和相邻 3 个时间位置，输出 $B\times64\times20$；随后执行 `BatchNorm1d(64) → LeakyReLU(0.05) → Dropout(0.15)`。
+3. **卷积层 2**：`Conv1d(64,64,k=3,padding=1) → BatchNorm1d(64) → LeakyReLU(0.05)`，继续组合第一层局部模式，输出形状仍为 $B\times64\times20$。第二层后没有额外 Dropout。
+4. **单层 LSTM**：转回 $B\times20\times64$，由 64 个记忆单元顺序聚合卷积特征；输出整个序列并取最后时间位置的 $B\times64$ 向量。
+5. **回归头**：对最后时刻向量执行 `Dropout(0.15) → Linear(64,1)`，得到标准化功率，再还原为 W 并截断为非负值。
+6. **时间信息边界**：两层卷积使用对称 `padding=1`，中间位置会组合其左右相邻位置；但送入模型的 20 步缓冲区以当前预测时刻结束，所以不会访问该时刻之后的数据。训练使用 AdamW、SmoothL1 和梯度裁剪，本次最佳状态保存于第 20 轮。
 
-$$z_{c,t}=\operatorname{LeakyReLU}\left(\operatorname{BN}\left(\sum_{r=1}^{C_{in}}\sum_{\tau=-1}^{1}W_{c,r,\tau}x_{r,t+\tau}+b_c\right)\right)$$
+$$z_{c,t}=\\operatorname{LeakyReLU}\left(\\operatorname{BN}\left(\sum_{r=1}^{C_{in}}\sum_{\tau=-1}^{1}W_{c,r,\tau}x_{r,t+\tau}+b_c\right)\right)$$
 其中：
 
 - $x_{r,t+\tau}$：输入通道 $r$ 在窗口位置 $t+\tau$ 的值；边界外位置由零填充。
-- $C_{in}$：该卷积层的输入通道数，第一层为 23、第二层为 48。
+- $C_{in}$：该卷积层的输入通道数，第一层为 10、第二层为 64。
 - $W_{c,r,\tau}$：从输入通道 $r$、相对位置 $\tau$ 到输出通道 $c$ 的卷积权重。
 - $b_c$：输出通道 $c$ 的偏置；$z_{c,t}$：卷积、批归一化和激活后的局部特征。
 - $c$：输出通道索引；$r$：输入通道索引；$t$：窗口内位置；$\tau\in\{-1,0,1\}$：三点卷积核的相对位置。
-- $\operatorname{BN}$：批归一化；$\operatorname{LeakyReLU}$：负半轴斜率为 0.05 的激活函数。
+- $\\operatorname{BN}$：批归一化；$\\operatorname{LeakyReLU}$：负半轴斜率为 0.05 的激活函数。
 
 ## 2. 统一实验条件
 
-本算法与其他方法使用同一 R1 源数据和同一完整 flight 划分：训练 198,469 条、126 个 flight；验证 41,052 条、28 个 flight；测试 45,237 条、28 个 flight。实际模型输入为：23 个公共特征，17 步（约 2.0 s）历史至当前窗口。测试功率目标统一为 `power_w`，能耗统一按每条记录的 `dt_seconds` 积分；测试集只用于最终报告，不参与候选选择。
+本算法与其他方法使用同一 4.1 十维任务前数据和同一完整 flight 划分：训练 113,766 条、124 个 flight；验证 26,300 条、29 个 flight；测试 48,724 条、47 个 flight。实际模型输入为：10 个4.1任务前特征，20 步（4 s）历史至当前窗口。测试功率目标统一为 `power_w`，能耗统一按每条记录的 `dt_seconds` 积分；测试集只用于最终报告，不参与候选选择。
 
-本次最终测试结果：功率 MAE=31.569 W，RMSE=47.149 W，R²=0.9556，WAPE=7.770%；flight 能耗 MAE=0.656 Wh，RMSE=0.886 Wh，R²=0.9644，WAPE=2.997%。
+本次最终测试结果：功率 MAE=41.137 W，RMSE=64.871 W，R²=0.9249，WAPE=10.525%；flight 能耗 MAE=0.798 Wh，RMSE=1.234 Wh，R²=0.9463，WAPE=3.544%。
 
 ## 3. 验证集调参记录
 
 | 候选 | 验证最优轮次 | 验证功率WAPE(%) | 验证能耗WAPE(%) | 选择分数 | 最终选择 | cnn_channels | lstm_hidden | dropout | learning_rate | weight_decay |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 20 | 6.4574 | 1.5346 | 7.2247 | 是 | 48 | 48 | 0.1000 | 0.0020 | 0.0001 |
-| 2 | 17 | 6.6276 | 1.6921 | 7.4736 | 否 | 64 | 64 | 0.1500 | 0.0010 | 0.0001 |
+| 1 | 11 | 9.4838 | 1.9940 | 10.4808 | 否 | 48 | 48 | 0.1000 | 0.0020 | 0.0001 |
+| 2 | 24 | 9.3068 | 1.8115 | 10.2125 | 是 | 64 | 64 | 0.1500 | 0.0010 | 0.0001 |
 
-最终选择候选 `1`：`cnn_channels=48.0000`、`lstm_hidden=48.0000`、`dropout=0.1000`、`learning_rate=0.0020`、`weight_decay=0.0001`。验证集选择分数为 `7.2247`；测试集没有参与候选筛选。
+最终选择候选 `2`：`cnn_channels=64.0000`、`lstm_hidden=64.0000`、`dropout=0.1500`、`learning_rate=0.0010`、`weight_decay=0.0001`。验证集选择分数为 `10.2125`；测试集没有参与候选筛选。
 
 ## 4. 评价指标和变量
 
@@ -67,7 +67,7 @@ $$
 - $E_f$：flight $f$ 的总能耗，单位 Wh；$f$：flight 编号。
 - $3600$：从 W·s 换算到 Wh 的秒数因子。
 
-MAE、RMSE、MAPE、WAPE 越小越好，$R^2$ 越接近 1 越好。能耗先按真实 `dt_seconds` 积分，再在 28 个 flight 上计算指标，避免把不等间隔采样误当成等权样本。
+MAE、RMSE、MAPE、WAPE 越小越好，$R^2$ 越接近 1 越好。能耗先按真实 `dt_seconds` 积分，再在 47 个 flight 上计算指标，避免把不等间隔采样误当成等权样本。
 
 本实验的选择分数为：
 
@@ -80,14 +80,14 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 - $\mathrm{WAPE}_{energy,val}$：验证集按 flight 汇总后的能耗 WAPE，单位 %。
 - $0.5$：能耗 WAPE 在选择分数中的固定权重。
 
-该分数只在 28 个 validation flight 上计算，用于比较候选结构、正则强度和相位阈值；测试集 28 个 flight 在参数固定后才运行。
+该分数只在 29 个 validation flight 上计算，用于比较候选结构、正则强度和相位阈值；测试集 47 个 flight 在参数固定后才运行。
 
 ### 变量、坐标轴和字段词典
 
 | 字段或指标 | 中文全称 | English full name | 单位/范围 | 计算方式和含义 |
 |---|---|---|---|---|
 | `flight` | 飞行任务编号 | Flight identifier | 无量纲 | 同一编号的连续记录属于同一任务，能耗按该字段分组。 |
-| `route` | 航线编号 | Route identifier | — | 本实验仅保留 R1。 |
+| `route` | 航线编号 | Route identifier | — | route 仅作追踪与分层统计，不作为模型输入；4.1数据包含 H、R1–R7（排除 A1–A3）。 |
 | `time` | 飞行内相对时间 | Flight-relative time | s | 每个 flight 从 0 s 开始的时间坐标，所有时序图横轴使用它。 |
 | `dt_seconds`（$\Delta t_i$） | 采样时间间隔 | Sampling time interval | s | 相邻时间戳之差；能耗积分使用真实值，不用固定步长替代。 |
 | `power_w`（$y_i$） | 实测瞬时功率 | Measured instantaneous power | W | `max(battery_voltage × battery_current, 0)`，作为监督目标和散点图横坐标。 |
@@ -109,42 +109,29 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 | P50/P90/P95 | 误差分位数 | Error percentiles | W | 绝对误差排序后第 50%、90%、95% 位置，反映典型和尾部风险。 |
 
 
-下表列出公共数据中的 23 个候选字段。当前算法是否直接使用某字段，以第 2 节的实际输入和第 1 节逐层结构为准。
+下表列出公共数据中的10个4.1任务前字段。当前算法是否直接使用某字段，以第 2 节的实际输入和第 1 节逐层结构为准。
 
 | 变量 | 中文全称 | English full name | 单位/范围 | 在模型中的作用 |
 |---|---|---|---|---|
-| `time` | 飞行内相对时间 | Flight-relative time | s | 飞行内相对时间戳，单位为秒。 |
-| `dt_seconds` | 采样时间间隔 | Sampling time interval | s | 相邻采样点时间间隔，单位为秒；用于把功率积分为能耗。 |
-| `flight_progress` | 飞行进度 | Flight progress | 0–1 | 当前时间除以本次飞行最大时间，范围 0 到 1，表示飞行进度。 |
-| `wind_speed` | 风速 | Wind speed | m/s | 风速，单位为米每秒。 |
-| `wind_sin` | 风向正弦分量 | Sine of wind direction | — | 风向角的正弦分量，用于连续表达风向。 |
-| `wind_cos` | 风向余弦分量 | Cosine of wind direction | — | 风向角的余弦分量，用于连续表达风向。 |
-| `programmed_speed_mps` | 规划速度 | Programmed speed | m/s | 任务规划速度，单位为米每秒。 |
-| `actual_speed_mps` | 实际合速度 | Actual resultant speed | m/s | 三轴速度合成后的实际速度，单位为米每秒。 |
-| `horizontal_speed_mps` | 水平速度 | Horizontal speed | m/s | 水平面速度合成值，单位为米每秒。 |
-| `vertical_speed_mps` | 垂直速度 | Vertical speed | m/s | 垂直速度分量，单位为米每秒；正负表示升降方向。 |
-| `vertical_speed_abs_mps` | 垂直速度绝对值 | Absolute vertical speed | m/s | 垂直速度绝对值，单位为米每秒，表示垂直机动强度。 |
-| `relative_air_speed_mps` | 相对空速 | Relative air speed | m/s | 相对空气速度，结合机体速度和风速计算，单位为米每秒。 |
-| `wind_alignment` | 风速方向对齐度 | Wind alignment cosine | −1–1 | 水平速度与风速方向的余弦相似度，范围 -1 到 1。 |
-| `wind_cross_component_mps` | 横向风速分量 | Crosswind component | m/s | 风速在水平速度横向上的分量，单位为米每秒。 |
-| `payload_kg` | 载荷质量 | Payload mass | kg | 载荷质量，单位为千克。 |
-| `altitude_m` | 飞行高度 | Flight altitude | m | 飞行高度，单位为米。 |
-| `dynamic_accel_norm` | 动态加速度模 | Dynamic acceleration norm | m/s² | 去除重力影响后的三轴线性加速度合成强度，单位为米每二次方秒。 |
-| `angular_rate_norm` | 角速度模 | Angular-rate norm | rad/s | 三轴角速度合成强度，单位为弧度每秒。 |
-| `obstacle_agility_index` | 障碍机动代理指标 | Obstacle-agility proxy index | — | 由加速度、角速度和垂直速度构成的机动性代理指标，无量纲。 |
-| `thermal_load_proxy` | 热负荷代理量 | Thermal-load proxy | — | 由相对气流、载荷和爬升状态估计的热负荷代理指标，用于表征附加能耗。 |
-| `vision_energy_proxy_w` | 视觉计算附加功率代理量 | Vision-energy power proxy | W | 由速度、机动性和高度估计的视觉计算附加功率代理值，单位为瓦特。 |
-| `communication_energy_proxy_w` | 通信附加功率代理量 | Communication-energy power proxy | W | 由高度、风速和速度估计的通信附加功率代理值，单位为瓦特。 |
-| `route_R1` | R1航线独热变量 | R1 route one-hot variable | 0/1 | R1 航线独热编码；R1 样本取 1。 |
+| `time_s` | 相对任务时间 | Relative task time | s | 任务开始后的相对时间，来自每个flight首时刻归零的规划时间轴。 |
+| `task_duration_s` | 任务计划时长 | Planned task duration | s | 完整任务计划时长，用于表达当前任务所处的时间尺度。 |
+| `planned_position_east_m` | 规划东向位置 | Planned east position | m | ENU东向规划位置，反映水平航迹位移。 |
+| `planned_position_north_m` | 规划北向位置 | Planned north position | m | ENU北向规划位置，反映水平航迹位移。 |
+| `planned_position_up_m` | 规划上向位置 | Planned up position | m | ENU上向规划位置，反映爬升和下降状态。 |
+| `wind_east_mps` | 东向风速分量 | East wind component | m/s | 风矢量东向分量，参与风致功率变化建模。 |
+| `wind_north_mps` | 北向风速分量 | North wind component | m/s | 风矢量北向分量，参与风致功率变化建模。 |
+| `payload_g` | 有效载荷质量 | Payload mass | g | 有效载荷质量，影响悬停和机动所需功率。 |
+| `planned_motor_on` | 计划电机运行状态 | Planned motor-on state | 0/1 | 计划电机状态，区分停机和动力运行阶段。 |
+| `planned_airborne` | 计划离地状态 | Planned airborne state | 0/1 | 计划离地状态，辅助区分地面、起降和空中航段。 |
 
 ### 按飞行阶段的误差
 
 | 阶段 | 中文名称 | 样本数 | MAE(W) | RMSE(W) | WAPE(%) |
 |---|---|---:|---:|---:|---:|
-| idle | 停机/低速 | 10,616 | 14.55 | 36.24 | 25.67 |
-| ascent | 上升 | 19,819 | 37.80 | 50.18 | 7.03 |
-| descent | 下降 | 12,284 | 36.14 | 50.99 | 7.56 |
-| cruise | 巡航 | 2,518 | 31.93 | 43.57 | 6.41 |
+| idle | 停机/低速 | 14,086 | 17.58 | 48.13 | 25.08 |
+| ascent | 上升 | 10,185 | 59.51 | 81.12 | 10.54 |
+| descent | 下降 | 13,988 | 49.76 | 71.36 | 9.95 |
+| cruise | 巡航 | 10,465 | 43.44 | 57.13 | 8.57 |
 
 统一诊断阶段由速度阈值推导：$v_z>0.15$ m/s 为 ascent，$v_z<-0.15$ m/s 为 descent，$|v_z|<0.15$ m/s 且 $v_{xy}\le1.0$ m/s 为 idle，$|v_z|<0.15$ m/s 且 $v_{xy}>1.0$ m/s 为 cruise。边界值也保留为 cruise。该规则只用于让七种算法按同一口径生成阶段图；RF-TLATT 轻量基线预测时使用验证集另选的 0.25/1.5 m/s 阈值。idle 的真实功率中位数接近 0，百分比误差分母较小，阅读时应结合 MAE（W）和样本数；ascent/descent 的功率变化更大，RMSE 对少量尖峰更敏感。
 
@@ -152,38 +139,38 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 
 | 实测功率区间 | 样本数 | MAE(W) | RMSE(W) | WAPE(%) |
 |---|---:|---:|---:|---:|
-| 0–50 W | 9,300 | 8.04 | 18.91 | 447.28 |
-| 50–300 W | 859 | 82.26 | 108.12 | 50.27 |
-| 300–450 W | 6,595 | 53.93 | 69.48 | 13.11 |
-| 450–600 W | 22,870 | 30.02 | 40.41 | 5.80 |
-| >600 W | 5,613 | 42.83 | 56.65 | 6.54 |
+| 0–50 W | 11,783 | 6.20 | 18.35 | 401.71 |
+| 50–300 W | 856 | 156.56 | 199.58 | 93.80 |
+| 300–450 W | 6,779 | 64.04 | 81.14 | 15.53 |
+| 450–600 W | 23,081 | 37.63 | 50.47 | 7.25 |
+| >600 W | 6,225 | 79.46 | 101.04 | 12.05 |
 
-测试集中样本最多的是 `450–600 W`（22,870 条），它对总体 MAE 的贡献最大；当前算法的绝对误差最高区间是 `50–300 W`（MAE=82.26 W），通常对应起飞、降落或功率过渡段。
+测试集中样本最多的是 `450–600 W`（23,081 条），它对总体 MAE 的贡献最大；当前算法的绝对误差最高区间是 `50–300 W`（MAE=156.56 W），通常对应起飞、降落或功率过渡段。
 
 ## 5. 图表与数据分析
 
-该算法在测试集上的功率 MAE 为 **31.569 W**、RMSE 为 **47.149 W**、$R^2=0.9556$、WAPE 为 **7.770%**；flight 能耗 MAE 为 **0.656 Wh**、RMSE 为 **0.886 Wh**、WAPE 为 **2.997%**。残差均值为 10.851 W，样本标准差为 45.884 W，绝对误差 P50/P90/P95 为 20.85/74.12/96.75 W。下面逐图说明横纵轴、每条线或颜色、计算方式以及当前图中的数值。
+该算法在测试集上的功率 MAE 为 **41.137 W**、RMSE 为 **64.871 W**、$R^2=0.9249$、WAPE 为 **10.525%**；flight 能耗 MAE 为 **0.798 Wh**、RMSE 为 **1.234 Wh**、WAPE 为 **3.544%**。残差均值为 5.921 W，样本标准差为 64.601 W，绝对误差 P50/P90/P95 为 24.80/102.05/135.74 W。下面逐图说明横纵轴、每条线或颜色、计算方式以及当前图中的数值。
 
 ### `power_scatter.png`
 
 ![power_scatter.png](./out/figures/power_scatter.png)
 
-横轴是实测瞬时功率（Measured instantaneous power，W），纵轴是预测瞬时功率（Predicted instantaneous power，W）。绘图从 45,237 条测试记录中每隔 20 条取 1 条，共显示 2,262 个点；黑色虚线 $y=x$ 是理想线，线上方代表高估，点到理想线的垂直距离是该点绝对误差。抽样只用于减轻点云遮挡，指标仍由全部记录计算。
-图中显示等间隔抽样点，$R^2=0.9556$ 与 WAPE=7.770% 则由全部 45,237 条记录计算。WAPE 表示全部绝对误差之和占实测功率绝对值之和的比例。
+横轴是实测瞬时功率（Measured instantaneous power，W），纵轴是预测瞬时功率（Predicted instantaneous power，W）。绘图从 48,724 条测试记录中每隔 20 条取 1 条，共显示 2,262 个点；黑色虚线 $y=x$ 是理想线，线上方代表高估，点到理想线的垂直距离是该点绝对误差。抽样只用于减轻点云遮挡，指标仍由全部记录计算。
+图中显示等间隔抽样点，$R^2=0.9249$ 与 WAPE=10.525% 则由全部 48,724 条记录计算。WAPE 表示全部绝对误差之和占实测功率绝对值之和的比例。
 
 ### `flight_power_timeseries.png`
 
 ![flight_power_timeseries.png](./out/figures/flight_power_timeseries.png)
 
 横轴是飞行时间（Flight time，s），纵轴是功率（Power，W）。同一 flight 的实线是实测功率，虚线是预测功率；蓝、橙、绿分别对应图例中的前三个测试 flight。曲线峰值错位表示响应滞后，预测线持续高于实线表示该时段高估。
-图中前三个测试 flight 为 18、23、83；flight 18 的区间 MAE=29.91 W，flight 23 的区间 MAE=34.20 W，flight 83 的区间 MAE=45.70 W。同色实线/虚线分别是实测/预测，峰值错位会增加尾部误差。
+图中前三个测试 flight 为 1、5、6；flight 1 的区间 MAE=32.45 W，flight 5 的区间 MAE=37.56 W，flight 6 的区间 MAE=32.88 W。同色实线/虚线分别是实测/预测，峰值错位会增加尾部误差。
 
 ### `residual_histogram.png`
 
 ![residual_histogram.png](./out/figures/residual_histogram.png)
 
 横轴是功率残差 $e=\hat P-P$（Residual，W），纵轴是记录数（Count）。蓝色柱表示残差频数，红色竖虚线是零误差。中心偏右/偏左分别表示总体高估/低估，分布宽度和长尾对应 RMSE 与 P95。
-残差均值 10.851 W 表明整体存在轻微高估倾向；标准差 45.88 W 与 RMSE 的差异共同反映了尖峰样本。
+残差均值 5.921 W 表明整体存在轻微高估倾向；标准差 64.60 W 与 RMSE 的差异共同反映了尖峰样本。
 
 ### `residual_vs_actual.png`
 
@@ -197,21 +184,21 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 ![power_bin_error.png](./out/figures/power_bin_error.png)
 
 横轴是实测功率区间；左纵轴是区间 MAE（W），橙色柱表示误差；右纵轴是样本数（Samples），蓝色折线和圆点表示样本量。两条纵轴不能混读。柱高用于比较区间难度，折线用于判断该区间对总体指标的权重。
-橙柱最高的区间是 50–300 W（MAE=82.26 W）；蓝线显示该区间只有 859 条样本，不能仅凭柱高判断其对总体指标的贡献。
+橙柱最高的区间是 50–300 W（MAE=156.56 W）；蓝线显示该区间只有 856 条样本，不能仅凭柱高判断其对总体指标的贡献。
 
 ### `flight_energy_scatter.png`
 
 ![flight_energy_scatter.png](./out/figures/flight_energy_scatter.png)
 
 横轴是实测单 flight 总能耗（Measured flight energy，Wh），纵轴是预测总能耗（Predicted flight energy，Wh）。蓝点代表一个 flight，黑色虚线是 $y=x$；线上方为任务级高估，点距直线越远表示累计能量偏差越大。
-28 个蓝点对应 28 个 flight；任务级 WAPE=2.997%，点到 $y=x$ 的垂直距离就是 `energy_error_wh`。
+47 个蓝点对应 47 个 flight；任务级 WAPE=3.544%，点到 $y=x$ 的垂直距离就是 `energy_error_wh`。
 
 ### `flight_energy_error_ranking.png`
 
 ![flight_energy_error_ranking.png](./out/figures/flight_energy_error_ranking.png)
 
 横轴是 `predicted_energy_wh−actual_energy_wh`（Flight-energy error，Wh），纵轴是 flight 编号。红柱表示高估，蓝柱表示低估，黑色竖线为零误差。柱长直接给出每个任务的累计偏差。
-任务误差范围为 -0.451～2.564 Wh；红柱是高估，蓝柱是低估。
+任务误差范围为 -2.457～5.622 Wh；红柱是高估，蓝柱是低估。
 
 ### `cumulative_energy_timeseries.png`
 
@@ -225,35 +212,35 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 ![phase_error_metrics.png](./out/figures/phase_error_metrics.png)
 
 横轴依次为 idle（停机/低速）、ascent（上升）、descent（下降）、cruise（巡航）；三个子图纵轴分别是 MAE（W）、RMSE（W）和 WAPE（%）。每根柱表示一个阶段的聚合误差，RMSE 明显高于 MAE 时说明阶段内存在尖峰。
-按 WAPE 看，当前算法误差最低的阶段是 cruise（巡航，6.41%）；若某阶段 RMSE 明显高于 MAE，说明少量突变点主导了平方误差。
+按 WAPE 看，当前算法误差最低的阶段是 cruise（巡航，8.57%）；若某阶段 RMSE 明显高于 MAE，说明少量突变点主导了平方误差。
 
 ### `absolute_error_cdf.png`
 
 ![absolute_error_cdf.png](./out/figures/absolute_error_cdf.png)
 
 横轴是绝对功率误差（Absolute power error，W），纵轴是经验 CDF（0–1）。蓝线在阈值 $a$ 处的高度表示误差不超过 $a$ W 的比例；红色水平线是 90% 参考线，曲线越靠左上越好。
-CDF 在 20.85 W、74.12 W 和 96.75 W 附近分别达到 0.50、0.90 和 0.95，表示对应比例的测试点误差不超过这些阈值。
+CDF 在 24.80 W、102.05 W 和 135.74 W 附近分别达到 0.50、0.90 和 0.95，表示对应比例的测试点误差不超过这些阈值。
 
 ### `prediction_zoom.png`
 
 ![prediction_zoom.png](./out/figures/prediction_zoom.png)
 
 上子图横轴为局部飞行时间（s），纵轴为功率（W）；深蓝实线是实测功率，橙色虚线是预测功率。下子图横轴相同，纵轴为残差（W），紫线为 $\hat P-P$，黑色虚线为零误差。窗口以该算法最大绝对误差为中心，专门观察突变响应。
-最大绝对误差位于 flight 135、时间 15.00 s；实测/预测功率为 582.88/14.32 W，残差为 -568.56 W。上图显示该点前后最多各 100 条记录，下图给出同一窗口的残差符号和持续时间。
+最大绝对误差位于 flight 84、时间 15.40 s；实测/预测功率为 674.55/49.74 W，残差为 -624.81 W。上图显示该点前后最多各 100 条记录，下图给出同一窗口的残差符号和持续时间。
 
 ### `flight_energy_error_histogram.png`
 
 ![flight_energy_error_histogram.png](./out/figures/flight_energy_error_histogram.png)
 
 横轴是 flight 能耗误差（Wh），纵轴是 flight 数量。蓝色柱表示误差分布，黑色虚线是零误差，红线是平均误差；红线偏离零说明存在任务级系统偏差。
-红色均值线对应平均任务误差 0.584 Wh；若它偏离黑色零线，说明误差不是单纯随机波动。
+红色均值线对应平均任务误差 0.341 Wh；若它偏离黑色零线，说明误差不是单纯随机波动。
 
 ### `phase_error_distribution.png`
 
 ![phase_error_distribution.png](./out/figures/phase_error_distribution.png)
 
 横轴是四个飞行阶段，纵轴是绝对功率误差（W）。箱体为第 25–75 百分位，红线为中位数，须线表示非离群范围；箱体高说明该阶段误差离散程度大。
-四阶段绝对误差中位数为 idle 3.69 W、ascent 29.70 W、descent 26.04 W、cruise 23.36 W。箱体高表示中间 50% 样本跨度大；图中隐藏离群点，完整尾部应结合 CDF 和 P95。
+四阶段绝对误差中位数为 idle 4.21 W、ascent 44.17 W、descent 34.99 W、cruise 34.32 W。箱体高表示中间 50% 样本跨度大；图中隐藏离群点，完整尾部应结合 CDF 和 P95。
 
 
 ## 6. 输出文件
@@ -269,7 +256,7 @@ CDF 在 20.85 W、74.12 W 和 96.75 W 附近分别达到 0.50、0.90 和 0.95，
 
 适合先从相邻采样点提取局部波形，再由 LSTM 汇总短时演化的功率估计。当前来源仅为 Luo 等论文表 8 的二手算法名称，所给材料无法核实原始 CNN-LSTM 论文和完整层配置，因此本实现是明确标注的工程适配基线。 <sup>[A1]</sup>
 
-统一诊断阶段来自速度阈值而非人工标签；所有指标只对应当前 R1 固定划分和一个随机种子。不同论文的原始对象、输入字段、采样条件和预测目标并不相同，其原文指标不能与本目录数值直接横向相减。本实验未做重复训练、置信区间或显著性检验。
+统一诊断阶段来自速度阈值而非人工标签；所有指标只对应当前4.1固定划分和一个随机种子。不同论文的原始对象、输入字段、采样条件和预测目标并不相同，其原文指标不能与本目录数值直接横向相减。本实验未做重复训练、置信区间或显著性检验。
 
 ## 8. 参考文献
 

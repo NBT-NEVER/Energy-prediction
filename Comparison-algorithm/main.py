@@ -3,8 +3,8 @@
 # 文件名: main.py
 # 开发时间: 2026-09-09
 # 文件名: main.py
-# 功能说明: 调度对比算法实验、重建统一指标汇总并生成实验文档
-# 版本号：3.0
+# 功能说明: 调度基于4.1同维度同样本数据的对比算法实验、重建统一指标汇总并生成实验文档
+# 版本号：4.1
 
 import argparse
 import json
@@ -79,7 +79,7 @@ def main() -> None:
     返回: 无。
     调用位置: Python脚本入口。
     """
-    parser = argparse.ArgumentParser(description="3.0固定测试集对比算法实验")
+    parser = argparse.ArgumentParser(description="4.1固定测试集对比算法实验")
     parser.add_argument("--algorithm", nargs="*", choices=list(ALGORITHMS), help="只运行指定算法，默认运行全部算法")
     args = parser.parse_args()
     selected_algorithms = args.algorithm or None

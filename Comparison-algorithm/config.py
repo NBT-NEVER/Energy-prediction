@@ -4,31 +4,35 @@
 # 开发时间: 2026-09-09
 # 文件名: config.py
 # 功能说明: 管理对比算法实验的数据、输出路径与统一训练参数
-# 版本号：3.0
+# 版本号：4.1
 
 from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DATA_DIR = PROJECT_ROOT.parent / "3.0" / "out" / "data" / "processed_3.0"
+# 对比实验严格复用 4.1 的加工数据，保证输入维度、采样步长、flight 划分和样本数量一致。
+_DATA_CANDIDATES = (
+    Path(r"D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.1/processed"),
+    PROJECT_ROOT.parent / "4.1" / "processed",
+)
+DATA_DIR = next((path for path in _DATA_CANDIDATES if path.exists()), _DATA_CANDIDATES[0])
 SAVE_DIR = PROJECT_ROOT / "out" / "model"
 OUT_DIR = PROJECT_ROOT / "out"
-BASELINE_DIR = PROJECT_ROOT.parent / "3.0" / "out"
-TRAIN_CSV = DATA_DIR / "train.csv"
-VAL_CSV = DATA_DIR / "val.csv"
-TEST_CSV = DATA_DIR / "test.csv"
-FEATURE_META_JSON = DATA_DIR / "feature_metadata.json"
+# 4.1 主方法的固定输出目录；对比算法统一读取同一版本的数据契约。
+BASELINE_DIR = PROJECT_ROOT.parent / "4.1" / "out"
+TRAIN_CSV = DATA_DIR / "train_4.1.csv"
+VAL_CSV = DATA_DIR / "val_4.1.csv"
+TEST_CSV = DATA_DIR / "test_4.1.csv"
+FEATURE_META_JSON = DATA_DIR / "feature_metadata_4.1.json"
 
 FEATURE_COLUMNS = [
-    "time", "dt_seconds", "flight_progress", "wind_speed", "wind_sin", "wind_cos",
-    "programmed_speed_mps", "actual_speed_mps", "horizontal_speed_mps", "vertical_speed_mps",
-    "vertical_speed_abs_mps", "relative_air_speed_mps", "wind_alignment", "wind_cross_component_mps",
-    "payload_kg", "altitude_m", "dynamic_accel_norm", "angular_rate_norm", "obstacle_agility_index",
-    "thermal_load_proxy", "vision_energy_proxy_w", "communication_energy_proxy_w", "route_R1",
+    "time_s", "task_duration_s", "planned_position_east_m", "planned_position_north_m",
+    "planned_position_up_m", "wind_east_mps", "wind_north_mps", "payload_g",
+    "planned_motor_on", "planned_airborne",
 ]
 TARGET_COLUMN = "power_w"
 RANDOM_SEED = 20260909
-SEQUENCE_WINDOW = 17
+SEQUENCE_WINDOW = 20
 # 深度对比模型的最大训练轮数；最终权重由验证集早停选择。
 DEEP_EPOCHS = 24
 DEEP_PATIENCE = 4
@@ -95,43 +99,43 @@ FIGURE_NAMES = {
 
 ALGORITHMS = {
     "proposed_tcn_rls": {
-        "name": "3.0 TCN + 秒级能量 RLS",
+        "name": "4.1 TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）",
         "kind": "baseline",
-        "source": "本项目 3.0 主方法；对比框架和结果组织参照 Luo et al. (2025)。",
+        "source": "本项目 4.1 主方法；TCN 规划输入与窗口级 RLS 在线校正来自本项目 4.1 实现，图表组织参照 Luo et al. (2025)。",
         "citation_key": "[A0]",
     },
     "rf_tlatt_lite": {
-        "name": "RF-TLATT 思路相位岭回归",
+        "name": "RF-TLATT（Random Forest–Temporal Local Attention and Time，随机森林-时序局部注意力与时间）相位岭回归",
         "kind": "rf_tlatt_lite",
         "source": "Luo et al. (2025) 的相位专用建模思想；当前实现为速度阈值分类加相位岭回归，不是完整 RF-TLATT 复现。",
         "citation_key": "[A1]",
     },
     "physical_mlr": {
-        "name": "物理特征 MLR（全局适配）",
+        "name": "MLR（Multiple Linear Regression，多元线性回归）物理特征基线",
         "kind": "physical_mlr",
         "source": "Jastrzębska et al. (2026) 的物理指标回归思想；当前实现为单一全局回归加 moving 指示变量。",
         "citation_key": "[A2]",
     },
     "lstm": {
-        "name": "LSTM 时序功率预测",
+        "name": "BiLSTM（Bidirectional Long Short-Term Memory，双向长短期记忆网络）",
         "kind": "lstm",
         "source": "Muli et al. (2022) 的 LSTM 数据驱动能耗预测。",
         "citation_key": "[A3]",
     },
     "lr_tcn_sma": {
-        "name": "LR-TCN-SMA",
+        "name": "LR-TCN-SMA（LeakyReLU Temporal Convolutional Network with Simple Moving Average，带简单移动平均的LeakyReLU时间卷积网络）",
         "kind": "lr_tcn_sma",
         "source": "Dudukcu et al. (2024) 的 LeakyReLU TCN 与简单移动平均输入。",
         "citation_key": "[A4]",
     },
     "lstm_transformer": {
-        "name": "LSTM-Transformer",
+        "name": "LSTM-Transformer（Long Short-Term Memory–Transformer，长短期记忆-Transformer混合网络）",
         "kind": "lstm_transformer",
         "source": "Feng et al. (2024) 的 LSTM-Transformer 能耗预测框架；结构采用 LSTM 短期时序编码、位置编码和 Transformer Encoder 长程依赖建模。",
         "citation_key": "[A5]",
     },
     "cnn_lstm": {
-        "name": "CNN-LSTM",
+        "name": "CNN-LSTM（Convolutional Neural Network–Long Short-Term Memory，卷积神经网络-长短期记忆网络）",
         "kind": "cnn_lstm",
         "source": "Luo et al. (2025) RF-TLATT 论文表 8 的 CNN-LSTM 对比名称（二手来源）；当前实现采用一维卷积提取局部波形，再由 LSTM 聚合时间依赖。",
         "citation_key": "[A1]",

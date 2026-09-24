@@ -1,10 +1,10 @@
 # _*_coding:UTF-8_*_
 # 开发者: NBT
 # 文件名: algorithm.py
-# 开发时间: 2026-09-09
+# 开发时间: 2026-09-20
 # 文件名: algorithm.py
-# 功能说明: 提供 RF-TLATT 相位感知轻量基线 的独立运行入口
-# 版本号：3.0
+# 功能说明: 提供 RF-TLATT（Random Forest–Temporal Local Attention and Time，随机森林-时序局部注意力与时间）相位感知轻量基线的独立运行入口
+# 版本号：4.1
 
 from pathlib import Path
 import sys

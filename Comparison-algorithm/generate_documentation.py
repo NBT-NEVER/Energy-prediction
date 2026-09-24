@@ -3,8 +3,8 @@
 # 文件名: generate_documentation.py
 # 开发时间: 2026-09-10
 # 文件名: generate_documentation.py
-# 功能说明: 根据最终对比实验输出生成论文式总README和各算法README
-# 版本号：3.0
+# 功能说明: 根据4.1同维度同样本对比实验输出生成论文式总README和各算法README
+# 版本号：4.1
 
 from __future__ import annotations
 
@@ -14,18 +14,32 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from config import ALGORITHMS, FEATURE_COLUMNS, FIGURE_NAMES, SEQUENCE_WINDOW, TEST_CSV, TRAIN_CSV, VAL_CSV
+from config import ALGORITHMS, FEATURE_COLUMNS, FEATURE_META_JSON, FIGURE_NAMES, SEQUENCE_WINDOW, TEST_CSV, TRAIN_CSV, VAL_CSV
 
 
 ROOT = Path(__file__).resolve().parent
 METRICS_CSV = ROOT / "out" / "comparison_metrics.csv"
-FEATURE_META_JSON = ROOT.parent / "3.0" / "out" / "data" / "processed_3.0" / "feature_metadata.json"
-BASELINE_EVALUATION_JSON = ROOT.parent / "3.0" / "out" / "model" / "evaluation_3.0.json"
+BASELINE_EVALUATION_JSON = ROOT.parent / "4.1" / "out" / "model" / "evaluation_4.1.json"
 
 PHASES = ("idle", "ascent", "descent", "cruise")
 PHASE_CN = {"idle": "停机/低速", "ascent": "上升", "descent": "下降", "cruise": "巡航"}
 POWER_EDGES = (-np.inf, 50.0, 300.0, 450.0, 600.0, np.inf)
 POWER_BINS = ("0–50 W", "50–300 W", "300–450 W", "450–600 W", ">600 W")
+
+ABBREVIATION_GLOSSARY = """### 算法缩写全称
+
+| 缩写 | English full name | 中文全称 |
+|---|---|---|
+| TCN | Temporal Convolutional Network | 时间卷积网络 |
+| RLS | Recursive Least Squares | 递推最小二乘 |
+| RF-TLATT | Random Forest–Temporal Local Attention and Time | 随机森林-时序局部注意力与时间 |
+| MLR | Multiple Linear Regression | 多元线性回归 |
+| BiLSTM | Bidirectional Long Short-Term Memory | 双向长短期记忆网络 |
+| LR-TCN-SMA | LeakyReLU Temporal Convolutional Network with Simple Moving Average | 带简单移动平均的LeakyReLU时间卷积网络 |
+| LSTM-Transformer | Long Short-Term Memory–Transformer | 长短期记忆-Transformer混合网络 |
+| CNN-LSTM | Convolutional Neural Network–Long Short-Term Memory | 卷积神经网络-长短期记忆网络 |
+| SMA | Simple Moving Average | 简单移动平均 |
+"""
 
 
 ALGORITHM_REFERENCES = {
@@ -50,7 +64,7 @@ BACKGROUND_REFERENCES = """### 10.2 背景与应用参考文献
 
 
 ALGORITHM_REFERENCE_ENTRIES = {
-    "A0": "**[A0]** Energy-prediction 3.0 本项目 TCN+RLS 方法及固定模型输出；TCN 与 RLS 的理论依据分别见 [A6]、[A7]，实验结果组织方式参照 [A1]。",
+    "A0": "**[A0]** Energy-prediction 4.1 本项目 TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）方法及固定模型输出；两者的理论依据分别见 [A6]、[A7]，实验结果组织方式参照 [A1]。",
     "A1": "**[A1]** Luo, W., Li, N., Xiong, Z., Chen, W., Li, Y., Tang, C., Li, Y., Dong, C. *Phase-based power prediction for quadrotor UAVs with RF-TLATT*. Energy, 2025, 335: 138208. DOI: 10.1016/j.energy.2025.138208.",
     "A2": "**[A2]** Jastrzębska, A., Lerke, M., Kwiatkowski, W. *Prediction of energy consumption in unmanned aerial vehicles*. Electric Power Systems Research, 2026, 257: 113008. DOI: 10.1016/j.epsr.2026.113008.",
     "A3": "**[A3]** Muli, C., Park, S., Liu, M. *A Comparative Study on Energy Consumption Models for Drones*. In: Internet of Things, GIoTS 2022, Lecture Notes in Computer Science, vol. 13533, Springer, 2022, pp. 199–210. DOI: 10.1007/978-3-031-20936-9_16.",
@@ -78,13 +92,13 @@ ALGORITHM_REFERENCE_LIST = """### 10.1 对比算法与方法来源文献
 
 
 ALGORITHM_INPUTS = {
-    "proposed_tcn_rls": "23 个公共特征，100 步（12 s）历史至当前窗口；末端 TCN 输出再由上一完整秒窗更新的 RLS 参数校正",
-    "rf_tlatt_lite": "从公共字段构造 16 个当前时刻物理与交互量；无序列窗口，按预测专用速度阈值选择相位回归头",
-    "physical_mlr": "从公共字段构造 7 个当前时刻物理量；无序列窗口，使用单一全局回归及 moving 指示变量",
-    "lstm": "23 个公共特征，17 步（约 2.0 s）历史至当前窗口",
-    "lr_tcn_sma": "23 个公共特征先按 flight 做 10 点历史 SMA，再组成 17 步（约 2.0 s）窗口",
-    "lstm_transformer": "23 个公共特征，17 步（约 2.0 s）历史至当前窗口",
-    "cnn_lstm": "23 个公共特征，17 步（约 2.0 s）历史至当前窗口",
+    "proposed_tcn_rls": "10 个4.1任务前特征，20 步（4 s）历史至当前窗口；末端 TCN 输出再由上一完整秒窗更新的 RLS 参数校正",
+    "rf_tlatt_lite": "从10个任务前字段构造15个当前位置、速度和交互量；无序列窗口，按规划速度阈值选择相位回归头",
+    "physical_mlr": "从10个任务前字段构造9个物理量；无序列窗口，使用单一全局回归及计划电机状态指示量",
+    "lstm": "10 个4.1任务前特征，20 步（4 s）历史至当前窗口",
+    "lr_tcn_sma": "10 个4.1任务前特征先按 flight 做10点历史 SMA，再组成20步（4 s）窗口",
+    "lstm_transformer": "10 个4.1任务前特征，20 步（4 s）历史至当前窗口",
+    "cnn_lstm": "10 个4.1任务前特征，20 步（4 s）历史至当前窗口",
 }
 
 
@@ -92,9 +106,9 @@ ALGORITHM_APPLICATIONS = {
     "proposed_tcn_rls": "适合飞行中能够持续取得电压、电流或窗口能量反馈的在线功率跟踪和剩余能量修正。TCN 负责从历史工况提取非线性动态，RLS 用已结束秒窗校正后续窗口，因此更适合传感器闭环部署；若部署端没有真实能量反馈，应只使用 TCN 原始输出，不能预期本实验中的 RLS 能耗优势。",
     "rf_tlatt_lite": "对应相位差异明显的四旋翼功率预测场景，例如上升、下降、低速和巡航分别具有不同功率关系。当前轻量实现只需速度和当前工况即可选择回归头，计算量低；它没有论文中的随机森林相位分类器和 Transformer-LSTM 预测器，适合作为相位建模思想的低成本对照。",
     "physical_mlr": "适合需要系数可解释、算力受限或只掌握当前载荷、速度、风速等物理量的任务前粗估。线性项便于检查质量、垂直运动和风对功率的方向性影响，但当前单一全局回归无法显式记忆状态切换，也没有复现论文的静止/飞行两套子模型。",
-    "lstm": "适合速度、姿态和外部负载随时间连续变化的短窗功率估计。双向分支在已缓存的 17 步历史至当前窗口内从两端编码，能够利用窗口内部的上下文；部署时仍需先缓存完整窗口，且本实现不会读取预测时刻之后的样本。",
+    "lstm": "适合规划位置、风场和载荷随时间连续变化的短窗功率估计。双向分支在已缓存的20步历史至当前窗口内从两端编码，能够利用窗口内部上下文；部署时仍需先缓存完整窗口，且本实现不会读取预测时刻之后的样本。",
     "lr_tcn_sma": "适合传感器噪声较明显、又要求卷积推理可并行的在线瞬时功率估计。SMA 抑制高频抖动，因果卷积只读取当前及历史样本；代价是快速起降或负载突变可能被平滑，尖峰位置和幅值需结合局部放大图检查。",
-    "lstm_transformer": "原文面向电动汽车能耗，本实验将其短期 LSTM 与窗口内自注意力结构迁移到 UAV。它适合 17 步窗口中既有局部变化又有跨位置关联的工况，但这里的窗口只有约 2.0 s，结果只能说明短窗依赖建模效果，不能外推为整段航程的长期预测能力。",
+    "lstm_transformer": "原文面向电动汽车能耗，本实验将其短期 LSTM 与窗口内自注意力结构迁移到 UAV。它适合20步窗口中既有局部变化又有跨位置关联的工况，但这里的窗口约4.0 s，结果只能说明短窗依赖建模效果，不能外推为整段航程的长期预测能力。",
     "cnn_lstm": "适合先从相邻采样点提取局部波形，再由 LSTM 汇总短时演化的功率估计。当前来源仅为 Luo 等论文表 8 的二手算法名称，所给材料无法核实原始 CNN-LSTM 论文和完整层配置，因此本实现是明确标注的工程适配基线。",
 }
 
@@ -124,46 +138,36 @@ REPLACED_ALGORITHM_RESULTS = (
 
 
 FEATURE_ENGLISH = {
-    "time": ("飞行内相对时间", "Flight-relative time", "s"),
-    "dt_seconds": ("采样时间间隔", "Sampling time interval", "s"),
-    "flight_progress": ("飞行进度", "Flight progress", "0–1"),
-    "wind_speed": ("风速", "Wind speed", "m/s"),
-    "wind_sin": ("风向正弦分量", "Sine of wind direction", "—"),
-    "wind_cos": ("风向余弦分量", "Cosine of wind direction", "—"),
-    "programmed_speed_mps": ("规划速度", "Programmed speed", "m/s"),
-    "actual_speed_mps": ("实际合速度", "Actual resultant speed", "m/s"),
-    "horizontal_speed_mps": ("水平速度", "Horizontal speed", "m/s"),
-    "vertical_speed_mps": ("垂直速度", "Vertical speed", "m/s"),
-    "vertical_speed_abs_mps": ("垂直速度绝对值", "Absolute vertical speed", "m/s"),
-    "relative_air_speed_mps": ("相对空速", "Relative air speed", "m/s"),
-    "wind_alignment": ("风速方向对齐度", "Wind alignment cosine", "−1–1"),
-    "wind_cross_component_mps": ("横向风速分量", "Crosswind component", "m/s"),
-    "payload_kg": ("载荷质量", "Payload mass", "kg"),
-    "altitude_m": ("飞行高度", "Flight altitude", "m"),
-    "dynamic_accel_norm": ("动态加速度模", "Dynamic acceleration norm", "m/s²"),
-    "angular_rate_norm": ("角速度模", "Angular-rate norm", "rad/s"),
-    "obstacle_agility_index": ("障碍机动代理指标", "Obstacle-agility proxy index", "—"),
-    "thermal_load_proxy": ("热负荷代理量", "Thermal-load proxy", "—"),
-    "vision_energy_proxy_w": ("视觉计算附加功率代理量", "Vision-energy power proxy", "W"),
-    "communication_energy_proxy_w": ("通信附加功率代理量", "Communication-energy power proxy", "W"),
-    "route_R1": ("R1航线独热变量", "R1 route one-hot variable", "0/1"),
+    "time_s": ("相对任务时间", "Relative task time", "s"),
+    "task_duration_s": ("任务计划时长", "Planned task duration", "s"),
+    "planned_position_east_m": ("规划东向位置", "Planned east position", "m"),
+    "planned_position_north_m": ("规划北向位置", "Planned north position", "m"),
+    "planned_position_up_m": ("规划上向位置", "Planned up position", "m"),
+    "wind_east_mps": ("东向风速分量", "East wind component", "m/s"),
+    "wind_north_mps": ("北向风速分量", "North wind component", "m/s"),
+    "payload_g": ("有效载荷质量", "Payload mass", "g"),
+    "planned_motor_on": ("计划电机运行状态", "Planned motor-on state", "0/1"),
+    "planned_airborne": ("计划离地状态", "Planned airborne state", "0/1"),
 }
 
 
 def phase_label(frame: pd.DataFrame, vertical_threshold: float = 0.15,
                 horizontal_threshold: float = 1.0) -> np.ndarray:
-    """功能: 用速度阈值生成与绘图代码一致的四阶段标签。
-    参数: frame为含垂直和水平速度的数据表；阈值单位为m/s。
-    返回: 每条记录的阶段英文名称数组。
-    调用位置: data_summary和README生成函数。
-    """
-    vertical = frame["vertical_speed_mps"].to_numpy(float)
-    horizontal = frame["horizontal_speed_mps"].to_numpy(float)
-    labels = np.full(len(frame), "cruise", dtype=object)
-    labels[np.abs(vertical) < vertical_threshold] = "idle"
-    labels[vertical > vertical_threshold] = "ascent"
-    labels[vertical < -vertical_threshold] = "descent"
-    labels[(np.abs(vertical) < vertical_threshold) & (horizontal > horizontal_threshold)] = "cruise"
+    """功能: 从4.1规划位置差分和二值状态生成统一四阶段标签。"""
+    vertical = np.zeros(len(frame), dtype=float)
+    horizontal = np.zeros(len(frame), dtype=float)
+    for _, group in frame.groupby("flight", sort=False):
+        ids = group.index.to_numpy()
+        dt = np.maximum(np.gradient(group["time_s"].to_numpy(float)), 0.2)
+        east = np.gradient(group["planned_position_east_m"].to_numpy(float)) / dt
+        north = np.gradient(group["planned_position_north_m"].to_numpy(float)) / dt
+        vertical[ids] = np.gradient(group["planned_position_up_m"].to_numpy(float)) / dt
+        horizontal[ids] = np.sqrt(east ** 2 + north ** 2)
+    motor = frame["planned_motor_on"].to_numpy(int)
+    labels = np.full(len(frame), "idle", dtype=object)
+    labels[(motor == 1) & (vertical > vertical_threshold)] = "ascent"
+    labels[(motor == 1) & (vertical < -vertical_threshold)] = "descent"
+    labels[(motor == 1) & (np.abs(vertical) <= vertical_threshold) & (horizontal > horizontal_threshold)] = "cruise"
     return labels
 
 
@@ -332,9 +336,9 @@ def replacement_table() -> str:
         )
     first, second = REPLACED_ALGORITHM_RESULTS
     return "\n".join(lines) + (
-        f"\n\nLSTM-Transformer 相对任务级多项式 Elastic Net 的功率 WAPE 下降 "
+        f"\n\nLSTM-Transformer（Long Short-Term Memory–Transformer，长短期记忆-Transformer混合网络）相对任务级多项式 Elastic Net 的功率 WAPE 下降 "
         f"{(first['power_wape']-first['replacement_power_wape'])/first['power_wape']*100:.2f}%，能耗 WAPE 下降 "
-        f"{(first['energy_wape']-first['replacement_energy_wape'])/first['energy_wape']*100:.2f}%；CNN-LSTM 相对经验多相位能耗剖面的"
+        f"{(first['energy_wape']-first['replacement_energy_wape'])/first['energy_wape']*100:.2f}%；CNN-LSTM（Convolutional Neural Network–Long Short-Term Memory，卷积神经网络-长短期记忆网络）相对经验多相位能耗剖面的"
         f"功率 WAPE 下降 {(second['power_wape']-second['replacement_power_wape'])/second['power_wape']*100:.2f}%，"
         f"能耗 WAPE 下降 {(second['energy_wape']-second['replacement_energy_wape'])/second['energy_wape']*100:.2f}%。"
         "两项旧候选已从有效算法清单和项目目录中删除，表中只保留替换依据。"
@@ -343,17 +347,16 @@ def replacement_table() -> str:
 
 ALGORITHM_SPECS = {
     "proposed_tcn_rls": {
-        "title": "3.0 TCN + 秒级能量 RLS（主方法）",
-        "source": "本项目 3.0 实现；TCN 与 RLS 理论分别参考 Bai 等和 Sayed，实验图表组织参考 Luo 等人的 RF-TLATT 研究",
-        "structure": """输入张量为 $B\\times100\\times23$：$B$ 是批量大小，100 是从历史到当前的时间步数，23 是每步特征数。该 checkpoint 的窗口覆盖 12 s，测试集典型采样间隔约 0.12 s。网络共有 81,049 个可训练参数。
+        "title": "4.1 TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）主方法",
+        "source": "本项目 4.1 实现；TCN（Temporal Convolutional Network，时间卷积网络）与 RLS（Recursive Least Squares，递推最小二乘）理论分别参考 Bai 等和 Sayed，实验图表组织参考 Luo 等人的 RF-TLATT 研究",
+        "structure": """输入张量为 $B\\times20\\times10$：$B$ 是批量大小，20 是历史到当前的时间步数，10 是4.1任务前特征数。0.2 s重采样使窗口覆盖4.0 s。4.1规划 TCN（Temporal Convolutional Network，时间卷积网络）使用通道 `[32,32]`、核宽3、膨胀率1和2，Dropout 0.05。
 
-1. **时间门控层**：取 23 维输入中已标准化的 `dt_seconds`，经 `Linear(1,8) → SiLU → Linear(8,1)` 得到形状 $B\\times100\\times1$ 的门值 $g_t=1+0.2\\tanh(\\cdot)$，再广播乘到同一时刻的 23 个特征。门值范围为 0.8–1.2，使不规则采样间隔参与输入缩放。
-2. **TCN 残差块 1**：两层 $k=3$、膨胀率 $d=1$ 的左填充因果卷积，通道依次为 $23\\to64\\to64$。每层依次执行 GroupNorm（1 组）、SiLU 和 Dropout(0.08)；旁路用 $1\\times1$ 卷积把 23 维映射到 64 维，主路与旁路相加后执行 ReLU。
-3. **TCN 残差块 2**：通道为 $64\\to64\\to64$，两层卷积的膨胀率均为 2。输入输出通道相同，残差旁路为恒等映射。
-4. **TCN 残差块 3**：通道保持 64，两层卷积的膨胀率均为 4，用更稀疏的历史位置补充中尺度变化。
-5. **TCN 残差块 4**：通道为 $64\\to32\\to32$，膨胀率为 8，并用 $1\\times1$ 旁路降到 32 维。四个残差块共有 8 层时间卷积，理论感受野为 $1+2(k-1)(1+2+4+8)=61$ 步，且每层都只在左侧补零，不读取预测时刻之后的数据。
-6. **双支路回归头**：主路取 TCN 最后时刻的 32 维向量，执行 `Linear(32,16) → SiLU → Dropout(0.08) → Linear(16,1)`；旁路只取当前时刻原始 23 维输入，执行 `LayerNorm(23) → Linear(23,16) → SiLU → Linear(16,1)`。两路标量相加后反标准化为 TCN 功率。
-7. **在线 RLS 校正层**：每个 flight 从 $[\\theta_0,\\theta_1]=[0,1]$ 和 $0.25I$ 协方差开始。程序先用旧参数预测当前完整秒窗内的所有点；当该窗累计时长不小于 0.95 s 时，才用其真实能量与 TCN 能量更新参数，更新结果从下一秒窗生效。遗忘因子为 0.90，偏置与缩放分别限制在 $[-1,1]$ 和 $[0,2]$。当 TCN 窗口均值跨过 50 W 的飞行状态阈值时恢复中性参数，避免停机与飞行状态共用一组校正量。""",
+1. **输入标准化层**：10个字段按训练集均值和标准差标准化；每个flight起点不足20步时复制首条记录左填充。
+2. **TCN残差块1**：两层 $k=3$、膨胀率$d=1$的因果卷积，通道为 $10\\to32\\to32$，每层执行GroupNorm、SiLU和Dropout(0.05)，旁路用$1\\times1$卷积投影到32通道。
+3. **TCN残差块2**：两层 $32\\to32$ 因果卷积，膨胀率$d=2$，旁路为恒等映射，用间隔历史位置补充中尺度变化。
+4. **当前时刻读出层**：取第二个残差块最后时间位置的32维向量，经 `Linear(32,32) → SiLU → Linear(32,1)` 得到TCN基线功率。
+5. **在线RLS校正层**：每个完整1 s窗口结束后读取该窗口真实能量，更新偏置与缩放参数，更新只作用于下一窗口；遗忘因子、初始协方差由4.1验证集搜索固定。
+        """,
         "formula": """$$\\hat P_{f,i}^{\\mathrm{RLS}}=\\max\\left(0,\\;s\\theta_{0,f,k}+\\theta_{1,f,k}\\hat P_{f,i}^{\\mathrm{TCN}}\\right)$$
 $$K_k=\\frac{P_k\\phi_k}{\\lambda+\\phi_k^\\mathsf{T}P_k\\phi_k},\\quad \\theta_{k+1}=\\theta_k+K_k(y_k-\\phi_k^\\mathsf{T}\\theta_k),\\quad P_{k+1}=\\frac{P_k-K_k\\phi_k^\\mathsf{T}P_k}{\\lambda}$$
 其中：
@@ -370,14 +373,14 @@ $$K_k=\\frac{P_k\\phi_k}{\\lambda+\\phi_k^\\mathsf{T}P_k\\phi_k},\\quad \\theta_
 - $I$：二阶单位矩阵；$\\max(0,\\cdot)$：把物理上无意义的负功率截断为 0。""",
     },
     "rf_tlatt_lite": {
-        "title": "RF-TLATT 思路的相位感知岭回归（轻量基线）",
+        "title": "RF-TLATT（Random Forest–Temporal Local Attention and Time，随机森林-时序局部注意力与时间）思路的相位感知岭回归（轻量基线）",
         "source": "Luo 等，2025，RF-TLATT 论文表 8 与相位分类流程",
         "structure": """Luo 等的完整 RF-TLATT 先用随机森林识别飞行阶段，再为每个阶段训练包含 LSTM、Transformer 和注意力的专用预测器。本目录只保留“先分相位、再使用相位专用模型”的控制变量思想：相位由速度阈值直接判定，预测器改为岭回归。因此本结果不能写成 RF-TLATT 的复现结果。
 
 1. **预测相位判别层**：验证集比较垂直/水平速度阈值 $(0.10,0.5)$、$(0.15,1.0)$、$(0.25,1.5)$ m/s，最终选中 $(0.25,1.5)$ m/s。其规则为：$v_z>0.25$ m/s 判为 ascent，$v_z<-0.25$ m/s 判为 descent，$|v_z|<0.25$ m/s 且 $v_{xy}\\le1.5$ m/s 判为 idle，$|v_z|<0.25$ m/s 且 $v_{xy}>1.5$ m/s 判为 cruise。README 的统一诊断图仍使用固定的 $(0.15,1.0)$ m/s 阈值划分阶段，两者用途不同。
-2. **16 维特征层**：每条记录依次使用实际合速度、水平速度、垂直速度、垂直速度绝对值、载荷、高度、风速、动态加速度模、角速度模、相对空速、风向对齐度、横向风速分量、合速度平方、垂直速度平方、合速度×载荷、合速度×风速。该方法只读当前记录，不构造 17 步序列。
-3. **标准化与截距层**：每个回归头都用训练子集的均值和标准差标准化 16 个输入，再在首列加入常数 1。每个相位头有 16 个特征系数和 1 个截距；岭惩罚不作用于截距。
-4. **四个相位回归头**：idle、ascent、descent、cruise 分别求闭式岭回归。若某相位训练样本少于 $2\\times16=32$ 条，则回退到用全部训练记录拟合的全局头；输出经 $\\max(0,\\cdot)$ 截断后得到瞬时功率。
+2. **15 维特征层**：每条记录依次使用规划合速度、水平速度、垂直速度、垂直速度绝对值、载荷、规划高度、风速、东向风、北向风、计划电机状态、计划离地状态、合速度平方、垂直速度平方、合速度×载荷、合速度×风速。该方法只读当前记录，不构造 20 步序列。
+3. **标准化与截距层**：每个回归头都用训练子集的均值和标准差标准化 15 个输入，再在首列加入常数 1。每个相位头有 15 个特征系数和 1 个截距；岭惩罚不作用于截距。
+4. **四个相位回归头**：idle、ascent、descent、cruise 分别求闭式岭回归。若某相位训练样本少于 $2\\times15=30$ 条，则回退到用全部训练记录拟合的全局头；输出经 $\\max(0,\\cdot)$ 截断后得到瞬时功率。
 5. **验证选择层**：每组阈值与 $\\alpha\\in\\{0.01,0.1,1,10\\}$ 组合均只在验证集打分。最终选中 $\\alpha=10$、垂直阈值 0.25 m/s、水平阈值 1.5 m/s，选择分数为功率 WAPE 加 0.5 倍 flight 能耗 WAPE。""",
         "formula": """$$\\hat P_i=\\max\\left(0,\\;[1,\\mathbf z_i^\\mathsf{T}]\\hat\\beta_{c_i}\\right),\\qquad \\hat\\beta_c=(X_c^\\mathsf{T}X_c+\\alpha I)^{-1}X_c^\\mathsf{T}\\mathbf y_c$$
 其中：
@@ -386,7 +389,7 @@ $$K_k=\\frac{P_k\\phi_k}{\\lambda+\\phi_k^\\mathsf{T}P_k\\phi_k},\\quad \\theta_
 - $c_i$：第 $i$ 条记录由预测阈值判定的相位类别。
 - $\\mathbf z_i$：第 $i$ 条记录经训练统计量标准化后的 16 维特征向量。
 - $[1,\\mathbf z_i^\\mathsf{T}]$：含截距常数 1 的行向量。
-- $\\hat\\beta_c$：相位 $c$ 的 17 维回归系数估计。
+- $\\hat\\beta_c$：相位 $c$ 的 16 维回归系数估计。
 - $X_c$：训练集中相位 $c$ 的含截距设计矩阵；$\\mathbf y_c$：对应真实功率列向量。
 - $\\alpha$：岭正则强度，本次验证集选中 10；$I$：截距位置为 0、其余对角元素为 1 的惩罚矩阵。
 - $i$：测试记录索引；$c$：相位类别索引。""",
@@ -394,35 +397,35 @@ $$K_k=\\frac{P_k\\phi_k}{\\lambda+\\phi_k^\\mathsf{T}P_k\\phi_k},\\quad \\theta_
     "physical_mlr": {
         "title": "物理特征 MLR（单一全局回归适配版）",
         "source": "Jastrzębska 等，2026，UAV energy consumption prediction",
-        "structure": """Jastrzębska 等的原方法分别建立静止与飞行子模型，并使用物理运动量解释能耗。本工程为适配现有 R1 字段，只建立一个全局回归，在输入中加入 `moving` 指示量；同时由于数据没有论文所需的独立垂直加速度字段，代码用带符号垂直速度项代替对应垂直运动项。下面描述的是当前可运行实现，而不是论文两套子模型的逐项复现。
+        "structure": """Jastrzębska 等的原方法分别建立静止与飞行子模型，并使用物理运动量解释能耗。本工程为适配4.1十维任务前字段，只建立一个全局回归，在输入中加入计划电机状态指示量；同时由于数据没有论文所需的独立垂直加速度字段，代码用带符号垂直速度项代替对应垂直运动项。下面描述的是当前可运行实现，而不是论文两套子模型的逐项复现。
 
-1. **总质量代理层**：按 $m=1.0+payload_{kg}$ 构造总质量，其中 1.0 kg 是项目采用的机体基准质量，`payload_kg` 为载荷质量。
-2. **运动状态指示层**：实际合速度大于 0.1 m/s 时令 $I_{move}=1$，否则为 0。该变量只是单一全局模型中的一列，不会切换到另一套回归系数。
-3. **7 维物理项展开层**：依次形成 $I_{move}$、$am$、$v_zm$、$v_{xy}^2m^{2/3}$、$v_z^2m^{2/3}$、$m$ 和风速 $w$。其中 $a$ 使用三轴动态加速度模；代码中的 $\\operatorname{sign}(v_z)|v_z|m$ 数值上等于 $v_zm$。每项只使用当前记录，不包含历史序列。
-4. **标准化层**：用训练集均值和标准差分别标准化 7 个输入量，零标准差以 1 替代；再加入常数截距列，因此模型共有 8 个回归系数。
+1. **总质量代理层**：按 $m=1.0+payload_g/1000$ 构造总质量，其中 1.0 kg 是当前线性基线采用的机体基准质量，`payload_g` 为载荷质量。
+2. **运动状态指示层**：计划电机状态为1时令 $I_{move}=1$，否则为 0。该变量只是单一全局模型中的一列，不会切换到另一套回归系数。
+3. **9维物理项展开层**：依次形成计划电机状态、$|v_z|m$、$\\operatorname{sign}(v_z)|v_z|m$、$v_{xy}^2m^{2/3}$、$v_z^2m^{2/3}$、$m$、东向风、北向风和规划上向位置。所有项均由任务前规划字段计算，不包含历史序列。
+4. **标准化层**：用训练集均值和标准差分别标准化 9 个输入量，零标准差以 1 替代；再加入常数截距列，因此模型共有10个回归系数。
 5. **线性/岭闭式解层**：验证集比较 $\\alpha\\in\\{0,0.01,0.1,1,10,100\\}$，最终选择 $\\alpha=0$，即普通最小二乘。预测值经 $\\max(0,\\cdot)$ 截断。该模型无记忆单元，不能显式利用阶段切换前后的历史。""",
-        "formula": """$$\\mathbf u_i=\\left[I_{move},\\;am,\\;v_zm,\\;v_{xy}^2m^{2/3},\\;v_z^2m^{2/3},\\;m,\\;w\\right]_i^\\mathsf{T},\\qquad z_{i,j}=\\frac{u_{i,j}-\\mu_j}{\\sigma_j}$$
-$$\\hat P_i=\\max\\left(0,\\;\\beta_0+\\sum_{j=1}^{7}\\beta_j z_{i,j}\\right)$$
+        "formula": """$$\\mathbf u_i=\\left[I_{move},\\;|v_z|m,\\;\\operatorname{sign}(v_z)|v_z|m,\\;v_{xy}^2m^{2/3},\\;v_z^2m^{2/3},\\;m,\\;w_e,\\;w_n,\\;h\\right]_i^\\mathsf{T},\\qquad z_{i,j}=\\frac{u_{i,j}-\\mu_j}{\\sigma_j}$$
+$$\\hat P_i=\\max\\left(0,\\;\\beta_0+\\sum_{j=1}^{9}\\beta_j z_{i,j}\\right)$$
 其中：
 
-- $\\mathbf u_i$：第 $i$ 条记录的 7 维物理构造量向量；$u_{i,j}$：该向量的第 $j$ 个分量。
-- $I_{move}$：运动状态指示量，实际合速度大于 0.1 m/s 时为 1，否则为 0。
-- $a$：三轴动态加速度模，单位 $\\mathrm{m/s^2}$；$m$：机体基准质量与载荷质量之和，单位 kg。
+- $\\mathbf u_i$：第 $i$ 条记录的 9维物理构造量向量；$u_{i,j}$：该向量的第 $j$ 个分量。
+- $I_{move}$：计划电机运行状态，计划电机开启时为1，否则为0。
+- $v_z$：由规划上向位置差分得到的带符号垂直速度，单位 m/s；$v_{xy}$：由东向、北向规划位置差分得到的水平速度，单位 m/s。
 - $v_z$：带符号垂直速度，单位 m/s；$v_{xy}$：水平速度，单位 m/s。
-- $w$：风速，单位 m/s。
+- $w_e$、$w_n$：东向和北向风速分量，单位 m/s；$h$：规划上向位置，单位 m。
 - $\\mu_j$、$\\sigma_j$：第 $j$ 个构造量在训练集上的均值和标准差；$z_{i,j}$：对应标准化值。
 - $\\hat P_i$：第 $i$ 条记录截断为非负值后的预测功率，单位 W。
 - $\\beta_0$：截距；$\\beta_j$：第 $j$ 个标准化物理项的回归系数。
 - $i$：记录索引；$j$：物理构造量索引；$\\max(0,\\cdot)$：把负预测截断为 0。""",
     },
     "lstm": {
-        "title": "两层双向 LSTM",
+        "title": "两层 BiLSTM（Bidirectional Long Short-Term Memory，双向长短期记忆网络）",
         "source": "Muli 等，2022，A Comparative Study on Energy Consumption Models for Drones",
-        "structure": """Muli 等使用两层堆叠双向 LSTM，每层每方向 128 个 hidden cells，并在后端使用 Dropout 与 Dense(tanh)。本工程保留两层双向结构，在每方向 64 和 128 单元之间用验证集选择；最终选中每方向 64 单元、Dropout 0.30，共 149,057 个可训练参数。
+        "structure": """Muli 等使用两层堆叠双向 LSTM（Long Short-Term Memory，长短期记忆网络），每层每方向 128 个 hidden cells，并在后端使用 Dropout 与 Dense(tanh)。本工程保留两层双向结构，在每方向 64 和 128 单元之间用验证集选择；最终选中每方向 64 单元、Dropout 0.30，共 149,057 个可训练参数。
 
-1. **输入与填充层**：每条样本由同一 flight 中当前点及之前最多 16 个点组成，得到 $B\\times17\\times23$ 张量。flight 开头不足 17 步时复制最早记录到左侧；23 个通道均使用训练集统计量标准化。
-2. **第 1 个双向 LSTM 层**：正向和反向各有 64 个记忆单元。两方向在 17 步缓存窗口内分别从首端和末端扫描，逐步更新输入门、遗忘门、候选记忆和输出门；沿特征维拼接后，每个时间位置输出 128 维。
-3. **第 2 个双向 LSTM 层**：输入和输出均为 $B\\times17\\times128$。PyTorch LSTM 在第 1 层到第 2 层之间使用 0.30 Dropout；第二层正向与反向最终 hidden state 各为 $B\\times64$。
+1. **输入与填充层**：每条样本由同一 flight 中当前点及之前最多19个点组成，得到 $B\\times20\\times10$ 张量。flight 开头不足 20 步时复制最早记录到左侧；10 个通道均使用训练集统计量标准化。
+2. **第 1 个双向 LSTM 层**：正向和反向各有 64 个记忆单元。两方向在 20 步缓存窗口内分别从首端和末端扫描，逐步更新输入门、遗忘门、候选记忆和输出门；沿特征维拼接后，每个时间位置输出 128 维。
+3. **第 2 个双向 LSTM 层**：输入和输出均为 $B\\times20\\times128$。PyTorch LSTM 在第 1 层到第 2 层之间使用 0.30 Dropout；第二层正向与反向最终 hidden state 各为 $B\\times64$。
 4. **状态拼接层**：将第二层正向与反向最终 hidden state 拼成 $B\\times128$。反向分支只反向读取已经缓存的“历史至当前”窗口，不访问预测时刻之后的记录。
 5. **回归头**：执行 `Dropout(0.30) → Linear(128,32) → Tanh → Linear(32,1)`，输出一个标准化功率，再按训练目标均值与标准差还原为 W 并截断为非负值。
 6. **训练选择层**：使用 AdamW、SmoothL1 损失和梯度范数 5.0 裁剪；每个候选按验证损失保存最佳 epoch，再用验证功率 WAPE 与 flight 能耗 WAPE 的组合分数比较候选。本次 64 单元候选在第 24 轮取得最终保存状态。""",
@@ -431,7 +434,7 @@ $$\\tilde c_t=\\tanh(W_cx_t+U_ch_{t-1}+b_c),\\quad c_t=f_t\\odot c_{t-1}+i_t\\od
 $$o_t=\\sigma(W_o x_t+U_o h_{t-1}+b_o),\\quad h_t=o_t\\odot\\tanh(c_t)$$
 其中：
 
-- $x_t$：时间步 $t$ 的 23 维标准化输入；$h_{t-1}$：前一时间步隐状态。
+- $x_t$：时间步 $t$ 的 10 维标准化输入；$h_{t-1}$：前一时间步隐状态。
 - $i_t$、$f_t$、$o_t$：输入门、遗忘门和输出门向量。
 - $\\tilde c_t$：候选记忆；$c_t$：当前记忆状态；$c_{t-1}$：前一时间步记忆状态。
 - $h_t$：当前隐状态；双向层分别计算正向与反向 $h_t$ 后再拼接。
@@ -441,73 +444,73 @@ $$o_t=\\sigma(W_o x_t+U_o h_{t-1}+b_o),\\quad h_t=o_t\\odot\\tanh(c_t)$$
 - $\\sigma$：Sigmoid 激活函数；$\\tanh$：双曲正切；$\\odot$：逐元素乘法；$t$：窗口内时间步索引。""",
     },
     "lr_tcn_sma": {
-        "title": "LR-TCN-SMA",
+        "title": "LR-TCN-SMA（LeakyReLU Temporal Convolutional Network with Simple Moving Average，带简单移动平均的LeakyReLU时间卷积网络）",
         "source": "Dudukcu 等，2024，UAV instantaneous power prediction using LR-TCN with simple moving average",
-        "structure": """Dudukcu 等提出以 LeakyReLU 替代常规 TCN 激活并引入简单移动平均（SMA）特征。本工程把 23 个字段全部先做历史 SMA，再送入统一 TCN，没有复现原文原始特征与 SMA 特征的并行接口。验证集在 48/64 通道和 5/10 点 SMA 两组候选中选中 64 通道、10 点 SMA、Dropout 0.12，共 67,841 个可训练参数。
+        "structure": """Dudukcu 等提出以 LeakyReLU 替代常规 TCN 激活并引入简单移动平均（SMA，Simple Moving Average，简单移动平均）特征。本工程把 10 个字段全部先做历史 SMA，再送入统一 TCN，没有复现原文原始特征与 SMA 特征的并行接口。验证集在 48/64 通道和 5/10 点 SMA 两组候选中选中 64 通道、10 点 SMA、Dropout 0.12，共 67,841 个可训练参数。
 
-1. **SMA 输入层**：对每个 flight、每个特征在当前点及之前最多 9 个点上求均值；flight 开头使用实际可用点数。平滑后再用训练集统计量标准化，并构造 $B\\times17\\times23$ 的历史至当前窗口。
-2. **残差块 1**：第一层为左因果 `Conv1d(23,64,k=3,d=1)`，第二层为 `Conv1d(64,64,k=3,d=1)`；每层后依次执行 LeakyReLU(0.05) 和 Dropout(0.12)。旁路用 $1\\times1$ 卷积把 23 通道投影到 64 通道，主路与旁路相加。
+1. **SMA 输入层**：对每个 flight、每个特征在当前点及之前最多9个点上求均值；flight 开头使用实际可用点数。平滑后再用训练集统计量标准化，并构造 $B\\times20\\times10$ 的历史至当前窗口。
+2. **残差块 1**：第一层为左因果 `Conv1d(10,64,k=3,d=1)`，第二层为 `Conv1d(64,64,k=3,d=1)`；每层后依次执行 LeakyReLU(0.05) 和 Dropout(0.12)。旁路用 $1\\times1$ 卷积把 10 通道投影到 64 通道，主路与旁路相加。
 3. **残差块 2**：两层 $64\\to64$ 左因果卷积，膨胀率均为 2；旁路为恒等映射。该块扩大当前输出能够访问的历史间隔。
-4. **残差块 3**：两层 $64\\to64$ 左因果卷积，膨胀率均为 4。三块理论感受野为 $1+2(k-1)(1+2+4)=29$ 步，但实际输入只有 17 步，因此真实数据上下文最多为当前点及前 16 点，其余位置来自左填充。
-5. **当前时刻读出层**：取第三个残差块最后时间位置的 64 维向量，经 `Linear(64,1)` 输出标准化功率，再还原为 W 并截断为非负值。TCN 卷积不读取预测时刻之后的记录，`dt_seconds` 与其他特征一起参与 SMA 和卷积，原始真实时间间隔仍用于最终能耗积分。
+4. **残差块 3**：两层 $64\\to64$ 左因果卷积，膨胀率均为 4。三块理论感受野为 $1+2(k-1)(1+2+4)=29$ 步，但实际输入只有 20 步，因此真实数据上下文最多为当前点及前19点，其余位置来自左填充。
+5. **当前时刻读出层**：取第三个残差块最后时间位置的 64 维向量，经 `Linear(64,1)` 输出标准化功率，再还原为 W 并截断为非负值。TCN 卷积不读取预测时刻之后的记录，4.1没有将`dt_seconds`作为模型输入；SMA和卷积只处理10个任务前字段，原始真实时间间隔仍用于最终能耗积分。
 6. **训练选择层**：使用 AdamW、SmoothL1 和梯度裁剪；候选内部按验证损失保留最佳 epoch，再按统一选择分数确定结构。本次最终候选保存于第 24 轮。""",
-        "formula": """$$q_t=\\min(q,t+1),\\qquad x_t^{SMA}=\\frac{1}{q_t}\\sum_{j=0}^{q_t-1}x_{t-j},\\qquad h_t=\\operatorname{LeakyReLU}(W*x_{\\le t}+b)$$
+        "formula": """$$q_t=\\min(q,t+1),\\qquad x_t^{SMA}=\\frac{1}{q_t}\\sum_{j=0}^{q_t-1}x_{t-j},\\qquad h_t=\\\\operatorname{LeakyReLU}(W*x_{\\le t}+b)$$
 其中：
 
-- $x_t$：时间步 $t$ 的 23 维原始输入向量。
+- $x_t$：时间步 $t$ 的 10 维原始输入向量。
 - $x_t^{SMA}$：时间步 $t$ 的历史移动平均输入；实际 flight 起点按可用点数调整分母。
 - $q$：设定的 SMA 最大窗口长度，本次为 10；$q_t$：时间步 $t$ 实际可用的平均点数；$j$：回看步索引。
 - $x_{t-j}$：当前点之前第 $j$ 步的输入；$x_{\\le t}$：不晚于当前点的输入序列。
 - $W$：因果卷积核权重；$b$：卷积偏置；$*$：仅左侧填充的膨胀卷积运算。
 - $h_t$：当前时间步的卷积特征；$t$：窗口内时间步索引。
-- $\\operatorname{LeakyReLU}(u)=\\max(u,0)+0.05\\min(u,0)$：本实现使用的带负半轴斜率激活函数。""",
+- $\\\\operatorname{LeakyReLU}(u)=\\max(u,0)+0.05\\min(u,0)$：本实现使用的带负半轴斜率激活函数。""",
     },
     "lstm_transformer": {
-        "title": "LSTM-Transformer",
+        "title": "LSTM-Transformer（Long Short-Term Memory–Transformer，长短期记忆-Transformer混合网络）",
         "source": "Feng 等，2024，Energy consumption prediction strategy for electric vehicle based on LSTM-transformer framework",
-        "structure": """Feng 等的方法先由 LSTM 提取短期变化，再由 Transformer 建模较长依赖，原始对象是电动汽车。当前 UAV 适配版在 $D=32/64$、1/2 个 Encoder 等候选中选中 $D=64$、1 层 LSTM、2 层 Transformer Encoder、4 个注意力头、128 维前馈层和 Dropout 0.10，共 105,089 个可训练参数。
+        "structure": """Feng 等的方法先由 LSTM（Long Short-Term Memory，长短期记忆网络）提取短期变化，再由 Transformer 编码器建模较长依赖，原始对象是电动汽车。当前 UAV 适配版在 $D=32/64$、1/2 个 Encoder 等候选中选中 $D=64$、1 层 LSTM、2 层 Transformer Encoder、4 个注意力头、128 维前馈层和 Dropout 0.10，共 105,089 个可训练参数。
 
-1. **输入与填充层**：同一 flight 的当前点和之前最多 16 点组成 $B\\times17\\times23$ 张量；起点不足 17 步时复制最早记录到左侧，23 个特征按训练集统计量标准化。
-2. **线性投影层**：`Linear(23,64)` 独立作用于每个时间步，把不同量纲的 23 维输入映射到统一的 64 维模型空间，输出 $B\\times17\\times64$。
-3. **可学习位置编码层**：加入形状 $1\\times17\\times64$ 的参数矩阵，使注意力能够区分窗口首端、内部和当前时刻；位置参数与投影结果逐元素相加。
-4. **单层 LSTM**：64 个记忆单元依次处理 17 个位置，输出仍为 $B\\times17\\times64$。该层先汇总相邻点的短期顺序信息，再交给自注意力。
+1. **输入与填充层**：同一 flight 的当前点和之前最多19点组成 $B\\times20\\times10$ 张量；起点不足 20 步时复制最早记录到左侧，10 个特征按训练集统计量标准化。
+2. **线性投影层**：`Linear(10,64)` 独立作用于每个时间步，把不同量纲的 10 维输入映射到统一的 64 维模型空间，输出 $B\\times20\\times64$。
+3. **可学习位置编码层**：加入形状 $1\\times20\\times64$ 的参数矩阵，使注意力能够区分窗口首端、内部和当前时刻；位置参数与投影结果逐元素相加。
+4. **单层 LSTM**：64 个记忆单元依次处理 20 个位置，输出仍为 $B\\times20\\times64$。该层先汇总相邻点的短期顺序信息，再交给自注意力。
 5. **Transformer Encoder 1**：4 个注意力头并行工作，每个头的键/查询维度为 $64/4=16$；多头输出经残差连接和 LayerNorm，再通过 `Linear(64,128) → GELU → Dropout → Linear(128,64)` 前馈网络及第二组残差归一化。
-6. **Transformer Encoder 2**：重复同样的 4 头注意力和 128 维前馈结构，在第一层关系表示上再次组合窗口内位置。实现未使用因果 mask，但整个 17 步输入窗只包含当前及过去记录，因此不会读取预测时刻之后的数据。
+6. **Transformer Encoder 2**：重复同样的 4 头注意力和 128 维前馈结构，在第一层关系表示上再次组合窗口内位置。实现未使用因果 mask，但整个 20 步输入窗只包含当前及过去记录，因此不会读取预测时刻之后的数据。
 7. **归一化与回归头**：取第二个 Encoder 最后时间位置的 64 维向量，经 `LayerNorm(64) → Linear(64,32) → GELU → Linear(32,1)` 输出标准化功率，再还原为 W 并截断为非负值。
 8. **训练选择层**：使用 AdamW、SmoothL1、梯度裁剪和验证早停。本次选中候选的最佳保存轮次为第 21 轮。""",
-        "formula": """$$\\operatorname{Attention}(Q,K,V)=\\operatorname{softmax}\\left(\\frac{QK^\\mathsf{T}}{\\sqrt{d_k}}\\right)V$$
-$$head_r=\\operatorname{Attention}(XW_r^Q,XW_r^K,XW_r^V),\\qquad \\operatorname{MHA}(X)=\\operatorname{Concat}(head_1,\\ldots,head_h)W^O$$
+        "formula": """$$\\\\operatorname{Attention}(Q,K,V)=\\\\operatorname{softmax}\\left(\\frac{QK^\\mathsf{T}}{\\sqrt{d_k}}\\right)V$$
+$$head_r=\\\\operatorname{Attention}(XW_r^Q,XW_r^K,XW_r^V),\\qquad \\\\operatorname{MHA}(X)=\\\\operatorname{Concat}(head_1,\\ldots,head_h)W^O$$
 其中：
 
-- $X$：LSTM 输出的窗口序列矩阵，每条样本为 $17\\times64$。
+- $X$：LSTM 输出的窗口序列矩阵，每条样本为 $20\\times64$。
 - $Q$、$K$、$V$：查询、键和值矩阵，用于计算位置间权重并加权汇总信息。
 - $d_k$：单个注意力头的键维度，本次为 16；$\\sqrt{d_k}$：抑制点积随维度增大的缩放项。
 - $W_r^Q,W_r^K,W_r^V$：第 $r$ 个头的查询、键、值投影矩阵。
 - $head_r$：第 $r$ 个注意力头输出；$r$：注意力头索引。
-- $h$：注意力头总数，本次为 4；$\\operatorname{Concat}$：沿特征维拼接各头输出。
+- $h$：注意力头总数，本次为 4；$\\\\operatorname{Concat}$：沿特征维拼接各头输出。
 - $W^O$：把多头拼接结果映射回 64 维的输出投影矩阵。
-- $\\operatorname{softmax}$：在键位置维度上把缩放点积转换为和为 1 的注意力权重。""",
+- $\\\\operatorname{softmax}$：在键位置维度上把缩放点积转换为和为 1 的注意力权重。""",
     },
     "cnn_lstm": {
-        "title": "CNN-LSTM",
+        "title": "CNN-LSTM（Convolutional Neural Network–Long Short-Term Memory，卷积神经网络-长短期记忆网络）",
         "source": "Luo 等，2025，RF-TLATT 论文表 8 列出的 CNN-LSTM 对比名称（二手来源）",
-        "structure": """Luo 等仅在表 8 给出 CNN-LSTM 的对比结果，正文将其归于“Xuebing et al. (2024)”，但所给论文的参考文献表缺少相应完整条目，因而无法核实原模型层数与参数。当前目录实现的是可复现的 CNN-LSTM 工程基线，不冒充该未知原模型的直接复现。验证集在 48/64 通道候选中选中卷积通道 $C=48$、LSTM 隐层 $H=48$、Dropout 0.10，共 29,377 个可训练参数。
+        "structure": """Luo 等仅在表 8 给出 CNN-LSTM 的对比结果，正文将其归于“Xuebing et al. (2024)”，但所给论文的参考文献表缺少相应完整条目，因而无法核实原模型层数与参数。当前目录实现的是可复现的 CNN-LSTM 工程基线，不冒充该未知原模型的直接复现。验证集在 48/64 通道候选中选中卷积通道 $C=64$、LSTM隐层 $H=64$、Dropout 0.15，共 29,377 个可训练参数。
 
-1. **输入与填充层**：当前点与同一 flight 的前 16 点组成 $B\\times17\\times23$ 标准化序列；flight 开头不足部分复制最早记录。转置后得到 Conv1d 所需的 $B\\times23\\times17$。
-2. **卷积层 1**：`Conv1d(23,48,k=3,padding=1)` 同时汇总 23 个输入通道和相邻 3 个时间位置，输出 $B\\times48\\times17$；随后执行 `BatchNorm1d(48) → LeakyReLU(0.05) → Dropout(0.10)`。
-3. **卷积层 2**：`Conv1d(48,48,k=3,padding=1) → BatchNorm1d(48) → LeakyReLU(0.05)`，继续组合第一层局部模式，输出形状仍为 $B\\times48\\times17$。第二层后没有额外 Dropout。
-4. **单层 LSTM**：转回 $B\\times17\\times48$，由 48 个记忆单元顺序聚合卷积特征；输出整个序列并取最后时间位置的 $B\\times48$ 向量。
-5. **回归头**：对最后时刻向量执行 `Dropout(0.10) → Linear(48,1)`，得到标准化功率，再还原为 W 并截断为非负值。
-6. **时间信息边界**：两层卷积使用对称 `padding=1`，中间位置会组合其左右相邻位置；但送入模型的 17 步缓冲区以当前预测时刻结束，所以不会访问该时刻之后的数据。训练使用 AdamW、SmoothL1 和梯度裁剪，本次最佳状态保存于第 20 轮。""",
-        "formula": """$$z_{c,t}=\\operatorname{LeakyReLU}\\left(\\operatorname{BN}\\left(\\sum_{r=1}^{C_{in}}\\sum_{\\tau=-1}^{1}W_{c,r,\\tau}x_{r,t+\\tau}+b_c\\right)\\right)$$
+1. **输入与填充层**：当前点与同一 flight 的前19点组成 $B\\times20\\times10$ 标准化序列；flight 开头不足部分复制最早记录。转置后得到 Conv1d 所需的 $B\\times10\\times20$。
+2. **卷积层 1**：`Conv1d(10,64,k=3,padding=1)` 同时汇总 10 个输入通道和相邻 3 个时间位置，输出 $B\\times64\\times20$；随后执行 `BatchNorm1d(64) → LeakyReLU(0.05) → Dropout(0.15)`。
+3. **卷积层 2**：`Conv1d(64,64,k=3,padding=1) → BatchNorm1d(64) → LeakyReLU(0.05)`，继续组合第一层局部模式，输出形状仍为 $B\\times64\\times20$。第二层后没有额外 Dropout。
+4. **单层 LSTM**：转回 $B\\times20\\times64$，由 64 个记忆单元顺序聚合卷积特征；输出整个序列并取最后时间位置的 $B\\times64$ 向量。
+5. **回归头**：对最后时刻向量执行 `Dropout(0.15) → Linear(64,1)`，得到标准化功率，再还原为 W 并截断为非负值。
+6. **时间信息边界**：两层卷积使用对称 `padding=1`，中间位置会组合其左右相邻位置；但送入模型的 20 步缓冲区以当前预测时刻结束，所以不会访问该时刻之后的数据。训练使用 AdamW、SmoothL1 和梯度裁剪，本次最佳状态保存于第 20 轮。""",
+        "formula": """$$z_{c,t}=\\\\operatorname{LeakyReLU}\\left(\\\\operatorname{BN}\\left(\\sum_{r=1}^{C_{in}}\\sum_{\\tau=-1}^{1}W_{c,r,\\tau}x_{r,t+\\tau}+b_c\\right)\\right)$$
 其中：
 
 - $x_{r,t+\\tau}$：输入通道 $r$ 在窗口位置 $t+\\tau$ 的值；边界外位置由零填充。
-- $C_{in}$：该卷积层的输入通道数，第一层为 23、第二层为 48。
+- $C_{in}$：该卷积层的输入通道数，第一层为 10、第二层为 64。
 - $W_{c,r,\\tau}$：从输入通道 $r$、相对位置 $\\tau$ 到输出通道 $c$ 的卷积权重。
 - $b_c$：输出通道 $c$ 的偏置；$z_{c,t}$：卷积、批归一化和激活后的局部特征。
 - $c$：输出通道索引；$r$：输入通道索引；$t$：窗口内位置；$\\tau\\in\\{-1,0,1\\}$：三点卷积核的相对位置。
-- $\\operatorname{BN}$：批归一化；$\\operatorname{LeakyReLU}$：负半轴斜率为 0.05 的激活函数。""",
+- $\\\\operatorname{BN}$：批归一化；$\\\\operatorname{LeakyReLU}$：负半轴斜率为 0.05 的激活函数。""",
     },
 }
 
@@ -539,7 +542,7 @@ $$
 - $E_f$：flight $f$ 的总能耗，单位 Wh；$f$：flight 编号。
 - $3600$：从 W·s 换算到 Wh 的秒数因子。
 
-MAE、RMSE、MAPE、WAPE 越小越好，$R^2$ 越接近 1 越好。能耗先按真实 `dt_seconds` 积分，再在 28 个 flight 上计算指标，避免把不等间隔采样误当成等权样本。
+MAE、RMSE、MAPE、WAPE 越小越好，$R^2$ 越接近 1 越好。能耗先按真实 `dt_seconds` 积分，再在 47 个 flight 上计算指标，避免把不等间隔采样误当成等权样本。
 
 本实验的选择分数为：
 
@@ -552,7 +555,7 @@ $$S_{val}=\mathrm{WAPE}_{power,val}+0.5\,\mathrm{WAPE}_{energy,val}$$
 - $\mathrm{WAPE}_{energy,val}$：验证集按 flight 汇总后的能耗 WAPE，单位 %。
 - $0.5$：能耗 WAPE 在选择分数中的固定权重。
 
-该分数只在 28 个 validation flight 上计算，用于比较候选结构、正则强度和相位阈值；测试集 28 个 flight 在参数固定后才运行。'''
+该分数只在 29 个 validation flight 上计算，用于比较候选结构、正则强度和相位阈值；测试集 47 个 flight 在参数固定后才运行。'''
 
 
 VARIABLE_GLOSSARY = r'''### 变量、坐标轴和字段词典
@@ -560,7 +563,7 @@ VARIABLE_GLOSSARY = r'''### 变量、坐标轴和字段词典
 | 字段或指标 | 中文全称 | English full name | 单位/范围 | 计算方式和含义 |
 |---|---|---|---|---|
 | `flight` | 飞行任务编号 | Flight identifier | 无量纲 | 同一编号的连续记录属于同一任务，能耗按该字段分组。 |
-| `route` | 航线编号 | Route identifier | — | 本实验仅保留 R1。 |
+| `route` | 航线编号 | Route identifier | — | route 仅作追踪与分层统计，不作为模型输入；4.1数据包含 H、R1–R7（排除 A1–A3）。 |
 | `time` | 飞行内相对时间 | Flight-relative time | s | 每个 flight 从 0 s 开始的时间坐标，所有时序图横轴使用它。 |
 | `dt_seconds`（$\Delta t_i$） | 采样时间间隔 | Sampling time interval | s | 相邻时间戳之差；能耗积分使用真实值，不用固定步长替代。 |
 | `power_w`（$y_i$） | 实测瞬时功率 | Measured instantaneous power | W | `max(battery_voltage × battery_current, 0)`，作为监督目标和散点图横坐标。 |
@@ -584,7 +587,7 @@ VARIABLE_GLOSSARY = r'''### 变量、坐标轴和字段词典
 
 
 ALGORITHM_CHART_DESCRIPTIONS = {
-    "power_scatter.png": "横轴是实测瞬时功率（Measured instantaneous power，W），纵轴是预测瞬时功率（Predicted instantaneous power，W）。绘图从 45,237 条测试记录中每隔 20 条取 1 条，共显示 2,262 个点；黑色虚线 $y=x$ 是理想线，线上方代表高估，点到理想线的垂直距离是该点绝对误差。抽样只用于减轻点云遮挡，指标仍由全部记录计算。",
+    "power_scatter.png": "横轴是实测瞬时功率（Measured instantaneous power，W），纵轴是预测瞬时功率（Predicted instantaneous power，W）。绘图从 48,724 条测试记录中每隔 20 条取 1 条，共显示 2,262 个点；黑色虚线 $y=x$ 是理想线，线上方代表高估，点到理想线的垂直距离是该点绝对误差。抽样只用于减轻点云遮挡，指标仍由全部记录计算。",
     "flight_power_timeseries.png": "横轴是飞行时间（Flight time，s），纵轴是功率（Power，W）。同一 flight 的实线是实测功率，虚线是预测功率；蓝、橙、绿分别对应图例中的前三个测试 flight。曲线峰值错位表示响应滞后，预测线持续高于实线表示该时段高估。",
     "residual_histogram.png": "横轴是功率残差 $e=\\hat P-P$（Residual，W），纵轴是记录数（Count）。蓝色柱表示残差频数，红色竖虚线是零误差。中心偏右/偏左分别表示总体高估/低估，分布宽度和长尾对应 RMSE 与 P95。",
     "residual_vs_actual.png": "横轴是实测功率（Measured power，W），纵轴是残差（Residual，W）；颜色分别表示 idle、ascent、descent、cruise。红色水平虚线为零残差。该图每隔 4 条记录取 1 条，显示 11,310 个点；抽样只服务于显示。某个功率区间持续偏离零线说明该区间存在系统偏差，扇形扩散说明误差随功率增大而增大。",
@@ -606,7 +609,7 @@ ALGORITHM_CHART_DESCRIPTIONS = {
     "comparison_overall_rank.png": "横轴为五项误差指标的平均名次，纵轴为算法。每项指标先按从小到大排名，再求平均；柱越短表示功率与能耗折中越好。该图是描述性排序，不是统计显著性检验。",
     "comparison_power_timeseries.png": "横轴为测试集中功率标准差最大的同一 flight 的飞行时间（s），纵轴为功率（W）。黑色粗线是实测功率，其他彩色线分别对应图例算法；若该 flight 超过 700 条记录，图中只显示前 700 条。所有线共享同一时间轴，可比较峰值位置、过冲和稳态偏差。",
     "comparison_error_violin.png": "横轴为算法，纵轴为绝对功率误差（W）。每个算法每隔 5 条测试记录取 1 条，共 9,048 个误差值；小提琴宽度表示该误差附近的核密度，内部两组水平标记分别表示均值和中位数。抽样不参与指标计算。",
-    "comparison_bland_altman.png": "每个子图是一种算法，横轴为实测与预测功率的均值（W），纵轴为残差（W）。45,237 条记录按步长 7 抽样，共显示 6,463 个点；红线为该抽样点集的平均偏差，橙色虚线为平均偏差 ±1.96 个样本标准差。若残差随横轴明显倾斜，说明存在功率相关偏差。",
+    "comparison_bland_altman.png": "每个子图是一种算法，横轴为实测与预测功率的均值（W），纵轴为残差（W）。48,724 条记录按步长 7 抽样，共显示 6,463 个点；红线为该抽样点集的平均偏差，橙色虚线为平均偏差 ±1.96 个样本标准差。若残差随横轴明显倾斜，说明存在功率相关偏差。",
     "comparison_energy_error_distribution.png": "横轴为算法，纵轴为 flight 能耗误差（Wh）；箱体表示任务级误差的主体范围，红线为中位数，黑色水平虚线为零误差。它与功率箱线图不同，关注的是整段任务的累计偏差。",
     "comparison_phase_metrics.png": "三个并列热图分别给出阶段 MAE（W）、RMSE（W）和 WAPE（%），横轴为四阶段，纵轴为算法，格内数字为原始指标。并列观察可以区分低功率分母放大的百分比误差与真实瓦特误差。",
     "comparison_metric_radar.png": "极坐标轴分别为 Power MAE、Power RMSE、Power WAPE、Energy MAE、Energy WAPE；每项先转换为 $1-(x-x_{min})/(x_{max}-x_{min})$ 的相对得分，越靠外表示该列相对误差越低。它只反映当前七种方法之间的相对位置。",
@@ -614,12 +617,23 @@ ALGORITHM_CHART_DESCRIPTIONS = {
 
 
 def feature_table(metadata: dict[str, object]) -> str:
-    """功能:生成公共数据中23个候选变量的中英文、单位和作用表。
-    参数: metadata为3.0特征元数据字典。
+    """功能:生成4.1十维任务前变量的中英文、单位和作用表。
+    参数: metadata为4.1十维特征元数据字典。
     返回: Markdown表格文本。
     调用位置:overall_readme和algorithm_readme。
     """
-    descriptions = metadata.get("field_descriptions", {}) if isinstance(metadata, dict) else {}
+    descriptions = {
+        "time_s": "任务开始后的相对时间，来自每个flight首时刻归零的规划时间轴。",
+        "task_duration_s": "完整任务计划时长，用于表达当前任务所处的时间尺度。",
+        "planned_position_east_m": "ENU东向规划位置，反映水平航迹位移。",
+        "planned_position_north_m": "ENU北向规划位置，反映水平航迹位移。",
+        "planned_position_up_m": "ENU上向规划位置，反映爬升和下降状态。",
+        "wind_east_mps": "风矢量东向分量，参与风致功率变化建模。",
+        "wind_north_mps": "风矢量北向分量，参与风致功率变化建模。",
+        "payload_g": "有效载荷质量，影响悬停和机动所需功率。",
+        "planned_motor_on": "计划电机状态，区分停机和动力运行阶段。",
+        "planned_airborne": "计划离地状态，辅助区分地面、起降和空中航段。",
+    }
     lines = [
         "| 变量 | 中文全称 | English full name | 单位/范围 | 在模型中的作用 |",
         "|---|---|---|---|---|",
@@ -640,7 +654,7 @@ def tuning_markdown(folder: str, summary: dict[str, object]) -> str:
     tuning = summary["tuning"]
     selected = summary["selected"]
     if not isinstance(tuning, pd.DataFrame) or tuning.empty:
-        return "本算法为固定 3.0 checkpoint 或无可调候选，未单独生成候选表。"
+        return "本算法为固定 4.1 checkpoint 或无可调候选，未单独生成候选表。"
     display = tuning.copy()
     # 只展示能解释选择过程的字段，避免把表格横向撑得过宽。
     preferred = [
@@ -737,7 +751,7 @@ def algorithm_chart_analysis(folder: str, summary: dict[str, object]) -> str:
         description = ALGORITHM_CHART_DESCRIPTIONS[filename]
         extra = ""
         if filename == "power_scatter.png":
-            extra = f"图中显示等间隔抽样点，$R^2={fmt(power['r2'], 4)}$ 与 WAPE={fmt(power['wape'], 3)}% 则由全部 45,237 条记录计算。WAPE 表示全部绝对误差之和占实测功率绝对值之和的比例。"
+            extra = f"图中显示等间隔抽样点，$R^2={fmt(power['r2'], 4)}$ 与 WAPE={fmt(power['wape'], 3)}% 则由全部 48,724 条记录计算。WAPE 表示全部绝对误差之和占实测功率绝对值之和的比例。"
         elif filename == "flight_power_timeseries.png":
             details = []
             for flight_id in first_flights:
@@ -753,7 +767,7 @@ def algorithm_chart_analysis(folder: str, summary: dict[str, object]) -> str:
             hardest = max((row for row in summary["bin_rows"] if np.isfinite(row["mae"])), key=lambda row: row["mae"])
             extra = f"橙柱最高的区间是 {hardest['bin']}（MAE={fmt(hardest['mae'], 2)} W）；蓝线显示该区间只有 {hardest['n']:,} 条样本，不能仅凭柱高判断其对总体指标的贡献。"
         elif filename == "flight_energy_scatter.png":
-            extra = f"28 个蓝点对应 28 个 flight；任务级 WAPE={fmt(energy['wape'], 3)}%，点到 $y=x$ 的垂直距离就是 `energy_error_wh`。"
+            extra = f"47 个蓝点对应 47 个 flight；任务级 WAPE={fmt(energy['wape'], 3)}%，点到 $y=x$ 的垂直距离就是 `energy_error_wh`。"
         elif filename == "flight_energy_error_ranking.png":
             extra = f"任务误差范围为 {fmt(flights.energy_error_wh.min(), 3)}～{fmt(flights.energy_error_wh.max(), 3)} Wh；红柱是高估，蓝柱是低估。"
         elif filename == "cumulative_energy_timeseries.png":
@@ -819,6 +833,7 @@ def overall_analysis(metrics: pd.DataFrame, summaries: dict[str, dict[str, objec
         for folder, summary in summaries.items()
     }
     baseline = json.loads(BASELINE_EVALUATION_JSON.read_text(encoding="utf-8"))
+    baseline = baseline.get("metrics", baseline)
     raw_tcn_power_wape = float(baseline["tcn_sample_power_w_wape_percent"])
     raw_tcn_energy_wape = float(baseline["tcn_flight_energy_wh_wape_percent"])
     corrected_power_wape = float(baseline["sample_power_w_wape_percent"])
@@ -826,13 +841,13 @@ def overall_analysis(metrics: pd.DataFrame, summaries: dict[str, dict[str, objec
     lines = [
         "### 8.2 结果与讨论",
         "",
-        f"测试集共有 **{len(test):,}** 条采样记录、**{test.flight.nunique()}** 个 flight。实测瞬时功率均值为 {mean_power:.2f} W、中位数为 {median_power:.2f} W、范围为 {min_power:.2f}–{max_power:.2f} W；按真实 `dt_seconds` 积分后，28 个 flight 的实测总能耗为 {total_energy:,.3f} Wh。阶段样本数为 " + "、".join(f"{phase}（{PHASE_CN[phase]}）{int(phase_counts[phase]):,}" for phase in PHASES) + "。功率区间样本数为 " + "、".join(f"{name} {int(bins[name]):,}" for name in POWER_BINS) + "。",
+        f"测试集共有 **{len(test):,}** 条采样记录、**{test.flight.nunique()}** 个 flight。实测瞬时功率均值为 {mean_power:.2f} W、中位数为 {median_power:.2f} W、范围为 {min_power:.2f}–{max_power:.2f} W；按真实 `dt_seconds` 积分后，47 个 flight 的实测总能耗为 {total_energy:,.3f} Wh。阶段样本数为 " + "、".join(f"{phase}（{PHASE_CN[phase]}）{int(phase_counts[phase]):,}" for phase in PHASES) + "。功率区间样本数为 " + "、".join(f"{name} {int(bins[name]):,}" for name in POWER_BINS) + "。",
         "",
         f"按样本功率 WAPE 排名，{best_power.algorithm_name} 最低（{best_power.sample_power_wape_percent:.3f}%），其次为 {strongest.algorithm_name}（{strongest.sample_power_wape_percent:.3f}%）；按 flight 能耗 WAPE 排名，{best_energy.algorithm_name} 最低（{best_energy.flight_energy_wape_percent:.3f}%）。主方法的绝对误差 P50/P90/P95 为 {p50:.2f}/{p90:.2f}/{p95:.2f} W，说明大多数采样点误差集中在较小范围，但 P95 仍保留少量起降和状态切换尾部。",
         "",
         f"主方法与最强无测试期目标反馈对照 {strongest.algorithm_name} 的功率 MAE 分别为 {best_power.sample_power_mae_w:.3f} W 和 {strongest.sample_power_mae_w:.3f} W，差值为 {strongest.sample_power_mae_w-best_power.sample_power_mae_w:.3f} W；功率 WAPE 相对下降 {(strongest.sample_power_wape_percent-best_power.sample_power_wape_percent)/strongest.sample_power_wape_percent*100:.2f}%。flight 能耗 WAPE 分别为 {best_energy.flight_energy_wape_percent:.3f}% 和 {strongest.flight_energy_wape_percent:.3f}%。",
         "",
-        f"同一 3.0 checkpoint 的原始 TCN 功率 WAPE 为 {raw_tcn_power_wape:.3f}%，加入在线 RLS 后为 {corrected_power_wape:.3f}%，相对下降 {(raw_tcn_power_wape-corrected_power_wape)/raw_tcn_power_wape*100:.2f}%；原始 TCN 的 flight 能耗 WAPE 为 {raw_tcn_energy_wape:.3f}%，RLS 后为 {corrected_energy_wape:.3f}%，相对下降 {(raw_tcn_energy_wape-corrected_energy_wape)/raw_tcn_energy_wape*100:.2f}%。这组同模型前后值说明，主方法的任务级优势主要受在线校正影响。RLS 在每个完整秒窗结束后读取该窗真实能量，并把更新参数用于下一窗；其余对比算法没有同样的测试期目标反馈，因此不能把能耗差异全部归因于 TCN 表征能力。",
+        f"同一 4.1 checkpoint 的原始 TCN 功率 WAPE 为 {raw_tcn_power_wape:.3f}%，加入在线 RLS 后为 {corrected_power_wape:.3f}%，相对下降 {(raw_tcn_power_wape-corrected_power_wape)/raw_tcn_power_wape*100:.2f}%；原始 TCN 的 flight 能耗 WAPE 为 {raw_tcn_energy_wape:.3f}%，RLS 后为 {corrected_energy_wape:.3f}%，相对下降 {(raw_tcn_energy_wape-corrected_energy_wape)/raw_tcn_energy_wape*100:.2f}%。这组同模型前后值说明，主方法的任务级优势主要受在线校正影响。RLS 在每个完整秒窗结束后读取该窗真实能量，并把更新参数用于下一窗；其余对比算法没有同样的测试期目标反馈，因此不能把能耗差异全部归因于 TCN 表征能力。",
         "",
         "阶段结果也呈现出不同的误差来源。idle 的功率分母较小，WAPE 往往高于 MAE 所反映的绝对误差；ascent 和 descent 的垂直速度变化使功率尖峰更密集，RMSE 对这些点更敏感；cruise 的输入变化相对连续，通常更适合时序模型。功率分箱中 450–600 W 是样本主体，因而该区间的 MAE 对总体结果贡献最大；50–300 W 样本较少但多出现在过渡段，适合用于检查模型响应延迟。",
         "",
@@ -861,7 +876,7 @@ def overall_chart_section(metrics: pd.DataFrame, summaries: dict[str, dict[str, 
     section = [
         "### 8.3 总体图谱与逐图分析",
         "",
-        f"13 张总体图均基于同一批 7 种算法、45,237 条测试记录和 28 个 flight；散点密集的图按图注规则等间隔抽样，但所有表格指标仍用完整测试集计算。图例中的每条线或颜色都对应一个算法目录。当前功率 WAPE 最低的是 {best.algorithm_name}（{best.sample_power_wape_percent:.3f}%），第二名为 {strongest.algorithm_name}（{strongest.sample_power_wape_percent:.3f}%）。",
+        f"13 张总体图均基于同一批 7 种算法、48,724 条测试记录和 47 个 flight；散点密集的图按图注规则等间隔抽样，但所有表格指标仍用完整测试集计算。图例中的每条线或颜色都对应一个算法目录。当前功率 WAPE 最低的是 {best.algorithm_name}（{best.sample_power_wape_percent:.3f}%），第二名为 {strongest.algorithm_name}（{strongest.sample_power_wape_percent:.3f}%）。",
         "",
     ]
     chart_order = [
@@ -897,7 +912,7 @@ def overall_chart_section(metrics: pd.DataFrame, summaries: dict[str, dict[str, 
             for name in names:
                 flights = summaries[name]["flights"]
                 details.append(f"{display_names[name]} 平均偏差 {flights.energy_error_wh.mean():+.3f} Wh、最大绝对偏差 {flights.energy_error_wh.abs().max():.3f} Wh")
-            section.append("每个小图有 28 个点，线上方为能耗高估、下方为低估。" + "；".join(details) + "。")
+            section.append("每个小图有 47 个点，线上方为能耗高估、下方为低估。" + "；".join(details) + "。")
         elif filename == "comparison_metric_heatmap.png":
             section.append(
                 f"主方法在五列中均为最小值，因此五格都位于绿色端；最强无测试期目标反馈方法 {strongest.algorithm_name} 的功率 MAE/RMSE/WAPE 为 "
@@ -975,21 +990,23 @@ def build_overall_readme(metrics: pd.DataFrame, summaries: dict[str, dict[str, o
         "",
         "## 摘要",
         "",
-        f"针对 R1 航线上的四轴无人机瞬时功率与单次任务能耗预测，本文在固定 train/validation/test flight 划分上比较 3.0 TCN+RLS 主方法和六种论文来源基线。两项原候选因功率 WAPE 达到 26.516% 和 18.088% 而被替换，新加入 LSTM-Transformer 与 CNN-LSTM。最终主方法在 45,237 条测试记录上取得 {best.sample_power_mae_w:.3f} W 的功率 MAE 和 {best.sample_power_wape_percent:.3f}% 的功率 WAPE，在 28 个测试 flight 上取得 {best.flight_energy_wape_percent:.3f}% 的能耗 WAPE；最强无测试期目标反馈对照 {strongest.algorithm_name} 的功率 WAPE 为 {strongest.sample_power_wape_percent:.3f}%。由于主方法在测试期使用已结束秒窗的真实能量更新下一窗 RLS 参数，任务级能耗差异同时包含在线反馈收益。所有结论限于当前固定划分和单次随机种子。",
+        f"针对四轴无人机任务数据上的瞬时功率与单次任务能耗预测，本文在固定 train/validation/test flight 划分上比较 4.1 TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）主方法和六种论文来源基线。两项原候选因功率 WAPE 达到 26.516% 和 18.088% 而被替换，新加入 LSTM-Transformer（Long Short-Term Memory–Transformer，长短期记忆-Transformer混合网络）与 CNN-LSTM（Convolutional Neural Network–Long Short-Term Memory，卷积神经网络-长短期记忆网络）。最终主方法在 48,724 条测试记录上取得 {best.sample_power_mae_w:.3f} W 的功率 MAE 和 {best.sample_power_wape_percent:.3f}% 的功率 WAPE，在 47 个测试 flight 上取得 {best.flight_energy_wape_percent:.3f}% 的能耗 WAPE；最强无测试期目标反馈对照 {strongest.algorithm_name} 的功率 WAPE 为 {strongest.sample_power_wape_percent:.3f}%。由于主方法在测试期使用已结束秒窗的真实能量更新下一窗 RLS 参数，任务级能耗差异同时包含在线反馈收益。所有结论限于当前固定划分和单次随机种子。",
         "",
         "**关键词：** 四轴无人机；功率预测；能耗预测；时间卷积网络；递推最小二乘；对比实验",
         "",
+        ABBREVIATION_GLOSSARY,
+        "",
         "## 1. 研究背景与实验目的",
         "",
-        "无人机逐点功率可由飞行内电压、电流和工况记录建立监督数据<sup>[B1]</sup>；预测结果可为返航阈值、剩余航时和任务调度提供输入。任务总能耗还能进入配送路径成本<sup>[B2]</sup>、编队任务代价<sup>[B3]</sup>和多旋翼任务可行性判断<sup>[B4]</sup>。本实验的目的，是在相同 flight 划分、相同功率目标、相同真实时间积分和相同评价指标下，比较带秒级能量反馈的 TCN+RLS 与六种时序、相位和物理基线。各方法使用同一份源数据，但依据论文结构选择不同输入表示，因此“统一条件”不等于所有模型都读取相同特征子集或相同时间窗。",
+        "无人机逐点功率可由飞行内电压、电流和工况记录建立监督数据<sup>[B1]</sup>；预测结果可为返航阈值、剩余航时和任务调度提供输入。任务总能耗还能进入配送路径成本<sup>[B2]</sup>、编队任务代价<sup>[B3]</sup>和多旋翼任务可行性判断<sup>[B4]</sup>。本实验的目的，是在相同 flight 划分、相同功率目标、相同真实时间积分和相同评价指标下，比较带秒级能量反馈的 TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）与六种时序、相位和物理基线。所有方法均从同一份4.1十维任务前数据、同一采样记录和同一flight划分开始；RF-TLATT（Random Forest–Temporal Local Attention and Time，随机森林-时序局部注意力与时间）与MLR（Multiple Linear Regression，多元线性回归）仅在模型内部对这十个字段做确定性速度、质量和交互项展开，没有增加样本、改变目标或使用测试期真实功率。序列模型统一使用20步历史窗，当前记录回归使用当前时刻派生量。",
         "",
         "## 2. 数据、场景与实验边界",
         "",
-        f"数据来自 3.0 的 R1 处理集：训练集 {len(train):,} 条、{train.flight.nunique()} 个 flight；验证集 {len(validation):,} 条、{validation.flight.nunique()} 个 flight；测试集 {len(test):,} 条、{test.flight.nunique()} 个 flight。典型采样间隔约为 {test.dt_seconds.median():.2f} s，功率目标为 `power_w`（W），能耗按每条记录的 `dt_seconds` 积分为 Wh。数据按完整 flight 划分，避免同一飞行同时出现在训练与测试中。",
+        f"数据来自 4.1 的十维规划特征处理集：训练集 {len(train):,} 条、{train.flight.nunique()} 个 flight；验证集 {len(validation):,} 条、{validation.flight.nunique()} 个 flight；测试集 {len(test):,} 条、{test.flight.nunique()} 个 flight。典型采样间隔约为 {test.dt_seconds.median():.2f} s，功率目标为 `power_w`（W），能耗按每条记录的 `dt_seconds` 积分为 Wh。数据按完整 flight 划分，避免同一飞行同时出现在训练与测试中。",
         "",
-        "当前场景是单架四轴无人机在 R1 航线上的逐点功率与任务能耗估计。Luo 等把相位识别与专用时序模型用于四旋翼功率预测<sup>[A1]</sup>；Muli 等比较无人机数据驱动能耗模型<sup>[A3]</sup>；Dudukcu 等研究带 SMA 的 LR-TCN 瞬时功率模型<sup>[A4]</sup>；Jastrzębska 等从物理运动量建立 UAV 能耗模型<sup>[A2]</sup>；Feng 等在电动汽车上验证 LSTM-Transformer 的长短期组合<sup>[A5]</sup>；Cabuk 等把小型无人机能耗用于编队连接恢复、拓扑维护和队形变换的任务代价<sup>[B3]</sup>。本实验只迁移这些建模思想，论文原数据集上的数值不作为本项目结果。",
+        "当前场景是单架四轴无人机在 四轴无人机任务数据上的逐点功率与任务能耗估计。Luo 等把相位识别与专用时序模型用于四旋翼功率预测<sup>[A1]</sup>；Muli 等比较无人机数据驱动能耗模型<sup>[A3]</sup>；Dudukcu 等研究带 SMA 的 LR-TCN 瞬时功率模型<sup>[A4]</sup>；Jastrzębska 等从物理运动量建立 UAV 能耗模型<sup>[A2]</sup>；Feng 等在电动汽车上验证 LSTM-Transformer 的长短期组合<sup>[A5]</sup>；Cabuk 等把小型无人机能耗用于编队连接恢复、拓扑维护和队形变换的任务代价<sup>[B3]</sup>。本实验只迁移这些建模思想，论文原数据集上的数值不作为本项目结果。",
         "",
-        "主方法的部署边界需要单列说明：3.0 在每个完整约 1 s 窗口结束后读取该窗口真实能量，RLS 更新后的偏置和缩放只用于下一窗口；六种对比方法在测试时没有同样的目标反馈。因此主方法的 flight 能耗优势包含在线反馈带来的收益，不能把全部差异归因于 TCN 的前馈特征提取。",
+        "主方法的部署边界需要单列说明：4.1 在每个完整约 1 s 窗口结束后读取该窗口真实能量，RLS 更新后的偏置和缩放只用于下一窗口；六种对比方法在测试时没有同样的目标反馈。因此主方法的 flight 能耗优势包含在线反馈带来的收益，不能把全部差异归因于 TCN 的前馈特征提取。",
         "",
         "## 3. 方法与文献来源",
         "",
@@ -1010,7 +1027,7 @@ def build_overall_readme(metrics: pd.DataFrame, summaries: dict[str, dict[str, o
         "",
         "## 5. 统一输入变量",
         "",
-        f"公共处理表提供 23 个候选字段：{', '.join(f'`{column}`' for column in FEATURE_COLUMNS)}。TCN+RLS 和四个深度基线读取全部 23 个字段；RF-TLATT 轻量基线和 Physical MLR 从这些字段构造较小的当前时刻特征集。各模型实际输入如下。",
+        f"公共处理表提供 10 个4.1任务前字段：{', '.join(f'`{column}`' for column in FEATURE_COLUMNS)}。TCN（Temporal Convolutional Network，时间卷积网络）+ RLS（Recursive Least Squares，递推最小二乘）和四个深度基线读取全部 10 个字段；RF-TLATT 轻量基线和 Physical MLR 从这些字段构造较小的当前时刻特征集。各模型实际输入如下。",
         "",
         algorithm_input_table(metrics),
         "",
@@ -1029,7 +1046,7 @@ def build_overall_readme(metrics: pd.DataFrame, summaries: dict[str, dict[str, o
         "",
         "所有需要学习的候选均只使用训练 flight 拟合，在独立 validation flight 上选择，test flight 只在结构与参数固定后用于最终评价。每个深度候选以 SmoothL1 损失最多训练 24 轮，验证损失连续 4 轮不改善则早停，并保存该候选验证损失最低的 epoch；不同候选再按功率 WAPE + 0.5×flight 能耗 WAPE 选择。线性模型只在验证集选择正则项和 RF 轻量基线的相位阈值。候选明细位于各目录 `out/model/tuning_results.csv`。",
         "",
-        "主方法 3.0 的固定 TCN checkpoint 使用 12 s/100 步输入窗和 `[64,64,64,32]` 通道；RLS 使用遗忘因子 0.90、初始协方差 0.25、无预热窗口，这些参数来自 3.0 验证集搜索。LSTM、LR-TCN-SMA、LSTM-Transformer、CNN-LSTM 使用统一 17 步窗口并在本项目验证集重新选参；RF 相位基线和 Physical MLR 是当前记录回归，不使用序列窗口。由于主方法另有在线真实能量反馈，本实验在数据划分与指标上保持一致，但并非严格同信息量的消融比较。",
+        "主方法 4.1 的固定 TCN checkpoint 使用 4 s/20 步输入窗和 `[32,32]` 通道；RLS 使用遗忘因子 0.90、初始协方差 0.25、无预热窗口，这些参数来自 4.1 验证集搜索。LSTM、LR-TCN-SMA、LSTM-Transformer、CNN-LSTM 使用统一 20 步窗口并在本项目验证集重新选参；RF 相位基线和 Physical MLR 是当前记录回归，不使用序列窗口。由于主方法另有在线真实能量反馈，本实验在数据划分与指标上保持一致，但并非严格同信息量的消融比较。",
         "",
         "### 7.1 低效候选删除与替换",
         "",
@@ -1055,7 +1072,7 @@ def build_overall_readme(metrics: pd.DataFrame, summaries: dict[str, dict[str, o
         "",
         "```text",
         "Comparison-algorithm/",
-        "├─ config.py                         # 路径、23维特征、候选参数和图表名称",
+        "├─ config.py                         # 路径、10维特征、候选参数和图表名称",
         "├─ main.py                           # 全部算法统一入口",
         "├─ comparison_engine.py              # 算法、训练、评估和绘图",
         "├─ generate_documentation.py         # 从最终CSV生成README",
@@ -1105,7 +1122,7 @@ def build_algorithm_readme(folder: str, metrics: pd.DataFrame, summaries: dict[s
         "",
         "## 2. 统一实验条件",
         "",
-        f"本算法与其他方法使用同一 R1 源数据和同一完整 flight 划分：训练 {len(train):,} 条、{train.flight.nunique()} 个 flight；验证 {len(validation):,} 条、{validation.flight.nunique()} 个 flight；测试 {len(test):,} 条、{test.flight.nunique()} 个 flight。实际模型输入为：{ALGORITHM_INPUTS[folder]}。测试功率目标统一为 `power_w`，能耗统一按每条记录的 `dt_seconds` 积分；测试集只用于最终报告，不参与候选选择。",
+        f"本算法与其他方法使用同一 4.1 十维任务前数据和同一完整 flight 划分：训练 {len(train):,} 条、{train.flight.nunique()} 个 flight；验证 {len(validation):,} 条、{validation.flight.nunique()} 个 flight；测试 {len(test):,} 条、{test.flight.nunique()} 个 flight。实际模型输入为：{ALGORITHM_INPUTS[folder]}。测试功率目标统一为 `power_w`，能耗统一按每条记录的 `dt_seconds` 积分；测试集只用于最终报告，不参与候选选择。",
         "",
         f"本次最终测试结果：功率 MAE={row.sample_power_mae_w:.3f} W，RMSE={row.sample_power_rmse_w:.3f} W，R²={row.sample_power_r2:.4f}，WAPE={row.sample_power_wape_percent:.3f}%；flight 能耗 MAE={row.flight_energy_mae_wh:.3f} Wh，RMSE={row.flight_energy_rmse_wh:.3f} Wh，R²={row.flight_energy_r2:.4f}，WAPE={row.flight_energy_wape_percent:.3f}%。",
         "",
@@ -1119,7 +1136,7 @@ def build_algorithm_readme(folder: str, metrics: pd.DataFrame, summaries: dict[s
         "",
         VARIABLE_GLOSSARY,
         "",
-        "下表列出公共数据中的 23 个候选字段。当前算法是否直接使用某字段，以第 2 节的实际输入和第 1 节逐层结构为准。",
+        "下表列出公共数据中的10个4.1任务前字段。当前算法是否直接使用某字段，以第 2 节的实际输入和第 1 节逐层结构为准。",
         "",
         feature_table(metadata),
         "",
@@ -1140,7 +1157,7 @@ def build_algorithm_readme(folder: str, metrics: pd.DataFrame, summaries: dict[s
         "",
         f"{ALGORITHM_APPLICATIONS[folder]} {ALGORITHM_REFERENCES[folder]}",
         "",
-        "统一诊断阶段来自速度阈值而非人工标签；所有指标只对应当前 R1 固定划分和一个随机种子。不同论文的原始对象、输入字段、采样条件和预测目标并不相同，其原文指标不能与本目录数值直接横向相减。本实验未做重复训练、置信区间或显著性检验。",
+        "统一诊断阶段来自速度阈值而非人工标签；所有指标只对应当前4.1固定划分和一个随机种子。不同论文的原始对象、输入字段、采样条件和预测目标并不相同，其原文指标不能与本目录数值直接横向相减。本实验未做重复训练、置信区间或显著性检验。",
         "",
         "## 8. 参考文献",
         "",

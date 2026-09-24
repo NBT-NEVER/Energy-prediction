@@ -1,10 +1,10 @@
 # _*_coding:UTF-8_*_
 # 开发者: NBT
 # 文件名: algorithm.py
-# 开发时间: 2026-09-09
+# 开发时间: 2026-09-20
 # 文件名: algorithm.py
-# 功能说明: 提供 LSTM 时序功率预测 的独立运行入口
-# 版本号：3.0
+# 功能说明: 提供 BiLSTM（Bidirectional Long Short-Term Memory，双向长短期记忆网络）时序功率预测的独立运行入口
+# 版本号：4.1
 
 from pathlib import Path
 import sys

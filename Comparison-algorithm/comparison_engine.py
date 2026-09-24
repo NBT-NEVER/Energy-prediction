@@ -3,8 +3,8 @@
 # 文件名: comparison_engine.py
 # 开发时间: 2026-09-09
 # 文件名: comparison_engine.py
-# 功能说明: 在3.0固定数据划分上训练和评估多种对比算法并生成多维图表
-# 版本号：3.0
+# 功能说明: 在4.1固定数据划分上训练和评估多种对比算法并生成多维图表
+# 版本号：4.1
 
 from __future__ import annotations
 
@@ -85,7 +85,8 @@ def build_diagnostic_frame(frame: pd.DataFrame, pred: np.ndarray) -> pd.DataFram
     返回: 含残差、能耗、功率分箱和飞行阶段字段的数据表。
     调用位置: plot_algorithm_diagnostics和plot_comparison_diagnostics。
     """
-    out = frame[["flight", "dt_seconds", "power_w", "time", "actual_speed_mps", "horizontal_speed_mps", "vertical_speed_mps", "payload_kg", "wind_speed"]].copy()
+    out = frame[["flight", "route", "dt_seconds", "power_w", "time_s", "planned_position_east_m", "planned_position_north_m", "planned_position_up_m", "payload_g", "wind_east_mps", "wind_north_mps", "planned_motor_on", "planned_airborne"]].copy()
+    out = out.rename(columns={"time_s": "time"})
     out["predicted_power_w"] = np.asarray(pred, dtype=float)
     out["residual_w"] = out["predicted_power_w"] - out["power_w"]
     out["absolute_error_w"] = out["residual_w"].abs()
@@ -205,19 +206,29 @@ def plot_algorithm_diagnostics(name: str, frame: pd.DataFrame, pred: np.ndarray,
 
 def phase_label(frame: pd.DataFrame, vertical_threshold: float = 0.15,
                 horizontal_threshold: float = 1.0) -> np.ndarray:
-    """功能: 按运动状态生成经验剖面阶段标签。
-    参数: frame为含速度特征的数据表。
-    返回: idle、ascent、descent、cruise四类整数标签。
-    调用位置: rf_tlatt_lite和诊断绘图。
-    """
-    vz = frame.vertical_speed_mps.to_numpy()
-    hs = frame.horizontal_speed_mps.to_numpy()
-    labels = np.full(len(frame), 3, dtype=int)
-    labels[np.abs(vz) < vertical_threshold] = 0
-    labels[vz > vertical_threshold] = 1
-    labels[vz < -vertical_threshold] = 2
-    labels[(np.abs(vz) < vertical_threshold) & (hs > horizontal_threshold)] = 3
+    """功能: 从4.1规划状态和位置差分生成停机、上升、下降、巡航标签。"""
+    _, _, vz, hs = _kinematics(frame)
+    labels = np.full(len(frame), 0, dtype=int)
+    labels[(frame["planned_motor_on"].to_numpy(int) == 1) & (vz > vertical_threshold)] = 1
+    labels[(frame["planned_motor_on"].to_numpy(int) == 1) & (vz < -vertical_threshold)] = 2
+    labels[(frame["planned_motor_on"].to_numpy(int) == 1) & (np.abs(vz) <= vertical_threshold) & (hs > horizontal_threshold)] = 3
     return labels
+
+
+def _kinematics(frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """按flight独立计算规划速度，避免在flight边界产生跨任务差分。"""
+    east = np.zeros(len(frame), dtype=float); north = np.zeros(len(frame), dtype=float)
+    up = np.zeros(len(frame), dtype=float); dt = np.zeros(len(frame), dtype=float)
+    for _, group in frame.groupby("flight", sort=False):
+        ids = group.index.to_numpy()
+        time = group["time_s"].to_numpy(float)
+        step = np.maximum(np.gradient(time), 0.2)
+        east[ids] = np.gradient(group["planned_position_east_m"].to_numpy(float)) / step
+        north[ids] = np.gradient(group["planned_position_north_m"].to_numpy(float)) / step
+        up[ids] = np.gradient(group["planned_position_up_m"].to_numpy(float)) / step
+        dt[ids] = step
+    horizontal = np.sqrt(east ** 2 + north ** 2)
+    return east, north, up, horizontal
 
 
 def _ridge_solution(x_train: np.ndarray, y_train: np.ndarray, alpha: float):
@@ -253,20 +264,23 @@ def _validation_score(frame: pd.DataFrame, prediction: np.ndarray) -> float:
 def physical_mlr(train: pd.DataFrame, validation: pd.DataFrame, test: pd.DataFrame,
                  cfg: ExperimentConfig) -> np.ndarray:
     def design(f: pd.DataFrame) -> np.ndarray:
-        mass = 1.0 + f.payload_kg.to_numpy(float)
-        ax = f.dynamic_accel_norm.to_numpy(float)
-        az = f.vertical_speed_abs_mps.to_numpy(float)
-        vxy = f.horizontal_speed_mps.to_numpy(float)
-        vz = f.vertical_speed_mps.to_numpy(float)
-        moving = (f.actual_speed_mps.to_numpy(float) > 0.1).astype(float)
+        mass = 1.0 + f.payload_g.to_numpy(float) / 1000.0
+        up = f.planned_position_up_m.to_numpy(float)
+        east = f.planned_position_east_m.to_numpy(float)
+        north = f.planned_position_north_m.to_numpy(float)
+        _, _, vz, horizontal = _kinematics(f)
+        vxy = horizontal
+        moving = f.planned_motor_on.to_numpy(float)
         return np.column_stack([
             moving,
-            ax * mass,
-            np.sign(vz) * az * mass,
+            np.abs(vz) * mass,
+            np.sign(vz) * np.abs(vz) * mass,
             vxy ** 2 * mass ** (2 / 3),
             vz ** 2 * mass ** (2 / 3),
             mass,
-            f.wind_speed.to_numpy(float),
+            f.wind_east_mps.to_numpy(float),
+            f.wind_north_mps.to_numpy(float),
+            f.planned_position_up_m.to_numpy(float),
         ])
 
     rows = []
@@ -302,23 +316,23 @@ def rf_tlatt_lite(train: pd.DataFrame, validation: pd.DataFrame, test: pd.DataFr
     调用位置: run_algorithm。
     """
     def design(f: pd.DataFrame) -> np.ndarray:
-        speed = f.actual_speed_mps.to_numpy(float)
-        vertical = f.vertical_speed_mps.to_numpy(float)
-        payload = f.payload_kg.to_numpy(float)
-        wind = f.wind_speed.to_numpy(float)
+        east_speed, north_speed, vertical, horizontal = _kinematics(f)
+        up = f.planned_position_up_m.to_numpy(float)
+        speed = np.sqrt(east_speed ** 2 + north_speed ** 2 + vertical ** 2)
+        payload = f.payload_g.to_numpy(float) / 1000.0
+        wind = np.sqrt(f.wind_east_mps.to_numpy(float) ** 2 + f.wind_north_mps.to_numpy(float) ** 2)
         return np.column_stack([
             speed,
-            f.horizontal_speed_mps,
+            horizontal,
             vertical,
-            f.vertical_speed_abs_mps,
+            np.abs(vertical),
             payload,
-            f.altitude_m,
+            up,
             wind,
-            f.dynamic_accel_norm,
-            f.angular_rate_norm,
-            f.relative_air_speed_mps,
-            f.wind_alignment,
-            f.wind_cross_component_mps,
+            f.wind_east_mps.to_numpy(float),
+            f.wind_north_mps.to_numpy(float),
+            f.planned_motor_on.to_numpy(float),
+            f.planned_airborne.to_numpy(float),
             speed ** 2,
             vertical ** 2,
             speed * payload,
@@ -707,15 +721,17 @@ def run_algorithm(name: str, train: pd.DataFrame, test: pd.DataFrame,
     cfg = ExperimentConfig(name); ensure_directories(cfg)
     kind = ALGORITHMS[name]["kind"]
     if kind == "baseline":
-        src = Path(__file__).resolve().parent.parent / "3.0" / "out" / "predictions" / "test_predictions_3.0.csv"
+        src = Path(r"I:\STUDY\python\project\Energy-prediction\4.1\out\predictions\test_predictions_4.1.csv")
+        if not src.is_file():
+            src = Path(r"D:\Python-files\Energy-prediction\data\dji_matrice_100_data\4.1\out\predictions\test_predictions_4.1.csv")
         baseline = pd.read_csv(src)
         if len(baseline) != len(test):
-            raise ValueError("3.0 baseline prediction count does not match the common test split.")
+            raise ValueError("4.1 baseline prediction count does not match the common test split.")
         for column in ("flight", "time"):
             if column in baseline and not np.allclose(
-                baseline[column].to_numpy(float), test[column].to_numpy(float), rtol=0.0, atol=1e-7
+                baseline[column].to_numpy(float), test["time_s" if column == "time" else column].to_numpy(float), rtol=0.0, atol=1e-7
             ):
-                raise ValueError(f"3.0 baseline {column} is not aligned with the common test split.")
+                raise ValueError(f"4.1 baseline {column} is not aligned with the common test split.")
         pred = baseline.predicted_power_w.to_numpy(float)
     elif kind == "physical_mlr":
         pred = physical_mlr(train, validation, test, cfg)
@@ -724,13 +740,13 @@ def run_algorithm(name: str, train: pd.DataFrame, test: pd.DataFrame,
     else:
         pred = deep_predict(train, test, kind, cfg, validation=validation)
     m = {**metrics(test.power_w.to_numpy(), pred), **flight_metrics(test, pred), "algorithm": name, "algorithm_name": ALGORITHMS[name]["name"], "reference": ALGORITHMS[name]["source"]}
-    out = test[["flight", "route", "dt_seconds", "power_w", "time"]].copy(); out["predicted_power_w"] = pred; out["actual_energy_wh"] = out.power_w * out.dt_seconds / 3600; out["predicted_energy_wh"] = out.predicted_power_w * out.dt_seconds / 3600; out.to_csv(cfg.prediction_csv, index=False, encoding="utf-8")
+    out = test[["flight", "route", "dt_seconds", "power_w", "time_s"]].copy().rename(columns={"time_s": "time"}); out["predicted_power_w"] = pred; out["actual_energy_wh"] = out.power_w * out.dt_seconds / 3600; out["predicted_energy_wh"] = out.predicted_power_w * out.dt_seconds / 3600; out.to_csv(cfg.prediction_csv, index=False, encoding="utf-8")
     summary = out.groupby("flight", sort=True).agg(actual_energy_wh=("actual_energy_wh", "sum"), predicted_energy_wh=("predicted_energy_wh", "sum"), rows=("flight", "size")).reset_index(); summary["energy_error_wh"] = summary.predicted_energy_wh - summary.actual_energy_wh; summary.to_csv(cfg.flight_summary_csv, index=False, encoding="utf-8")
     cfg.metrics_json.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8"); pd.DataFrame([m]).to_csv(cfg.metrics_csv, index=False, encoding="utf-8")
     plt.figure(figsize=(7, 4)); plt.scatter(test.power_w.to_numpy()[::20], pred[::20], s=3, alpha=.25); lim=max(test.power_w.max(), pred.max()); plt.plot([0, lim], [0, lim], "k--"); plt.xlabel("Measured power (W)"); plt.ylabel("Predicted power (W)"); plt.title(name); plt.tight_layout(); plt.savefig(figure_file(cfg.figure_dir, "power_scatter"), dpi=180); plt.close()
     plt.figure(figsize=(8, 4)); ids = test.flight.unique()[:3]; colors = ["#4472C4", "#ED7D31", "#70AD47"]
     for j, fid in enumerate(ids):
-        mask = test.flight.to_numpy() == fid; plt.plot(test.time.to_numpy()[mask], test.power_w.to_numpy()[mask], color=colors[j], alpha=.7, label=f"flight {fid} measured"); plt.plot(test.time.to_numpy()[mask], pred[mask], "--", color=colors[j], alpha=.7, label=f"flight {fid} predicted")
+        mask = test.flight.to_numpy() == fid; plt.plot(test.time_s.to_numpy()[mask], test.power_w.to_numpy()[mask], color=colors[j], alpha=.7, label=f"flight {fid} measured"); plt.plot(test.time_s.to_numpy()[mask], pred[mask], "--", color=colors[j], alpha=.7, label=f"flight {fid} predicted")
     plt.xlabel("Flight time (s)"); plt.ylabel("Power (W)"); plt.legend(ncol=2, fontsize=7); plt.tight_layout(); plt.savefig(figure_file(cfg.figure_dir, "flight_power_timeseries"), dpi=180); plt.close()
     plot_algorithm_diagnostics(name, test, pred, cfg)
     return m
@@ -796,7 +812,7 @@ def plot_comparison_diagnostics(result_frame: pd.DataFrame, test: pd.DataFrame, 
     if len(flight_rows) > 700:
         flight_rows = flight_rows[:700]
     fig, ax = plt.subplots(figsize=(11, 5))
-    ax.plot(test.time.to_numpy()[flight_rows], test.power_w.to_numpy()[flight_rows], color="black", linewidth=2.0, label="Measured")
+    ax.plot(test.time_s.to_numpy()[flight_rows], test.power_w.to_numpy()[flight_rows], color="black", linewidth=2.0, label="Measured")
     for name in names:
         values = diagnostic_frames[name].predicted_power_w.to_numpy()[flight_rows]
         ax.plot(test.time.to_numpy()[flight_rows], values, linewidth=1.0, alpha=.85, label=name)
@@ -895,6 +911,9 @@ def main(names=None):
         frame = pd.read_csv(cfg.metrics_csv, encoding="utf-8")
         if len(frame) != 1:
             raise ValueError(f"算法 {algorithm} 的指标文件应仅包含一行: {cfg.metrics_csv}")
+        if not cfg.prediction_csv.is_file() or len(pd.read_csv(cfg.prediction_csv, usecols=["predicted_power_w"])) != len(test):
+            # 忽略不同数据契约留下的旧结果，防止旧版本记录混入4.1测试集。
+            continue
         record = frame.iloc[0].to_dict()
         record["algorithm"] = algorithm
         record["algorithm_name"] = metadata["name"]
