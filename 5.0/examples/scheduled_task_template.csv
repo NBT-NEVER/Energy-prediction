@@ -1,0 +1,3 @@
+task_id,payload_kg,time_s,task_duration_s,planned_speed_kmh,planned_acceleration_kmhps,planned_distance_m,planned_elevation_m,planned_grade_percent,planned_heading_deg,ambient_temperature_c,planned_stop_flag
+demo,0,0,2,0,0,0,0,0,90,20,1
+demo,0,1,2,10,10,2.7778,0,0,90,20,0
