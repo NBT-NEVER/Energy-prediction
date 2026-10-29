@@ -73,6 +73,10 @@ FIGURES = {
     "multi_route_power": ROUTE_DIR / "multi_route_power_5.0.png",
     "multi_route_energy": ROUTE_DIR / "multi_route_energy_5.0.png",
     "power_confidence": PREDICTION_FIGURE_DIR / "power_confidence_interval_5.0.png",
+    "tcn_second_energy_interval": PREDICTION_FIGURE_DIR / "tcn_second_energy_interval_5.0.png",
+    "tcn_trip_energy_interval": PREDICTION_FIGURE_DIR / "tcn_trip_energy_interval_5.0.png",
+    "rls_second_energy_interval": PREDICTION_FIGURE_DIR / "rls_second_energy_interval_5.0.png",
+    "rls_final_energy_interval": PREDICTION_FIGURE_DIR / "rls_final_energy_interval_5.0.png",
     "energy_confidence": PREDICTION_FIGURE_DIR / "energy_confidence_interval_5.0.png",
     "cumulative_energy_confidence": PREDICTION_FIGURE_DIR / "cumulative_energy_confidence_interval_5.0.png",
     "dataset_split": RESULTS_FIGURE_DIR / "dataset_split_statistics_5.0.png",
@@ -114,6 +118,9 @@ WINDOW_STEPS = 20
 EPOCHS = 35
 BATCH_SIZE = 2048
 CALIBRATION_COVERAGE = 0.95
+POWER_INTERVAL_COVERAGE = 0.90
+TRAJECTORY_INTERVAL_COVERAGE = 0.90
+POWER_INTERVAL_BINS_W = (1000.0, 5000.0, 15000.0)
 RANDOM_SEED = 42
 DEVICE = "cuda"
 RLS_WINDOWS_SECONDS = (5, 10, 20)

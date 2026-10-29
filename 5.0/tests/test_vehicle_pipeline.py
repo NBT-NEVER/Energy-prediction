@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from vehicle_pipeline import ARCHITECTURE_VERSION, CausalConv1d, FEATURES, TCN, _rls_final_trajectory, _rls_predict, _split_conformal_quantile, _validate_window_coverage, _windows
-from task_api import validate_scheduled_task
+from vehicle_pipeline import ARCHITECTURE_VERSION, CausalConv1d, FEATURES, TCN, _rls_final_trajectory, _rls_online_second_predictions, _rls_predict, _split_conformal_quantile, _validate_window_coverage, _windows
+from task_api import _normalise_task, _power_interval_half_width, validate_scheduled_task
 
 
 class VehiclePipelineContractTests(unittest.TestCase):
@@ -49,9 +49,36 @@ class VehiclePipelineContractTests(unittest.TestCase):
         self.assertGreater(rows[0]["remaining_residual_variance_wh2"], 0.0)
         self.assertEqual(rows[-1]["remaining_windows"], 0)
 
+    def test_rls_second_predictions_conserve_window_energy(self):
+        frame = pd.DataFrame({"trip_id": ["a"] * 6, "actual_energy_wh": [10, 20, 30, 40, 50, 60], "predicted_energy_wh": [8, 16, 24, 32, 40, 48]})
+        result = _rls_online_second_predictions(frame, 3, 0.9, 1.0)
+        expected_windows = _rls_predict(np.array([60.0, 150.0]), np.array([48.0, 120.0]), 1, 0.9, 1.0)
+        np.testing.assert_allclose(result[:3].sum(), 48.0)
+        np.testing.assert_allclose(result[3:].sum(), expected_windows[1])
+
+    def test_rls_second_predictions_do_not_see_future_feedback(self):
+        base = pd.DataFrame({"trip_id": ["a"] * 6, "actual_energy_wh": [10, 20, 30, 40, 50, 60], "predicted_energy_wh": [8, 16, 24, 32, 40, 48]})
+        changed = base.copy(); changed.loc[3:, "actual_energy_wh"] += 1000
+        first = _rls_online_second_predictions(base, 3, 0.9, 1.0)
+        second = _rls_online_second_predictions(changed, 3, 0.9, 1.0)
+        np.testing.assert_array_equal(first[:3], second[:3])
+
     def test_split_conformal_uses_finite_sample_rank(self):
         self.assertEqual(_split_conformal_quantile(list(range(1, 21)), 0.95), 20.0)
         self.assertTrue(np.isinf(_split_conformal_quantile(list(range(1, 10)), 0.95)))
+
+    def test_power_interval_uses_prediction_magnitude_calibration_bins(self):
+        calibration = {
+            "quantile_w": 100.0,
+            "power_bins_abs_prediction_w": [1000.0, 5000.0],
+            "conditional_intervals": [
+                {"half_width_w": 10.0},
+                {"half_width_w": 20.0},
+                {"half_width_w": 30.0},
+            ],
+        }
+        widths = _power_interval_half_width(np.array([0.0, -2000.0, 8000.0]), calibration)
+        np.testing.assert_array_equal(widths, [10.0, 20.0, 30.0])
 
     def test_tcn_uses_earlier_history_with_causal_receptive_field(self):
         model = TCN(feature_count=1, channels=2, kernel_size=3, dropout=0.0).eval()
@@ -76,6 +103,14 @@ class VehiclePipelineContractTests(unittest.TestCase):
                 frame[feature] = [0, 0]
         frame["planned_speed_kmh"] = [20, 10]
         validate_scheduled_task(frame)
+
+    def test_scheduler_contract_allows_unused_dimensions_and_derives_signals(self):
+        frame = pd.DataFrame({"task_id": ["t1", "t1"], "payload_kg": [0, 0], "time_s": [0, 1], "task_duration_s": [2, 2], "planned_speed_kmh": [0, 10]})
+        validate_scheduled_task(frame)
+        normalised = _normalise_task(frame)
+        self.assertIn("planned_acceleration_kmhps", normalised)
+        self.assertIn("planned_grade_percent", normalised)
+        self.assertAlmostEqual(float(normalised.planned_acceleration_kmhps.iloc[1]), 10.0)
 
     def test_scheduler_contract_rejects_observed_power(self):
         frame = pd.DataFrame({"task_id": ["t1"], "payload_kg": [0]})

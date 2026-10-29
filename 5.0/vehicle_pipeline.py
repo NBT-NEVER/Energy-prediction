@@ -446,15 +446,24 @@ def predict_test() -> dict:
     _validate_window_coverage(test, steps, len(actual)); _validate_window_coverage(calibration, steps, len(calibration_actual))
     predicted = np.mean(seed_predictions, axis=0)
     seed_std = np.std(seed_predictions, axis=0, ddof=1) if len(seed_predictions) > 1 else np.zeros_like(predicted)
-    power_scores = []
-    cursor = 0
-    for _, part in calibration.groupby("trip_id", sort=False):
-        end = cursor + len(part)
-        calibration_mean = calibration_predictions[:, cursor:end].mean(axis=0)
-        power_scores.append(float(np.quantile(np.abs(calibration_actual[cursor:end] - calibration_mean), 0.95)))
-        cursor = end
-    power_quantile = _split_conformal_quantile(power_scores, config.CALIBRATION_COVERAGE)
-    ci_half = np.full_like(predicted, power_quantile, dtype=float)
+    calibration_mean = calibration_predictions.mean(axis=0)
+    power_scores = np.abs(calibration_actual - calibration_mean)
+    calibration_power_bins = np.digitize(np.abs(calibration_mean), config.POWER_INTERVAL_BINS_W)
+    test_power_bins = np.digitize(np.abs(predicted), config.POWER_INTERVAL_BINS_W)
+    power_interval_bins = []
+    for bin_index in range(len(config.POWER_INTERVAL_BINS_W) + 1):
+        mask = calibration_power_bins == bin_index
+        if not mask.any():
+            raise ValueError(f"预测功率区间校准档 {bin_index} 没有校准样本")
+        power_interval_bins.append({
+            "lower_abs_power_w": 0.0 if bin_index == 0 else config.POWER_INTERVAL_BINS_W[bin_index - 1],
+            "upper_abs_power_w": None if bin_index == len(config.POWER_INTERVAL_BINS_W) else config.POWER_INTERVAL_BINS_W[bin_index],
+            "half_width_w": _split_conformal_quantile(power_scores[mask].tolist(), config.POWER_INTERVAL_COVERAGE),
+            "calibration_rows": int(mask.sum()),
+        })
+    power_quantile = _split_conformal_quantile(power_scores.tolist(), config.POWER_INTERVAL_COVERAGE)
+    interval_widths = np.asarray([item["half_width_w"] for item in power_interval_bins], dtype=float)
+    ci_half = interval_widths[test_power_bins]
     output = test.copy().reset_index(drop=True)
     output["actual_speed_kmh"] = output["speed_kmh"].to_numpy()
     output["input_time_s"] = output.time_s.to_numpy()
@@ -463,23 +472,50 @@ def predict_test() -> dict:
     output["power_interval_half_width_w"] = ci_half
     output["power_prediction_interval_low_w"] = predicted - ci_half
     output["power_prediction_interval_high_w"] = predicted + ci_half
-    output["power_ci95_low_w"] = output.power_prediction_interval_low_w
-    output["power_ci95_high_w"] = output.power_prediction_interval_high_w
+    output["power_pi90_low_w"] = output.power_prediction_interval_low_w
+    output["power_pi90_high_w"] = output.power_prediction_interval_high_w
     for seed_index, seed_power in enumerate(seed_predictions):
         output[f"seed_{seed_index + 1}_predicted_power_w"] = seed_power
     output["predicted_energy_wh"] = predicted * config.SAMPLE_SECONDS / 3600; output["actual_energy_wh"] = actual * config.SAMPLE_SECONDS / 3600
-    output["energy_ci95_low_wh"] = output.power_ci95_low_w * config.SAMPLE_SECONDS / 3600
-    output["energy_ci95_high_wh"] = output.power_ci95_high_w * config.SAMPLE_SECONDS / 3600
+    output["energy_pi90_low_wh"] = output.power_pi90_low_w * config.SAMPLE_SECONDS / 3600
+    output["energy_pi90_high_wh"] = output.power_pi90_high_w * config.SAMPLE_SECONDS / 3600
     output["cumulative_energy_wh"] = output.groupby("trip_id").predicted_energy_wh.cumsum()
     for seed_index in range(len(seed_predictions)):
         seed_energy_column = f"seed_{seed_index + 1}_predicted_energy_wh"
         output[seed_energy_column] = output[f"seed_{seed_index + 1}_predicted_power_w"] * config.SAMPLE_SECONDS / 3600
-    output["cumulative_energy_ci95_low_wh"] = output.groupby("trip_id").energy_ci95_low_wh.cumsum()
-    output["cumulative_energy_ci95_high_wh"] = output.groupby("trip_id").energy_ci95_high_wh.cumsum()
+    progress_grid = np.linspace(0.0, 1.0, 101)
+    calibration_residual_profiles = []
+    cursor = 0
+    for _, part in calibration.groupby("trip_id", sort=False):
+        end = cursor + len(part)
+        residual_energy = (calibration_actual[cursor:end] - calibration_mean[cursor:end]) * config.SAMPLE_SECONDS / 3600
+        residual_cumulative = np.cumsum(residual_energy)
+        source_progress = (np.arange(len(part)) + 1) / len(part)
+        calibration_residual_profiles.append(np.interp(progress_grid, source_progress, residual_cumulative, left=0.0))
+        cursor = end
+    calibration_profile_matrix = np.asarray(calibration_residual_profiles, dtype=float)
+    rank = int(np.ceil((len(calibration_profile_matrix) + 1) * config.TRAJECTORY_INTERVAL_COVERAGE))
+    if rank > len(calibration_profile_matrix):
+        raise ValueError("校准行程数量不足，无法生成所要求覆盖率的累计能耗区间")
+    cumulative_radius_grid = np.partition(np.abs(calibration_profile_matrix), rank - 1, axis=0)[rank - 1]
+    output["trip_progress"] = output.groupby("trip_id").cumcount().add(1) / output.groupby("trip_id").trip_id.transform("size")
+    output["cumulative_energy_interval_radius_wh"] = np.nan
+    for _, indices in output.groupby("trip_id", sort=False).groups.items():
+        progress = output.loc[indices, "trip_progress"].to_numpy()
+        output.loc[indices, "cumulative_energy_interval_radius_wh"] = np.interp(progress, progress_grid, cumulative_radius_grid)
+    output["cumulative_energy_pi90_low_wh"] = output.cumulative_energy_wh - output.cumulative_energy_interval_radius_wh
+    output["cumulative_energy_pi90_high_wh"] = output.cumulative_energy_wh + output.cumulative_energy_interval_radius_wh
+    calibration_trip_totals = calibration.assign(predicted_power_w=calibration_mean, actual_power_w=calibration_actual).groupby("trip_id", sort=False).agg(actual_energy_wh=("actual_power_w", lambda values: float(values.sum() * config.SAMPLE_SECONDS / 3600)), predicted_energy_wh=("predicted_power_w", lambda values: float(values.sum() * config.SAMPLE_SECONDS / 3600)))
+    tcn_trip_scores = np.abs(calibration_trip_totals.actual_energy_wh - calibration_trip_totals.predicted_energy_wh).to_numpy()
+    tcn_trip_radius = _split_conformal_quantile(tcn_trip_scores.tolist(), config.TRAJECTORY_INTERVAL_COVERAGE)
+    test_trip_predicted = output.groupby("trip_id", sort=False).predicted_energy_wh.transform("sum")
+    output["tcn_trip_energy_interval_radius_wh"] = tcn_trip_radius
+    output["tcn_trip_energy_pi90_low_wh"] = test_trip_predicted - tcn_trip_radius
+    output["tcn_trip_energy_pi90_high_wh"] = test_trip_predicted + tcn_trip_radius
     elapsed_s = output.groupby("trip_id").cumcount().add(1) * config.SAMPLE_SECONDS
     output["mean_energy_rate_wh_per_s"] = output.cumulative_energy_wh / elapsed_s
-    output["mean_energy_rate_ci95_low_wh_per_s"] = output.cumulative_energy_ci95_low_wh / elapsed_s
-    output["mean_energy_rate_ci95_high_wh_per_s"] = output.cumulative_energy_ci95_high_wh / elapsed_s
+    output["mean_energy_rate_pi90_low_wh_per_s"] = output.cumulative_energy_pi90_low_wh / elapsed_s
+    output["mean_energy_rate_pi90_high_wh_per_s"] = output.cumulative_energy_pi90_high_wh / elapsed_s
     output.to_csv(config.PREDICTIONS_CSV, index=False, encoding="utf-8")
     calibration_output = calibration.copy().reset_index(drop=True)
     calibration_output["actual_power_w"] = calibration_actual
@@ -487,10 +523,38 @@ def predict_test() -> dict:
     calibration_output["actual_energy_wh"] = calibration_output.actual_power_w * config.SAMPLE_SECONDS / 3600
     calibration_output["predicted_energy_wh"] = calibration_output.predicted_power_w * config.SAMPLE_SECONDS / 3600
     calibration_output.to_csv(config.CALIBRATION_PREDICTIONS_CSV, index=False, encoding="utf-8")
-    calibration_info = {"method": "trip-calibrated pointwise power interval", "target_coverage": config.CALIBRATION_COVERAGE, "calibration_trip_count": len(power_scores), "quantile_w": power_quantile, "score": "each calibration trip's 95th percentile of absolute per-second power residual; finite-sample quantile across trips", "interpretation": "calibrated per-second power error band; not a whole-trip simultaneous band", "finite_sample_rank": int(np.ceil((len(power_scores) + 1) * config.CALIBRATION_COVERAGE))}
+    calibration_info = {
+        "method": "pooled per-second absolute-residual split conformal interval",
+        "target_coverage": config.POWER_INTERVAL_COVERAGE,
+        "calibration_trip_count": int(calibration.trip_id.nunique()),
+        "calibration_row_count": int(len(power_scores)),
+        "quantile_w": power_quantile,
+        "power_bins_abs_prediction_w": list(config.POWER_INTERVAL_BINS_W),
+        "conditional_intervals": power_interval_bins,
+        "conditional_score": "按校准集TCN预测功率绝对值分箱，各档独立计算有限样本绝对残差分位数",
+        "score": "absolute residual of each calibration second; marginal pointwise interval, not whole-trip simultaneous coverage",
+        "interpretation": "90% marginal per-second power prediction interval; serial dependence means row count overstates independent information",
+        "finite_sample_rank": int(np.ceil((len(power_scores) + 1) * config.POWER_INTERVAL_COVERAGE)),
+        "trajectory_interval": {
+            "method": "trip-level split conformal absolute cumulative-energy residual by normalized trip progress",
+            "target_coverage": config.TRAJECTORY_INTERVAL_COVERAGE,
+            "calibration_trip_count": int(calibration.trip_id.nunique()),
+            "finite_sample_rank": rank,
+            "progress_grid": progress_grid.tolist(),
+            "radius_wh": cumulative_radius_grid.tolist(),
+            "interpretation": "90% empirical trip-level cumulative-energy band; calibrated at matching normalized progress, not obtained by summing per-second power bounds",
+        },
+        "tcn_trip_energy_interval": {
+            "method": "trip-level split conformal absolute error of offline TCN total energy",
+            "target_coverage": config.TRAJECTORY_INTERVAL_COVERAGE,
+            "calibration_trip_count": int(len(tcn_trip_scores)),
+            "radius_wh": tcn_trip_radius,
+            "interpretation": "one interval for the final total energy of an entire trip; it is not a per-second interval",
+        },
+    }
     config.POWER_INTERVAL_CALIBRATION_JSON.write_text(json.dumps(calibration_info, ensure_ascii=False, indent=2), encoding="utf-8")
-    _log_event("predict_test_complete", test_trips=int(output.trip_id.nunique()), calibration_trips=len(power_scores), prediction_rows=len(output), prediction_file=str(config.PREDICTIONS_CSV), power_interval_method=calibration_info["method"], power_interval_coverage=config.CALIBRATION_COVERAGE, power_interval_half_width_w=power_quantile)
-    return {"test_trips": int(output.trip_id.nunique()), "calibration_trips": len(power_scores), "prediction_rows": len(output), "power_interval_half_width_w": power_quantile, "predictions_file": str(config.PREDICTIONS_CSV)}
+    _log_event("predict_test_complete", test_trips=int(output.trip_id.nunique()), calibration_trips=int(calibration.trip_id.nunique()), prediction_rows=len(output), prediction_file=str(config.PREDICTIONS_CSV), power_interval_method=calibration_info["method"], power_interval_coverage=config.POWER_INTERVAL_COVERAGE, power_interval_pooled_half_width_w=power_quantile, power_interval_conditional_bins=power_interval_bins)
+    return {"test_trips": int(output.trip_id.nunique()), "calibration_trips": int(calibration.trip_id.nunique()), "prediction_rows": len(output), "power_interval_coverage": config.POWER_INTERVAL_COVERAGE, "power_interval_pooled_half_width_w": power_quantile, "power_interval_conditional_bins": power_interval_bins, "predictions_file": str(config.PREDICTIONS_CSV)}
 
 
 def _rls_predict(actual: np.ndarray, baseline: np.ndarray, window_size: int, forgetting: float, covariance: float) -> np.ndarray:
@@ -505,7 +569,7 @@ def _rls_predict(actual: np.ndarray, baseline: np.ndarray, window_size: int, for
     return np.asarray(output)
 
 
-def _rls_final_trajectory(trip_id: str, actual: np.ndarray, baseline: np.ndarray, window_size: int, forgetting: float, covariance: float, residual_variance_prior: float = 0.0) -> list[dict]:
+def _rls_final_trajectory(trip_id: str, actual: np.ndarray, baseline: np.ndarray, window_size: int, forgetting: float, covariance: float, residual_variance_prior: float = 0.0, include_prior: bool = False) -> list[dict]:
     """功能: 回放逐窗口RLS反馈并重算整段最终能耗预测。
     参数: trip_id为行程标识，actual/baseline为秒级能量，window_size为反馈窗口点数，forgetting/covariance为递推参数。
     返回: 每次反馈后的已观测能量、最终能耗估计、剩余参数方差和真实终值记录。
@@ -517,6 +581,25 @@ def _rls_final_trajectory(trip_id: str, actual: np.ndarray, baseline: np.ndarray
     theta = np.array([0.0, 1.0]); covariance_matrix = covariance * np.eye(2)
     observed_energy = 0.0; records = []; count = len(actual_windows)
     residual_variance = max(float(residual_variance_prior), 0.0)
+    def snapshot(completed_windows: int, progress: float, remaining: np.ndarray) -> dict:
+        remaining_features = np.column_stack([np.ones(len(remaining)), remaining]) if len(remaining) else np.empty((0, 2))
+        remaining_prediction = remaining_features @ theta if len(remaining) else np.empty(0)
+        sum_features = remaining_features.sum(axis=0)
+        # RLS递推矩阵是逆信息矩阵；乘创新方差后才是能量预测的参数方差。
+        parameter_variance = residual_variance * float(sum_features @ covariance_matrix @ sum_features) if len(remaining) else 0.0
+        residual_prediction_variance = len(remaining) * residual_variance
+        return {"trip_id": str(trip_id), "completed_windows": completed_windows, "total_windows": count,
+                "remaining_windows": len(remaining), "progress": progress, "observed_energy_wh": observed_energy,
+                "predicted_remaining_energy_wh": float(remaining_prediction.sum()),
+                "predicted_final_energy_wh": observed_energy + float(remaining_prediction.sum()),
+                "actual_final_energy_wh": float(actual_windows.sum()),
+                "parameter_variance_wh2": max(parameter_variance, 0.0),
+                "remaining_residual_variance_wh2": max(residual_prediction_variance, 0.0),
+                "baseline_final_energy_wh": float(baseline_windows.sum())}
+
+    # completed_windows=0 is the deploy-time prior: no measured feedback has arrived.
+    if include_prior:
+        records.append(snapshot(0, 0.0, baseline_windows))
     for index, (actual_window, baseline_window) in enumerate(zip(actual_windows, baseline_windows)):
         phi = np.array([1.0, baseline_window])
         prediction_before_feedback = float(phi @ theta)
@@ -527,17 +610,11 @@ def _rls_final_trajectory(trip_id: str, actual: np.ndarray, baseline: np.ndarray
         residual_variance = 0.9 * residual_variance + 0.1 * innovation ** 2
         observed_energy += float(actual_window)
         remaining = baseline_windows[index + 1:]
-        remaining_features = np.column_stack([np.ones(len(remaining)), remaining]) if len(remaining) else np.empty((0, 2))
-        remaining_prediction = remaining_features @ theta if len(remaining) else np.empty(0)
-        sum_features = remaining_features.sum(axis=0)
-        parameter_variance = float(sum_features @ covariance_matrix @ sum_features) if len(remaining) else 0.0
-        residual_prediction_variance = len(remaining) * residual_variance
-        final_prediction = observed_energy + float(remaining_prediction.sum())
-        records.append({"trip_id": str(trip_id), "completed_windows": index + 1, "total_windows": count, "remaining_windows": len(remaining), "progress": (index + 1) / count, "observed_energy_wh": observed_energy, "predicted_remaining_energy_wh": float(remaining_prediction.sum()), "predicted_final_energy_wh": final_prediction, "actual_final_energy_wh": float(actual_windows.sum()), "parameter_variance_wh2": max(parameter_variance, 0.0), "remaining_residual_variance_wh2": max(residual_prediction_variance, 0.0), "baseline_final_energy_wh": float(baseline_windows.sum())})
+        records.append(snapshot(index + 1, (index + 1) / count, remaining))
     return records
 
 
-def _rls_trajectory_for_frame(frame: pd.DataFrame, window_size: int, forgetting: float, covariance: float, residual_variance_prior: float = 0.0) -> pd.DataFrame:
+def _rls_trajectory_for_frame(frame: pd.DataFrame, window_size: int, forgetting: float, covariance: float, residual_variance_prior: float = 0.0, include_prior: bool = True) -> pd.DataFrame:
     """功能: 将秒级实测和预测能量逐行程聚合并执行在线RLS回放。
     参数: frame含trip_id、actual_energy_wh和predicted_energy_wh，其他参数为RLS配置。
     返回: 所有行程每个反馈点的整段能耗估计轨迹。
@@ -545,8 +622,63 @@ def _rls_trajectory_for_frame(frame: pd.DataFrame, window_size: int, forgetting:
     """
     records = []
     for trip_id, part in frame.groupby("trip_id", sort=False):
-        records.extend(_rls_final_trajectory(trip_id, part.actual_energy_wh.to_numpy(), part.predicted_energy_wh.to_numpy(), window_size, forgetting, covariance, residual_variance_prior))
+        records.extend(_rls_final_trajectory(trip_id, part.actual_energy_wh.to_numpy(), part.predicted_energy_wh.to_numpy(), window_size, forgetting, covariance, residual_variance_prior, include_prior=include_prior))
     return pd.DataFrame(records)
+
+
+def _rls_online_second_predictions(frame: pd.DataFrame, window_size: int, forgetting: float, covariance: float) -> np.ndarray:
+    """功能: 在每个完整窗口反馈后更新RLS，并输出窗口内因果秒级能耗预测。
+    参数: frame含trip_id、actual_energy_wh和predicted_energy_wh，其他参数为RLS配置。
+    返回: 与输入行顺序一致的在线校正秒级能耗预测数组。
+    调用位置: evaluate_and_plot。
+    """
+    predictions = np.empty(len(frame), dtype=float)
+    cursor = 0
+    for _, part in frame.groupby("trip_id", sort=False):
+        actual = part.actual_energy_wh.to_numpy(float)
+        baseline = part.predicted_energy_wh.to_numpy(float)
+        theta = np.array([0.0, 1.0])
+        covariance_matrix = covariance * np.eye(2)
+        for start in range(0, len(part), window_size):
+            end = min(start + window_size, len(part))
+            window_base = baseline[start:end]
+            # theta[0] is a window-level Wh offset; distribute it over seconds so
+            # the second-level predictions sum exactly to the window prediction.
+            predictions[cursor + start:cursor + end] = theta[0] / max(end - start, 1) + theta[1] * window_base
+            phi = np.array([1.0, float(window_base.sum())])
+            actual_window = float(actual[start:end].sum())
+            innovation = actual_window - float(phi @ theta)
+            gain = covariance_matrix @ phi / (forgetting + phi @ covariance_matrix @ phi)
+            theta = theta + gain * innovation
+            covariance_matrix = (covariance_matrix - np.outer(gain, phi) @ covariance_matrix) / forgetting
+        cursor += len(part)
+    return predictions
+
+
+def _calibrate_rls_progress(calibration: pd.DataFrame, target: pd.DataFrame) -> dict:
+    """功能: 用独立行程在相同反馈进度校准最终能耗区间。
+    参数: calibration为校准回放，target为待赋予区间的测试回放。
+    返回: 逐进度校准分位数；同时向两张回放表写入区间列。
+    调用位置: evaluate_and_plot及区间测试。
+    """
+    grid = np.linspace(0.0, 1.0, 101)
+    profiles = []
+    for frame in (calibration, target):
+        frame["total_prediction_variance_wh2"] = frame.parameter_variance_wh2 + frame.remaining_residual_variance_wh2
+    for _, part in calibration.groupby("trip_id", sort=False):
+        part = part.sort_values("progress")
+        error = np.abs(part.actual_final_energy_wh - part.predicted_final_energy_wh)
+        scale = np.sqrt(np.maximum(part.total_prediction_variance_wh2.to_numpy(float), 1.0))
+        profiles.append(np.interp(grid, part.progress, error / scale))
+    quantiles = np.array([_split_conformal_quantile(values.tolist(), config.CALIBRATION_COVERAGE) for values in np.array(profiles).T])
+    if not np.isfinite(quantiles).all():
+        raise ValueError("RLS独立校准行程不足以估计目标覆盖率")
+    for frame in (calibration, target):
+        frame["progress_calibration_quantile"] = np.interp(frame.progress, grid, quantiles)
+        frame["interval_radius_wh"] = np.where(frame.remaining_windows > 0, frame.progress_calibration_quantile * np.sqrt(np.maximum(frame.total_prediction_variance_wh2, 1.0)), 0.0)
+        frame["predicted_final_lower_wh"] = frame.predicted_final_energy_wh - frame.interval_radius_wh
+        frame["predicted_final_upper_wh"] = frame.predicted_final_energy_wh + frame.interval_radius_wh
+    return {"method": "trip-separated progress-conditional pointwise calibration; no simultaneous whole-trajectory guarantee", "nominal_coverage": config.CALIBRATION_COVERAGE, "trip_count": len(profiles), "progress_grid": grid.tolist(), "normalized_quantile": quantiles.tolist(), "quantile_max": float(quantiles.max()), "initial_radius_wh": target.loc[target.completed_windows == 0, "interval_radius_wh"].tolist()}
 
 
 def search_rls() -> dict:
@@ -578,10 +710,17 @@ def evaluate_and_plot() -> dict:
     返回: TCN、RLS和逐行程指标。
     调用位置: main的evaluate或all模式。
     """
-    pred = pd.read_csv(config.PREDICTIONS_CSV); selected = json.loads(config.SELECTED_CONFIG_JSON.read_text(encoding="utf-8")); window = int(selected["rls_window_seconds"]); ff = float(selected["rls_forgetting_factor"]); cov = float(selected["rls_initial_covariance"]); pred["window"] = pred.groupby("trip_id").cumcount() // window
+    pred = pd.read_csv(config.PREDICTIONS_CSV)
+    # evaluate may be called repeatedly; remove only fields produced by this stage.
+    derived_columns = [column for column in pred.columns if column.startswith("rls_") or column in {"window", "completed_windows"}]
+    pred = pred.drop(columns=derived_columns, errors="ignore")
+    selected = json.loads(config.SELECTED_CONFIG_JSON.read_text(encoding="utf-8")); window = int(selected["rls_window_seconds"]); ff = float(selected["rls_forgetting_factor"]); cov = float(selected["rls_initial_covariance"]); pred["window"] = pred.groupby("trip_id").cumcount() // window
     windows = pred.groupby(["trip_id", "window"], as_index=False).agg(actual_energy_wh=("actual_energy_wh", "sum"), predicted_energy_wh=("predicted_energy_wh", "sum")); corrected = []
     for _, part in windows.groupby("trip_id", sort=False): corrected.extend(_rls_predict(part.actual_energy_wh.to_numpy(), part.predicted_energy_wh.to_numpy(), 1, ff, cov).tolist())
-    windows["rls_energy_wh"] = corrected; windows.to_csv(config.RLS_WINDOWS_CSV, index=False, encoding="utf-8")
+    windows["rls_energy_wh"] = corrected
+    window_counts = pred.groupby(["trip_id", "window"], as_index=False).size().rename(columns={"size": "window_seconds"})
+    windows = windows.merge(window_counts, on=["trip_id", "window"], how="left")
+    windows.to_csv(config.RLS_WINDOWS_CSV, index=False, encoding="utf-8")
     validation = pd.read_csv(config.VAL_CSV)
     checkpoint = torch.load(config.MODEL_FILE, map_location="cpu", weights_only=False)
     validation_seed_predictions, validation_actual = _seed_predictions(validation, checkpoint)
@@ -598,29 +737,57 @@ def evaluate_and_plot() -> dict:
     test_trajectory = _rls_trajectory_for_frame(pred, window, ff, cov, residual_variance_prior)
     calibration = pd.read_csv(config.CALIBRATION_PREDICTIONS_CSV)
     calibration_trajectory = _rls_trajectory_for_frame(calibration, window, ff, cov, residual_variance_prior)
-    calibration_trajectory["total_prediction_variance_wh2"] = calibration_trajectory.parameter_variance_wh2 + calibration_trajectory.remaining_residual_variance_wh2
-    calibration_trajectory["normalized_final_error"] = np.abs(calibration_trajectory.actual_final_energy_wh - calibration_trajectory.predicted_final_energy_wh) / np.sqrt(np.maximum(calibration_trajectory.total_prediction_variance_wh2, 1.0))
-    calibration_trip_scores = calibration_trajectory.groupby("trip_id").normalized_final_error.max().tolist()
-    rls_quantile = _split_conformal_quantile(calibration_trip_scores, config.CALIBRATION_COVERAGE)
-    test_trajectory["total_prediction_variance_wh2"] = test_trajectory.parameter_variance_wh2 + test_trajectory.remaining_residual_variance_wh2
-    test_trajectory["interval_radius_wh"] = np.where(test_trajectory.remaining_windows > 0, rls_quantile * np.sqrt(np.maximum(test_trajectory.total_prediction_variance_wh2, 1.0)), 0.0)
-    test_trajectory["predicted_final_lower_wh"] = test_trajectory.predicted_final_energy_wh - test_trajectory.interval_radius_wh
-    test_trajectory["predicted_final_upper_wh"] = test_trajectory.predicted_final_energy_wh + test_trajectory.interval_radius_wh
+    calibration["rls_second_energy_wh"] = _rls_online_second_predictions(calibration, window, ff, cov)
+    rls_second_interval_radius_wh = _split_conformal_quantile(np.abs(calibration.actual_energy_wh - calibration.rls_second_energy_wh).tolist(), config.POWER_INTERVAL_COVERAGE)
+    pred["rls_second_energy_wh"] = _rls_online_second_predictions(pred, window, ff, cov)
+    pred["rls_window_seconds"] = pred.groupby(["trip_id", "window"], sort=False).trip_id.transform("size")
+    pred["rls_window_energy_wh"] = pred.groupby(["trip_id", "window"], sort=False).rls_second_energy_wh.transform("sum")
+    pred["rls_second_energy_interval_radius_wh"] = rls_second_interval_radius_wh
+    pred["rls_second_energy_pi90_low_wh"] = pred.rls_second_energy_wh - pred.rls_second_energy_interval_radius_wh
+    pred["rls_second_energy_pi90_high_wh"] = pred.rls_second_energy_wh + pred.rls_second_energy_interval_radius_wh
+    rls_interval_calibration = _calibrate_rls_progress(calibration_trajectory, test_trajectory)
+    rls_quantile = float(rls_interval_calibration["quantile_max"])
+    # A row in window k can only use feedback from windows < k.  The trajectory
+    # contains the deploy-time prior at completed_windows=0 for the first window.
+    pred["completed_windows"] = pred["window"]
+    test_trajectory["trip_id"] = test_trajectory["trip_id"].astype(str)
+    pred["trip_id"] = pred["trip_id"].astype(str)
+    pred = pred.merge(test_trajectory[["trip_id", "completed_windows", "predicted_final_energy_wh", "predicted_final_lower_wh", "predicted_final_upper_wh"]], on=["trip_id", "completed_windows"], how="left", validate="many_to_one")
+    pred.rename(columns={"predicted_final_energy_wh": "rls_final_energy_wh", "predicted_final_lower_wh": "rls_final_energy_pi95_low_wh", "predicted_final_upper_wh": "rls_final_energy_pi95_high_wh"}, inplace=True)
+    pred.drop(columns=["completed_windows"], inplace=True)
+    pred["rls_final_energy_interval_radius_wh"] = (pred.rls_final_energy_pi95_high_wh - pred.rls_final_energy_pi95_low_wh) / 2
+    pred.to_csv(config.PREDICTIONS_CSV, index=False, encoding="utf-8")
     test_trajectory.to_csv(config.RLS_TRAJECTORY_CSV, index=False, encoding="utf-8")
     calibration_trajectory.to_csv(config.RLS_CALIBRATION_REPLAY_CSV, index=False, encoding="utf-8")
-    trips = windows.groupby("trip_id", as_index=False)[["actual_energy_wh", "predicted_energy_wh", "rls_energy_wh"]].sum(); pred["distance_km"] = np.maximum(pred.actual_speed_kmh, 0) * config.SAMPLE_SECONDS / 3600; distance = pred.groupby("trip_id", as_index=False).distance_km.sum(); trips = trips.merge(distance, on="trip_id"); trips["actual_wh_per_km"] = trips.actual_energy_wh / trips.distance_km.clip(lower=.01); trips["tcn_wh_per_km"] = trips.predicted_energy_wh / trips.distance_km.clip(lower=.01); trips["rls_wh_per_km"] = trips.rls_energy_wh / trips.distance_km.clip(lower=.01); trips.to_csv(config.TRIP_METRICS_CSV, index=False, encoding="utf-8")
+    trips = windows.groupby("trip_id", as_index=False)[["actual_energy_wh", "predicted_energy_wh", "rls_energy_wh"]].sum()
+    trips["trip_id"] = trips["trip_id"].astype(str)
+    trip_interval = pred.groupby("trip_id", as_index=False).agg(tcn_trip_energy_interval_radius_wh=("tcn_trip_energy_interval_radius_wh", "first"), tcn_trip_energy_pi90_low_wh=("tcn_trip_energy_pi90_low_wh", "first"), tcn_trip_energy_pi90_high_wh=("tcn_trip_energy_pi90_high_wh", "first"), rls_final_energy_interval_radius_wh=("rls_final_energy_interval_radius_wh", "first"), rls_final_energy_pi95_low_wh=("rls_final_energy_pi95_low_wh", "first"), rls_final_energy_pi95_high_wh=("rls_final_energy_pi95_high_wh", "first"))
+    trips = trips.merge(trip_interval, on="trip_id", how="left")
+    pred["distance_km"] = np.maximum(pred.actual_speed_kmh, 0) * config.SAMPLE_SECONDS / 3600; distance = pred.groupby("trip_id", as_index=False).distance_km.sum(); trips = trips.merge(distance, on="trip_id"); trips["actual_wh_per_km"] = trips.actual_energy_wh / trips.distance_km.clip(lower=.01); trips["tcn_wh_per_km"] = trips.predicted_energy_wh / trips.distance_km.clip(lower=.01); trips["rls_wh_per_km"] = trips.rls_energy_wh / trips.distance_km.clip(lower=.01); trips.to_csv(config.TRIP_METRICS_CSV, index=False, encoding="utf-8")
     def metric(a, b):
         e = a - b; return {"mae_wh": float(np.mean(np.abs(e))), "rmse_wh": float(np.sqrt(np.mean(e ** 2))), "mape_percent": float(np.mean(np.abs(e) / np.maximum(np.abs(a), 1e-3)) * 100), "wape_percent": _wape(a, b)}
     power_wape = _wape(pred.actual_power_w.to_numpy(), pred.predicted_power_w.to_numpy())
     power_point_coverage = float(((pred.actual_power_w >= pred.power_prediction_interval_low_w) & (pred.actual_power_w <= pred.power_prediction_interval_high_w)).mean() * 100)
     power_trip_coverage = float(pred.groupby("trip_id").apply(lambda part: ((part.actual_power_w >= part.power_prediction_interval_low_w) & (part.actual_power_w <= part.power_prediction_interval_high_w)).all()).mean() * 100)
+    power_bin_ids = np.digitize(np.abs(pred.predicted_power_w.to_numpy()), config.POWER_INTERVAL_BINS_W)
+    power_bin_coverage = {}
+    for bin_index in range(len(config.POWER_INTERVAL_BINS_W) + 1):
+        mask = power_bin_ids == bin_index
+        low = 0.0 if bin_index == 0 else config.POWER_INTERVAL_BINS_W[bin_index - 1]
+        high = None if bin_index == len(config.POWER_INTERVAL_BINS_W) else config.POWER_INTERVAL_BINS_W[bin_index]
+        if mask.any():
+            coverage = float(((pred.actual_power_w.to_numpy()[mask] >= pred.power_prediction_interval_low_w.to_numpy()[mask]) & (pred.actual_power_w.to_numpy()[mask] <= pred.power_prediction_interval_high_w.to_numpy()[mask])).mean() * 100)
+            power_bin_coverage[f"{low:g}_to_{'inf' if high is None else f'{high:g}'}_w"] = {"count": int(mask.sum()), "coverage_percent": coverage}
+    cumulative_coverage = float(((pred.actual_energy_wh.groupby(pred.trip_id).cumsum() >= pred.cumulative_energy_pi90_low_wh) & (pred.actual_energy_wh.groupby(pred.trip_id).cumsum() <= pred.cumulative_energy_pi90_high_wh)).mean() * 100)
+    tcn_trip_coverage = float(((trips.actual_energy_wh >= trips.tcn_trip_energy_pi90_low_wh) & (trips.actual_energy_wh <= trips.tcn_trip_energy_pi90_high_wh)).mean() * 100)
+    rls_second_coverage = float(((pred.actual_energy_wh >= pred.rls_second_energy_pi90_low_wh) & (pred.actual_energy_wh <= pred.rls_second_energy_pi90_high_wh)).mean() * 100)
     online_rls = test_trajectory[test_trajectory.progress < 1.0]
     rls_coverage = float(((online_rls.actual_final_energy_wh >= online_rls.predicted_final_lower_wh) & (online_rls.actual_final_energy_wh <= online_rls.predicted_final_upper_wh)).mean() * 100) if len(online_rls) else float("nan")
     windows["tcn_abs_error"] = np.abs(windows.actual_energy_wh - windows.predicted_energy_wh)
     windows["rls_abs_error"] = np.abs(windows.actual_energy_wh - windows.rls_energy_wh)
-    metrics = {"tcn": metric(trips.actual_energy_wh.to_numpy(), trips.predicted_energy_wh.to_numpy()), "tcn_rls": metric(trips.actual_energy_wh.to_numpy(), trips.rls_energy_wh.to_numpy()), "trip_count": len(trips), "window_count": len(windows), "prediction_rows": len(pred), "power_wape_percent": power_wape, "window_energy_wape_percent": _wape(windows.actual_energy_wh.to_numpy(), windows.predicted_energy_wh.to_numpy()), "rls_window_energy_wape_percent": _wape(windows.actual_energy_wh.to_numpy(), windows.rls_energy_wh.to_numpy()), "prediction_intervals": {"nominal_coverage": config.CALIBRATION_COVERAGE, "power_method": "trip-calibrated pointwise interval from each calibration trip's 95th-percentile absolute per-second residual", "power_interval_half_width_w": float(pred.power_interval_half_width_w.iloc[0]), "power_point_empirical_coverage_percent": power_point_coverage, "power_whole_trip_empirical_coverage_percent": power_trip_coverage, "power_interval_unit": "逐秒功率误差；不是整条行程同时覆盖区间", "rls_method": "independent-trip conformal calibration of online final-energy errors using remaining-error variance plus RLS parameter covariance", "rls_online_final_energy_empirical_coverage_percent": rls_coverage, "rls_online_snapshot_count": int(len(online_rls)), "rls_calibration_trip_count": int(calibration_trajectory.trip_id.nunique()), "rls_calibration_quantile": rls_quantile, "rls_validation_residual_variance_prior_wh2": residual_variance_prior, "rls_terminal_feedback_excluded": True}, "selected_config": selected, "wh_per_km": {"actual_mean": float(trips.actual_wh_per_km.mean()), "tcn_mean": float(trips.tcn_wh_per_km.mean()), "rls_mean": float(trips.rls_wh_per_km.mean())}}
+    metrics = {"tcn": metric(trips.actual_energy_wh.to_numpy(), trips.predicted_energy_wh.to_numpy()), "tcn_rls": metric(trips.actual_energy_wh.to_numpy(), trips.rls_energy_wh.to_numpy()), "trip_count": len(trips), "window_count": len(windows), "prediction_rows": len(pred), "power_wape_percent": power_wape, "window_energy_wape_percent": _wape(windows.actual_energy_wh.to_numpy(), windows.predicted_energy_wh.to_numpy()), "rls_window_energy_wape_percent": _wape(windows.actual_energy_wh.to_numpy(), windows.rls_energy_wh.to_numpy()), "prediction_intervals": {"power_nominal_coverage": config.POWER_INTERVAL_COVERAGE, "power_method": "calibration-trip split conformal absolute residual quantiles stratified by absolute predicted power; marginal pointwise bands", "power_interval_half_width_median_w": float(pred.power_interval_half_width_w.median()), "power_interval_half_width_pooled_w": float(json.loads(config.POWER_INTERVAL_CALIBRATION_JSON.read_text(encoding="utf-8"))["quantile_w"]), "power_point_empirical_coverage_percent": power_point_coverage, "power_conditional_bin_coverage": power_bin_coverage, "power_whole_trip_empirical_coverage_percent": power_trip_coverage, "power_interval_unit": "逐秒功率边际误差；不是整条行程同时覆盖区间", "tcn_second_energy_nominal_coverage": config.POWER_INTERVAL_COVERAGE, "tcn_second_energy_coverage_percent": power_point_coverage, "tcn_second_energy_interval_unit": "每秒电能，Wh；由逐秒功率区间乘以1秒换算", "tcn_cumulative_energy_nominal_coverage": config.TRAJECTORY_INTERVAL_COVERAGE, "tcn_cumulative_energy_method": "calibration-trip absolute cumulative-energy residual at matched normalized trip progress", "tcn_cumulative_energy_coverage_percent": cumulative_coverage, "tcn_cumulative_energy_interval_width_median_wh": float((pred.cumulative_energy_pi90_high_wh - pred.cumulative_energy_pi90_low_wh).median()), "tcn_trip_energy_nominal_coverage": config.TRAJECTORY_INTERVAL_COVERAGE, "tcn_trip_energy_coverage_percent": tcn_trip_coverage, "tcn_trip_energy_interval_width_median_wh": float((trips.tcn_trip_energy_pi90_high_wh - trips.tcn_trip_energy_pi90_low_wh).median()), "tcn_trip_energy_interval_unit": "整个测试行程最终净能耗，Wh；每条行程只有一个区间", "rls_second_energy_nominal_coverage": config.POWER_INTERVAL_COVERAGE, "rls_second_energy_coverage_percent": rls_second_coverage, "rls_second_energy_interval_width_median_wh": float(2 * rls_second_interval_radius_wh), "rls_second_energy_interval_unit": "在线RLS按5秒反馈窗口校正后，映射到窗口内每秒的等效净能耗，Wh", "rls_nominal_coverage": config.CALIBRATION_COVERAGE, "rls_method": "independent-trip progress-conditional conformal calibration of online final-energy errors using remaining-error variance plus RLS parameter covariance", "rls_online_final_energy_empirical_coverage_percent": rls_coverage, "rls_online_final_energy_interval_width_median_wh": float(test_trajectory.interval_radius_wh.median() * 2), "rls_online_snapshot_count": int(len(online_rls)), "rls_calibration_trip_count": int(calibration_trajectory.trip_id.nunique()), "rls_calibration_quantile_max": rls_quantile, "rls_terminal_feedback_excluded": True}, "selected_config": selected, "wh_per_km": {"actual_mean": float(trips.actual_wh_per_km.mean()), "tcn_mean": float(trips.tcn_wh_per_km.mean()), "rls_mean": float(trips.rls_wh_per_km.mean())}}
     config.METRICS_JSON.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
-    calibration_summary = {"nominal_coverage": config.CALIBRATION_COVERAGE, "power_point_coverage_percent": power_point_coverage, "power_whole_trip_coverage_percent": power_trip_coverage, "rls_online_final_energy_coverage_percent": rls_coverage, "power_calibration_trips": int(calibration.trip_id.nunique()), "rls_calibration_trips": int(calibration_trajectory.trip_id.nunique()), "rls_normalized_trip_quantile": rls_quantile, "rls_residual_variance_prior_wh2": residual_variance_prior, "rls_interval_components": ["剩余窗口预测误差方差", "RLS参数协方差"]}
+    calibration_summary = {"tcn_second_energy": {"nominal_coverage": config.POWER_INTERVAL_COVERAGE, "coverage_percent": power_point_coverage, "unit": "每秒净能耗 Wh", "interval_source": "TCN逐秒功率区间乘以1秒"}, "tcn_trip_energy": {"nominal_coverage": config.TRAJECTORY_INTERVAL_COVERAGE, "coverage_percent": tcn_trip_coverage, "median_width_wh": float((trips.tcn_trip_energy_pi90_high_wh - trips.tcn_trip_energy_pi90_low_wh).median()), "unit": "整段最终净能耗 Wh", "interval_source": "独立校准行程最终能耗绝对误差"}, "tcn_cumulative_energy": {"nominal_coverage": config.TRAJECTORY_INTERVAL_COVERAGE, "coverage_percent": cumulative_coverage, "median_width_wh": float((pred.cumulative_energy_pi90_high_wh - pred.cumulative_energy_pi90_low_wh).median()), "unit": "截至当前时刻累计净能耗 Wh", "interval_source": "独立校准行程累计误差按相对进度校准"}, "rls_second_energy": {"nominal_coverage": config.POWER_INTERVAL_COVERAGE, "coverage_percent": rls_second_coverage, "median_width_wh": float(2 * rls_second_interval_radius_wh), "unit": "RLS窗口反馈后的每秒等效净能耗 Wh", "interval_source": "独立校准行程逐秒在线RLS残差"}, "rls_final_energy": {"nominal_coverage": config.CALIBRATION_COVERAGE, "coverage_percent": rls_coverage, "median_width_wh": float(test_trajectory.interval_radius_wh.median() * 2), "unit": "已观测真实能耗加剩余预测的整段最终净能耗 Wh", "interval_source": "相同反馈进度的剩余误差与RLS参数协方差校准"}, "power_calibration_trips": int(calibration.trip_id.nunique()), "rls_calibration_trips": int(calibration_trajectory.trip_id.nunique()), "rls_normalized_trip_quantile": rls_quantile, "rls_residual_variance_prior_wh2": residual_variance_prior, "rls_interval_components": ["剩余窗口预测误差方差", "RLS参数协方差", "相同反馈进度校准"]}
     config.CALIBRATION_METRICS_JSON.write_text(json.dumps(calibration_summary, ensure_ascii=False, indent=2), encoding="utf-8")
     plot = pred[pred.trip_id == pred.trip_id.iloc[0]].copy(); plot["actual_cum"] = plot.actual_energy_wh.cumsum(); plot["pred_cum"] = plot.predicted_energy_wh.cumsum(); _plot_all(pred, plot, trips, test_trajectory)
     _log_event("evaluate_complete", trip_count=len(trips), prediction_rows=len(pred), power_wape_percent=power_wape, power_interval_coverage_percent=power_point_coverage, power_trip_coverage_percent=power_trip_coverage, rls_online_interval_coverage_percent=rls_coverage, trip_energy_wape_percent=metrics["tcn"]["wape_percent"], rls_trip_energy_wape_percent=metrics["tcn_rls"]["wape_percent"], output=str(config.METRICS_JSON))
@@ -699,7 +866,7 @@ def _plot_all(pred: pd.DataFrame, sample: pd.DataFrame, trips: pd.DataFrame, rls
     plt.figure(figsize=(10, 5.5)); plt.scatter(pred.actual_power_w, pred.predicted_power_w, s=3, alpha=.18); plt.plot([lo, hi], [lo, hi], "r--"); save_figure("power_scatter", "实测功率 (W)", "预测功率 (W)", "W", (lo, hi), (lo, hi))
     plt.figure(figsize=(10, 5.5)); plt.hist(pred.predicted_power_w - pred.actual_power_w, bins=100); save_figure("residual", "预测误差 (W)", "样本数", "W/count")
     plt.figure(figsize=(10, 5.5)); x = np.arange(len(trips)); plt.plot(x, trips.actual_energy_wh, "o-", label="实测"); plt.plot(x, trips.predicted_energy_wh, "o-", label="TCN"); plt.plot(x, trips.rls_energy_wh, "o-", label="TCN+RLS"); plt.legend(); save_figure("trip_energy", "测试行程序号", "净能耗 (Wh)", "Wh")
-    plt.figure(figsize=(10, 5.5)); plt.plot(sample.time_s, sample.actual_cum, label="实测累计能耗"); plt.plot(sample.time_s, sample.pred_cum, label="TCN累计预测"); plt.fill_between(sample.time_s, sample.cumulative_energy_ci95_low_wh, sample.cumulative_energy_ci95_high_wh, alpha=.2, label="逐秒校准功率边界积分范围"); plt.title(f"GECR真实道路行程 {sample.trip_id.iloc[0]}"); plt.legend(); save_figure("trip_trace", "时间 (s)", "累计电池侧净能耗 (Wh)", "Wh")
+    plt.figure(figsize=(10, 5.5)); plt.plot(sample.time_s, sample.actual_cum, label="实测累计能耗"); plt.plot(sample.time_s, sample.pred_cum, label="TCN累计预测"); plt.fill_between(sample.time_s, sample.cumulative_energy_pi90_low_wh, sample.cumulative_energy_pi90_high_wh, alpha=.2, label="90%行程进度校准区间"); plt.title(f"GECR真实道路行程 {sample.trip_id.iloc[0]}"); plt.legend(); save_figure("trip_trace", "时间 (s)", "累计电池侧净能耗 (Wh)", "Wh")
 
     route_summary = pred.groupby("trip_id").agg(distance_km=("distance_km", "sum"), duration_s=("time_s", "max")).sort_values("distance_km")
     route_ids = route_summary.iloc[np.linspace(0, len(route_summary) - 1, min(8, len(route_summary))).round().astype(int)].index.tolist()
@@ -726,11 +893,41 @@ def _plot_all(pred: pd.DataFrame, sample: pd.DataFrame, trips: pd.DataFrame, rls
     plt.legend(title="trip / series", ncol=4, fontsize=7); save_figure("multi_route_energy", "行程相对进度", "累计净能耗 (Wh)", "Wh", (0, 1))
 
     sample = sample.copy()
-    plt.figure(figsize=(11, 5.5)); plt.plot(sample.time_s, sample.actual_power_w, color="black", linewidth=.7, alpha=.65, label="实测功率"); plt.plot(sample.time_s, sample.predicted_power_w, color="tab:blue", linewidth=1.0, label="TCN预测均值"); plt.fill_between(sample.time_s, sample.power_ci95_low_w, sample.power_ci95_high_w, color="tab:blue", alpha=.2, label="95%种子区间"); plt.legend(); save_figure("power_confidence", "时间 (s)", "功率 (W)", "W")
+    plt.figure(figsize=(11, 5.5)); plt.plot(sample.time_s, sample.actual_power_w, color="black", linewidth=.7, alpha=.65, label="实测功率"); plt.plot(sample.time_s, sample.predicted_power_w, color="tab:blue", linewidth=1.0, label="TCN预测均值"); plt.fill_between(sample.time_s, sample.power_prediction_interval_low_w, sample.power_prediction_interval_high_w, color="tab:blue", alpha=.2, label="90%逐秒边际预测区间"); plt.legend(); save_figure("power_confidence", "时间 (s)", "功率 (W)", "W")
 
-    plt.figure(figsize=(11, 5.5)); plt.plot(sample.time_s, sample.mean_energy_rate_wh_per_s * 3600, label="运行平均功率估计"); plt.fill_between(sample.time_s, sample.mean_energy_rate_ci95_low_wh_per_s * 3600, sample.mean_energy_rate_ci95_high_wh_per_s * 3600, alpha=.22, label="95%运行均值种子区间"); plt.legend(); save_figure("energy_confidence", "时间 (s)", "运行平均功率等效值 (W)", "W")
+    rate_sample = sample[sample.time_s >= 30].copy()
+    plt.figure(figsize=(11, 5.5)); plt.plot(rate_sample.time_s, rate_sample.mean_energy_rate_wh_per_s * 3600, label="运行平均功率等效值"); plt.fill_between(rate_sample.time_s, rate_sample.mean_energy_rate_pi90_low_wh_per_s * 3600, rate_sample.mean_energy_rate_pi90_high_wh_per_s * 3600, alpha=.22, label="90%累计误差校准区间"); plt.legend(); save_figure("energy_confidence", "时间 (s，显示范围从30 s开始)", "运行平均功率等效值 (W)", "W")
 
-    plt.figure(figsize=(11, 5.5)); plt.plot(sample.time_s, sample.pred_cum, label="累计能耗预测"); plt.plot(sample.time_s, sample.actual_cum, color="black", alpha=.65, label="实测累计能耗"); plt.fill_between(sample.time_s, sample.cumulative_energy_ci95_low_wh, sample.cumulative_energy_ci95_high_wh, alpha=.2, label="逐秒校准功率边界积分范围"); plt.legend(); save_figure("cumulative_energy_confidence", "时间 (s)", "累计净能耗 (Wh)", "Wh")
+    plt.figure(figsize=(11, 5.5)); plt.plot(sample.time_s, sample.pred_cum, label="TCN累计能耗预测"); plt.plot(sample.time_s, sample.actual_cum, color="black", alpha=.65, label="实测累计能耗"); plt.fill_between(sample.time_s, sample.cumulative_energy_pi90_low_wh, sample.cumulative_energy_pi90_high_wh, alpha=.2, label="90%行程进度校准区间"); plt.legend(); save_figure("cumulative_energy_confidence", "时间 (s)", "累计净能耗 (Wh)", "Wh")
+
+    # 四类区间分开展示：逐秒区间的单位是单秒净能耗Wh，整段区间的单位是整条行程最终Wh。
+    plt.figure(figsize=(11, 5.5));
+    plt.plot(sample.time_s, sample.actual_energy_wh, color="black", linewidth=.7, alpha=.65, label="实测每秒能耗")
+    plt.plot(sample.time_s, sample.predicted_energy_wh, color="tab:blue", linewidth=1.0, label="TCN离线预测")
+    plt.fill_between(sample.time_s, sample.energy_pi90_low_wh, sample.energy_pi90_high_wh, color="tab:blue", alpha=.2, label="TCN逐秒90%预测区间")
+    plt.legend(); save_figure("tcn_second_energy_interval", "时间 (s)", "每秒净能耗 (Wh)", "Wh")
+
+    plt.figure(figsize=(11, 5.5));
+    x = np.arange(len(trips)); center = trips.predicted_energy_wh.to_numpy(float)
+    lower = center - trips.tcn_trip_energy_pi90_low_wh.to_numpy(float); upper = trips.tcn_trip_energy_pi90_high_wh.to_numpy(float) - center
+    plt.errorbar(x, center, yerr=np.vstack([lower, upper]), fmt="o", color="tab:blue", capsize=3, label="TCN离线整段预测及90%区间")
+    plt.plot(x, trips.actual_energy_wh, "k.-", label="真实整段能耗")
+    plt.xlabel("测试行程序号"); plt.ylabel("整段最终净能耗 (Wh)"); plt.legend(); save_figure("tcn_trip_energy_interval", "测试行程序号", "整段最终净能耗 (Wh)", "Wh")
+
+    plt.figure(figsize=(11, 5.5));
+    plt.plot(sample.time_s, sample.actual_energy_wh, color="black", linewidth=.7, alpha=.65, label="实测每秒能耗")
+    plt.plot(sample.time_s, sample.rls_second_energy_wh, color="tab:orange", linewidth=1.0, label="RLS在线预测")
+    plt.fill_between(sample.time_s, sample.rls_second_energy_pi90_low_wh, sample.rls_second_energy_pi90_high_wh, color="tab:orange", alpha=.2, label="RLS逐秒90%预测区间")
+    plt.legend(); save_figure("rls_second_energy_interval", "时间 (s)", "每秒净能耗 (Wh)", "Wh")
+
+    representative_id = rls_trajectory.groupby("trip_id").size().sub(rls_trajectory.groupby("trip_id").size().median()).abs().idxmin()
+    rls_part = rls_trajectory[rls_trajectory.trip_id == representative_id].sort_values("completed_windows")
+    plt.figure(figsize=(11, 5.5));
+    plt.axhline(rls_part.baseline_final_energy_wh.iloc[0], color="tab:gray", linestyle="--", label="TCN离线整段基准")
+    plt.axhline(rls_part.actual_final_energy_wh.iloc[0], color="black", linestyle=":", label="真实整段能耗")
+    plt.plot(rls_part.progress, rls_part.predicted_final_energy_wh, color="tab:orange", marker="o", markersize=2, label="RLS在线整段预测")
+    plt.fill_between(rls_part.progress.to_numpy(float), rls_part.predicted_final_lower_wh.to_numpy(float), rls_part.predicted_final_upper_wh.to_numpy(float), color="tab:orange", alpha=.2, label="RLS整段95%预测区间")
+    plt.legend(); save_figure("rls_final_energy_interval", "已观测行程比例", "整段最终净能耗 (Wh)", "Wh", (0, 1))
 
     width_data = rls_trajectory.assign(interval_width_wh=rls_trajectory.predicted_final_upper_wh - rls_trajectory.predicted_final_lower_wh).copy()
     width_data["progress_bin"] = np.minimum((width_data.progress * 10).astype(int), 9)
