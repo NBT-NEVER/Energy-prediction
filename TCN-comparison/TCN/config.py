@@ -3,7 +3,7 @@
 # 文件名: config.py
 # 开发时间: 2026-10-30
 # 文件名: config.py
-# 功能说明: 集中管理四组TCN离线功率与能耗预测实验路径和参数
+# 功能说明: 集中管理五组TCN离线功率与能耗预测实验路径和参数
 # 版本号：1.0
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ GROUPS = {
     "B": {"name": "原始10维_统一SiLU", "use_sma": False, "activation": "silu"},
     "C": {"name": "原始10维加5维SMA_混合激活", "use_sma": True, "activation": "mixed"},
     "D": {"name": "原始10维加5维SMA_统一SiLU", "use_sma": True, "activation": "silu"},
+    "E": {"name": "原始10维加5维SMA_统一LeakyReLU(0.05)", "use_sma": True, "activation": "leaky_relu"},
 }
 
 RESAMPLE_SECONDS = 0.2
@@ -58,7 +59,7 @@ RANDOM_SEED = 42
 
 @dataclass(frozen=True)
 class ExperimentConfig:
-    """功能: 保存四组离线TCN实验的路径和超参数。
+    """功能: 保存五组离线TCN实验的路径和超参数。
     参数: 字段由默认常量或命令行覆盖项提供。
     返回: 实验配置对象。
     调用位置: main.py、train.py、evaluate.py。
@@ -89,7 +90,7 @@ class ExperimentConfig:
 
     @property
     def summary_csv(self) -> Path:
-        """功能: 返回四组汇总表路径。
+        """功能: 返回五组汇总表路径。
         参数: 无。
         返回: CSV路径。
         调用位置: evaluate.py、report.py。
@@ -144,7 +145,7 @@ class ExperimentConfig:
 
 def group_paths(cfg: ExperimentConfig, group: str) -> dict[str, Path]:
     """功能: 返回单个实验组的模型、调参、预测和指标路径。
-    参数: cfg为实验配置，group为A、B、C或D。
+    参数: cfg为实验配置，group为A、B、C、D或E。
     返回: 统一命名的路径字典。
     调用位置: train.py、evaluate.py、visualize.py。
     """

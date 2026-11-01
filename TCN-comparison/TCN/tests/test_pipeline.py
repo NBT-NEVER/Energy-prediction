@@ -112,6 +112,21 @@ class PipelineTests(unittest.TestCase):
             model = build_model(dim, (32, 32), 3, .05, activation).eval()
             self.assertEqual(model(torch.zeros(2, 3, dim)).shape, (2,))
             self.assertIsInstance(model.head[-1], torch.nn.Linear)
+        leaky = build_model(15, (32, 32), 3, .05, "leaky_relu").eval()
+        self.assertIsInstance(leaky.tcn[0].body[2], torch.nn.LeakyReLU)
+        self.assertAlmostEqual(leaky.tcn[0].body[2].negative_slope, .05)
+        self.assertIsInstance(leaky.tcn[1].body[6], torch.nn.LeakyReLU)
+        self.assertIsInstance(leaky.head[1], torch.nn.LeakyReLU)
+        self.assertFalse(any(isinstance(layer, (torch.nn.SiLU, torch.nn.ReLU)) for layer in leaky.modules()))
+        for layer in leaky.modules():
+            if isinstance(layer, torch.nn.LeakyReLU):
+                self.assertAlmostEqual(layer.negative_slope, .05)
+        # 主路与跳连各传递同一负数，融合后为两倍输入，检查残差出口斜率。
+        for block in leaky.tcn:
+            block.body = torch.nn.Identity()
+            block.skip = torch.nn.Identity()
+            negative = -torch.ones(1, 32, 3)
+            torch.testing.assert_close(block(negative), negative * .1)
         self.assertEqual(len(feature_columns(True)), 15)
 
     def test_model_path_override(self):

@@ -3,7 +3,7 @@
 # 文件名: data_utils.py
 # 开发时间: 2026-10-30
 # 文件名: data_utils.py
-# 功能说明: 构造四组TCN实验的原始特征和10步因果SMA特征
+# 功能说明: 构造五组TCN实验的原始特征和10步因果SMA特征
 # 版本号：1.0
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 # 文件名: visualize.py
 # 开发时间: 2026-10-30
 # 文件名: visualize.py
-# 功能说明: 从CSV绘制四组TCN功率、能耗、调参与训练曲线
+# 功能说明: 从CSV绘制五组TCN功率、能耗、调参与训练曲线
 # 版本号：1.0
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pandas as pd
 from config import ExperimentConfig, group_paths, figure_path
 
 
-COLORS = {"A": "#2878B5", "B": "#E98B2A", "C": "#27976E", "D": "#C8444B"}
+COLORS = {"A": "#2878B5", "B": "#E98B2A", "C": "#27976E", "D": "#C8444B", "E": "#7B61A8"}
 
 
 def setup_fonts():
@@ -138,16 +138,18 @@ def plot_results(cfg: ExperimentConfig) -> list[str]:
     ax.grid(alpha=.22)
     paths.extend(save_figure(fig, cfg, "window_search"))
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    for ax, group in zip(axes.ravel(), ("A", "B", "C", "D")):
-        if group not in groups:
-            ax.set_visible(False)
-            continue
+    ncols = 3 if len(groups) > 4 else 2
+    nrows = (len(groups) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 4.0 * nrows))
+    axes = list(axes.ravel()) if hasattr(axes, "ravel") else [axes]
+    for ax, group in zip(axes, groups):
         data = pd.read_csv(group_paths(cfg, group)["training_log"])
         ax.plot(data.epoch, data.train_loss, label="训练", color=COLORS[group])
         ax.plot(data.epoch, data.val_loss, label="验证", color="#404040", linestyle="--")
         ax.set(xlabel="Epoch", ylabel="标准化SmoothL1损失", title=f"{group} 组正式训练")
         ax.grid(alpha=.22)
         ax.legend()
+    for ax in axes[len(groups):]:
+        ax.set_visible(False)
     paths.extend(save_figure(fig, cfg, "training_loss"))
     return paths

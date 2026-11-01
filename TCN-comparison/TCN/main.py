@@ -3,7 +3,7 @@
 # 文件名: main.py
 # 开发时间: 2026-10-30
 # 文件名: main.py
-# 功能说明: 调度四组TCN离线功率与能耗预测实验
+# 功能说明: 调度五组TCN离线功率与能耗预测实验
 # 版本号：1.0
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import argparse
 import json
 import sys
 import platform
+import traceback
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -27,15 +28,15 @@ from visualize import plot_results  # 根据CSV重建结果图表
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """功能: 构造四组TCN实验命令行参数。
+    """功能: 构造五组TCN实验命令行参数。
     参数: 无。
     返回: 参数解析器。
     调用位置: main。
     """
 
-    parser = argparse.ArgumentParser(description="四组TCN离线功率和能耗预测实验")
+    parser = argparse.ArgumentParser(description="五组TCN离线功率和能耗预测实验")
     parser.add_argument("mode", nargs="?", default="all", choices=["prepare", "tune", "train", "evaluate", "plot", "report", "all"])
-    parser.add_argument("--group", choices=["A", "B", "C", "D"], default=None)
+    parser.add_argument("--group", choices=list(GROUPS), default=None)
     parser.add_argument("--device", default=None)
     parser.add_argument("--force-prepare", action="store_true")
     parser.add_argument("--tune-epochs", type=int, default=None)
@@ -99,8 +100,13 @@ def main() -> None:
     runtime = {"started_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
                "python": sys.version, "torch": torch.__version__, "cuda": torch.version.cuda,
                "gpu": torch.cuda.get_device_name() if torch.cuda.is_available() else None,
-               "platform": platform.platform(), "config": asdict(cfg)}
-    cfg.runtime_json.write_text(json.dumps(runtime, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+               "platform": platform.platform(), "config": asdict(cfg),
+               "mode": args.mode, "groups": [args.group] if args.group else list(GROUPS)}
+    if args.mode == "all" and args.group:
+        group_runtime = cfg.runtime_json.with_name(f"{cfg.runtime_json.stem}_{args.group}.json")
+        group_runtime.write_text(json.dumps(runtime, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    if (args.mode == "all" and not args.group) or not cfg.runtime_json.exists():
+        cfg.runtime_json.write_text(json.dumps(runtime, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
@@ -108,7 +114,12 @@ def main() -> None:
     with cfg.terminal_log.open("a", encoding="utf-8") as log:
         sys.stdout, sys.stderr = TerminalCapture(original_stdout, log), TerminalCapture(original_stderr, log)
         try:
+            print(f"\n[{runtime['started_at']}] START mode={args.mode} groups={','.join(runtime['groups'])}")
             run_pipeline(args, cfg)
+            print(f"[{datetime.now(ZoneInfo('Asia/Shanghai')).isoformat()}] COMPLETE mode={args.mode}")
+        except Exception:
+            traceback.print_exc()
+            raise
         finally:
             sys.stdout, sys.stderr = original_stdout, original_stderr
 

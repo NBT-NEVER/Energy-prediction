@@ -3,7 +3,7 @@
 # 文件名: train.py
 # 开发时间: 2026-10-30
 # 文件名: train.py
-# 功能说明: 完成四组TCN窗口搜索、正式训练和离线功率预测
+# 功能说明: 完成五组TCN窗口搜索、正式训练和离线功率预测
 # 版本号：1.0
 
 from __future__ import annotations
@@ -242,7 +242,7 @@ def _model_from_checkpoint(checkpoint: dict, input_dim: int) -> nn.Module:
 
 def tune_group(group: str, cfg: ExperimentConfig) -> dict:
     """功能: 对指定实验组搜索8个TCN时间窗，每个候选训练20轮。
-    参数: group为A、B、C或D，cfg为配置。
+    参数: group为A、B、C、D或E，cfg为配置。
     返回: 最优窗口和调参结果路径。
     调用位置: main.py。
     """
@@ -285,7 +285,7 @@ def tune_group(group: str, cfg: ExperimentConfig) -> dict:
 
 def train_group(group: str, cfg: ExperimentConfig) -> dict:
     """功能: 使用已选择窗口对指定实验组正式训练80轮并保存模型。
-    参数: group为A、B、C或D，cfg为配置。
+    参数: group为A、B、C、D或E，cfg为配置。
     返回: 模型路径和正式训练摘要。
     调用位置: main.py。
     """

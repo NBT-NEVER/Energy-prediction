@@ -3,7 +3,7 @@
 # 文件名: report.py
 # 开发时间: 2026-10-30
 # 文件名: report.py
-# 功能说明: 从当前实测结果生成四组参数、误差和逐图说明报告
+# 功能说明: 从当前实测结果生成五组参数、误差和逐图说明报告
 # 版本号：1.0
 
 from __future__ import annotations
@@ -54,7 +54,9 @@ def result_description(metrics):
         best = metrics.loc[metrics[metric].idxmin()]
         text.append(f"当前{title}最低的是 {best.group} 组，为 {best[metric]:.4f}%。")
     for left, right, question in (("B", "A", "统一SiLU"), ("C", "A", "增加SMA"),
-                                  ("D", "B", "SiLU条件下增加SMA"), ("D", "C", "SMA条件下统一SiLU")):
+                                  ("D", "B", "SiLU条件下增加SMA"), ("D", "C", "SMA条件下统一SiLU"),
+                                  ("E", "D", "同15维输入，统一SiLU改为统一LeakyReLU(0.05)"),
+                                  ("E", "C", "同15维输入，混合激活改为统一LeakyReLU(0.05)")):
         if left not in lookup.index or right not in lookup.index:
             continue
         base, improved = float(lookup.loc[right, "flight_energy_wape_percent"]), float(lookup.loc[left, "flight_energy_wape_percent"])
@@ -113,7 +115,7 @@ def write_reports(cfg: ExperimentConfig) -> dict:
         "按完整flight复用既有124/29/47划分，副本与来源通过SHA-256核对，划分无flight交叉。"
         "来源数据已完成0.2 s重采样和逐flight能耗守恒处理，本工程不会重新抽样或改变标签。", "",
         "原始字段顺序：`" + "`、`".join(RAW_FEATURE_COLUMNS) + "`。", "",
-        "C、D在原始10维后拼接 `" + "`、`".join(f"{c}_sma10" for c in SMA_FEATURE_COLUMNS) + "`，合计15维。"
+        "C、D、E在原始10维后拼接 `" + "`、`".join(f"{c}_sma10" for c in SMA_FEATURE_COLUMNS) + "`，合计15维。"
         "每个flight独立计算尾随10点均值，起点使用已出现点数，不补零；先计算完整任务特征再切出TCN窗口。"
         "目标仍为未经SMA的原始功率。", "",
         r"$$a_{t,j}=\frac{1}{n_t}\sum_{q=0}^{n_t-1}x_{t-q,j},\quad n_t=\min(10,t+1)$$", "",
@@ -122,10 +124,12 @@ def write_reports(cfg: ExperimentConfig) -> dict:
         "$t$：单个flight内从0开始的采样索引。", "", "$j$：选中的位置或风分量索引。", "",
         "$q$：向历史回溯的点数。", "",
         "所有输入列分别用训练集均值和标准差进行标准化；功率目标也只使用训练集统计量。"
-        "TCN输入首部不足时重复该任务首个特征行。四组逐窗口和正式训练开始前都重置种子42，"
+        "TCN输入首部不足时重复该任务首个特征行。五组逐窗口和正式训练开始前都重置种子42，"
         "避免候选顺序改变随机状态。网络采用两个残差块，通道32、32，核3，膨胀率1、2，"
         "每个块含两组因果卷积、GroupNorm(1,32)、SiLU、Dropout(0.05)。"
-        "A/C残差出口ReLU，B/D残差出口SiLU。跳连必要时使用1×1卷积。预测头为Linear(32,32)、SiLU、Linear(32,1)。", "",
+        "A/C残差出口ReLU，B/D残差出口SiLU。跳连必要时使用1×1卷积。A—D预测头为Linear(32,32)、SiLU、Linear(32,1)。"
+        "E将两残差块的四次卷积后激活、两次残差出口激活及预测头中间激活全部替换为LeakyReLU(negative_slope=0.05)，"
+        "最后一层仍为线性。E与C/D均为12641参数；E是原四组2×2设计之外的附加激活对照。", "",
         "GroupNorm会利用单个输入窗口内的时间位置统计量；本工程只构造截至目标时刻的输入窗口。"
         "不能将整段轨迹一次前向的所有时刻输出与此逐窗口计算等同。", "",
         "各组独立搜索0.6、1、2、3、4、5、8、10 s窗口，每个20轮。采用相同验证分数，"
@@ -176,7 +180,7 @@ def write_reports(cfg: ExperimentConfig) -> dict:
                                             "flight_energy_wape_percent", "flight_energy_mae_wh"]]), ""])
     lines.extend(["## C 图表与数据清单", ""])
     descriptions = {
-        "power_wape": "横轴实验组，纵轴功率WAPE（%），四种颜色分别对应A/B/C/D。来源为all_metrics.csv，不包含在线修正。",
+        "power_wape": "横轴实验组，纵轴功率WAPE（%），五种颜色分别对应A/B/C/D/E。来源为all_metrics.csv，不包含在线修正。",
         "window_energy_wape": "横轴实验组，纵轴1 s时间箱能耗WAPE（%）；来源为all_metrics.csv和各组window_energy.csv。包含截断尾窗。",
         "flight_energy_wape": "横轴实验组，纵轴flight总能耗WAPE（%）；来源为各组flight_energy.csv与all_metrics.csv。各组采用各自选定窗口。",
         "representative_power": "横轴任务时间（s），纵轴功率（W）；黑线为实际值，彩线为组别预测。代表任务按测试集时长中位位置确定，与误差无关。只能展示该任务局部拟合。",

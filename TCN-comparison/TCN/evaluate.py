@@ -3,7 +3,7 @@
 # 文件名: evaluate.py
 # 开发时间: 2026-10-30
 # 文件名: evaluate.py
-# 功能说明: 评价四组TCN在测试集上的离线功率和能耗预测
+# 功能说明: 评价五组TCN在测试集上的离线功率和能耗预测
 # 版本号：1.0
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from train import _metrics, _model_from_checkpoint, build_sequences, predict_arr
 
 def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
     """功能: 读取指定组模型并生成测试集逐时刻预测、功率和能耗指标。
-    参数: group为A、B、C或D，cfg为配置。
+    参数: group为A、B、C、D或E，cfg为配置。
     返回: 测试指标摘要。
     调用位置: main.py。
     """
@@ -94,9 +94,9 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
 
 
 def evaluate_all(cfg: ExperimentConfig, groups=None) -> pd.DataFrame:
-    """功能: 评价A、B、C、D四组并汇总结果。
+    """功能: 评价配置中的五组并汇总结果。
     参数: cfg为配置。
-    返回: 四组测试指标表。
+    返回: 五组测试指标表。
     调用位置: main.py。
     """
 
