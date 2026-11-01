@@ -3,7 +3,7 @@
 # 文件名: main.py
 # 开发时间: 2026-10-30
 # 文件名: main.py
-# 功能说明: 调度TCN加RLS四组调参、区间校准、测试评价和绘图
+# 功能说明: 调度TCN加RLS五组调参、区间校准、测试评价和绘图
 # 版本号：1.0
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     返回: 参数解析器。
     调用位置: main。
     """
-    parser = argparse.ArgumentParser(description="四组TCN加RLS和置信区间评估")
+    parser = argparse.ArgumentParser(description="五组TCN加RLS和置信区间评估")
     parser.add_argument("mode", nargs="?", default="all", choices=["prepare", "tune", "calibrate", "evaluate", "plot", "report", "all"])
     parser.add_argument("--group", choices=list(GROUPS), default=None)
     parser.add_argument("--device", default=None)
@@ -55,8 +55,12 @@ def main() -> None:
                "python": sys.version, "torch": torch.__version__, "cuda": torch.version.cuda,
                "gpu": torch.cuda.get_device_name() if torch.cuda.is_available() else None,
                "platform": platform.platform(), "config": asdict(cfg),
-               "scope": "使用TCN已训练权重，新增RLS调参和区间校准；不重新训练TCN"}
-    if args.mode == "all" or not cfg.runtime_json.exists():
+               "scope": "使用TCN已训练权重，新增RLS调参和区间校准；不重新训练TCN",
+               "mode": args.mode, "groups": [args.group] if args.group else list(GROUPS)}
+    if args.mode == "all" and args.group:
+        group_runtime = cfg.runtime_json.with_name(f"{cfg.runtime_json.stem}_{args.group}.json")
+        group_runtime.write_text(json.dumps(runtime, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    if (args.mode == "all" and not args.group) or not cfg.runtime_json.exists():
         cfg.runtime_json.write_text(json.dumps(runtime, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     original_stdout, original_stderr = sys.stdout, sys.stderr
     with cfg.terminal_log.open("a", encoding="utf-8") as log:
@@ -71,7 +75,7 @@ def main() -> None:
             def flush(self): self.stream.flush(); self.file.flush()
         sys.stdout, sys.stderr = Capture(original_stdout, log), Capture(original_stderr, log)
         try:
-            print(f"\n[{runtime['started_at']}] START mode={args.mode} group={args.group or 'ABCD'}")
+            print(f"\n[{runtime['started_at']}] START mode={args.mode} group={args.group or 'ABCDE'}")
             run_pipeline(args, cfg)
             print(f"[{datetime.now(ZoneInfo('Asia/Shanghai')).isoformat()}] COMPLETE mode={args.mode}")
         except Exception:

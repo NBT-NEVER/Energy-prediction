@@ -3,7 +3,7 @@
 # 文件名: visualize_rls.py
 # 开发时间: 2026-10-30
 # 文件名: visualize_rls.py
-# 功能说明: 绘制四组TCN加RLS误差、区间覆盖率和在线轨迹图表
+# 功能说明: 绘制五组TCN加RLS误差、区间覆盖率和在线轨迹图表
 # 版本号：1.0
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def plot_all(cfg: ExperimentConfig) -> dict:
     ax.bar(x - width / 2, metrics.tcn_flight_energy_wape_percent, width, label="TCN基线")
     ax.bar(x + width / 2, metrics.flight_energy_wape_percent, width, label="TCN+RLS")
     ax.set_xticks(x, groups); ax.set_ylabel("Flight能耗 WAPE (%)")
-    ax.set_title("四组TCN基线与RLS校正能耗误差"); ax.legend(); ax.grid(axis="y", alpha=.25)
+    ax.set_title("五组TCN基线与RLS校正能耗误差"); ax.legend(); ax.grid(axis="y", alpha=.25)
     for col, offset in [("tcn_flight_energy_wape_percent", -width / 2), ("flight_energy_wape_percent", width / 2)]:
         for i, value in enumerate(metrics[col]): ax.text(i + offset, value + .05, f"{value:.2f}", ha="center", fontsize=8)
     paths["flight_wape"] = _save(fig, cfg, "flight_energy_wape")
@@ -62,7 +62,7 @@ def plot_all(cfg: ExperimentConfig) -> dict:
         ax.bar(x + (i - 1.5) * width, metrics[col], width, label=label)
     ax.axhline(metrics.confidence_level.iloc[0] * 100, color="black", ls="--", lw=1.2, label="名义95%")
     ax.set_xticks(x, groups); ax.set_ylabel("覆盖率 (%)"); ax.set_ylim(0, 105)
-    ax.set_title("四组置信区间覆盖率"); ax.legend(ncol=3, fontsize=8); ax.grid(axis="y", alpha=.25)
+    ax.set_title("五组置信区间覆盖率"); ax.legend(ncol=3, fontsize=8); ax.grid(axis="y", alpha=.25)
     paths["coverage"] = _save(fig, cfg, "interval_coverage")
 
     fig, ax = plt.subplots(figsize=(9, 5.5))
@@ -95,7 +95,9 @@ def plot_all(cfg: ExperimentConfig) -> dict:
     ax.set_title(f"代表测试flight {representative} 的TCN+RLS功率预测"); ax.legend(ncol=5, fontsize=8); ax.grid(alpha=.25)
     paths["representative_power"] = _save(fig, cfg, "representative_power")
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+    ncols = 3 if len(groups) > 4 else 2
+    nrows = (len(groups) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows), sharex=True, squeeze=False)
     for ax, group in zip(axes.flat, groups):
         trace = pd.read_csv(group_paths(cfg, group)["test_trace"])
         trace = trace[(trace.flight == representative) & (trace.remaining_window_count > 0)]
@@ -105,6 +107,8 @@ def plot_all(cfg: ExperimentConfig) -> dict:
         ax.axhline(trace.actual_final_energy_wh.iloc[0], color="black", ls="--", label="实际总能耗")
         ax.set_xlabel("已完成反馈窗口数"); ax.set_ylabel("最终总能耗预测 (Wh)")
         ax.set_title(f"{group}组 / flight {representative}"); ax.legend(fontsize=8); ax.grid(alpha=.25)
+    for ax in list(axes.flat)[len(groups):]:
+        ax.set_visible(False)
     fig.suptitle("相同代表任务的RLS在线预测与区间（完成反馈后更新）")
     fig.tight_layout()
     paths["remaining_trace"] = _save(fig, cfg, "remaining_energy_trace")

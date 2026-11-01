@@ -3,7 +3,7 @@
 # 文件名: model.py
 # 开发时间: 2026-10-30
 # 文件名: model.py
-# 功能说明: 定义四组离线功率预测使用的因果TCN和激活函数变体
+# 功能说明: 定义五组离线功率预测使用的因果TCN和激活函数变体
 # 版本号：1.0
 
 from __future__ import annotations
@@ -58,12 +58,17 @@ class TCNBlock(nn.Module):
 
         super().__init__()
         self.activation_name = activation
-        hidden_activation = nn.SiLU()
+        if activation == "leaky_relu":
+            hidden_activation = nn.LeakyReLU(negative_slope=0.05)
+            second_activation = nn.LeakyReLU(negative_slope=0.05)
+        else:
+            hidden_activation = nn.SiLU()
+            second_activation = nn.SiLU()
         self.body = nn.Sequential(
             CausalConv1d(in_channels, out_channels, kernel_size, dilation),
             nn.GroupNorm(1, out_channels), hidden_activation, nn.Dropout(dropout),
             CausalConv1d(out_channels, out_channels, kernel_size, dilation),
-            nn.GroupNorm(1, out_channels), nn.SiLU(), nn.Dropout(dropout),
+            nn.GroupNorm(1, out_channels), second_activation, nn.Dropout(dropout),
         )
         self.skip = nn.Conv1d(in_channels, out_channels, 1) if in_channels != out_channels else nn.Identity()
 
@@ -75,7 +80,11 @@ class TCNBlock(nn.Module):
         """
 
         residual = self.body(x) + self.skip(x)
-        return F.silu(residual) if self.activation_name == "silu" else torch.relu(residual)
+        if self.activation_name == "silu":
+            return F.silu(residual)
+        if self.activation_name == "leaky_relu":
+            return F.leaky_relu(residual, negative_slope=0.05)
+        return torch.relu(residual)
 
 
 class PlanningTCN(nn.Module):
@@ -100,7 +109,8 @@ class PlanningTCN(nn.Module):
             layers.append(TCNBlock(last, channel, kernel_size, 2 ** index, dropout, activation))
             last = channel
         self.tcn = nn.Sequential(*layers)
-        self.head = nn.Sequential(nn.Linear(last, last), nn.SiLU(), nn.Linear(last, 1))
+        head_activation = nn.LeakyReLU(negative_slope=0.05) if activation == "leaky_relu" else nn.SiLU()
+        self.head = nn.Sequential(nn.Linear(last, last), head_activation, nn.Linear(last, 1))
         self.activation_name = activation
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -122,6 +132,6 @@ def build_model(input_dim: int, channels: tuple[int, ...], kernel_size: int,
     调用位置: train.py、evaluate.py。
     """
 
-    if activation not in {"mixed", "silu"}:
+    if activation not in {"mixed", "silu", "leaky_relu"}:
         raise ValueError(f"不支持的激活模式: {activation}")
     return PlanningTCN(input_dim, channels, kernel_size, dropout, activation)

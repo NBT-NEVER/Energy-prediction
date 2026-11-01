@@ -3,7 +3,7 @@
 # 文件名: test_rls_pipeline.py
 # 开发时间: 2026-10-30
 # 文件名: test_rls_pipeline.py
-# 功能说明: 验证RLS更新顺序、区间边界和四组搜索网格
+# 功能说明: 验证RLS更新顺序、区间边界和五组搜索网格
 # 版本号：1.0
 
 import sys
@@ -46,7 +46,7 @@ class RlsTests(unittest.TestCase):
         调用位置: unittest。
         """
         self.assertEqual(len(RLS_FORGETTING_FACTORS) * len(RLS_INITIAL_COVARIANCES) * len(RLS_WINDOW_SECONDS), 245)
-        self.assertEqual(set(GROUPS), {"A", "B", "C", "D"})
+        self.assertEqual(set(GROUPS), {"A", "B", "C", "D", "E"})
 
     def test_update_changes_state_only_when_called(self):
         """功能: 检查RLS更新前后的参数状态变化。

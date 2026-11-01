@@ -3,7 +3,7 @@
 # 文件名: rls_evaluate.py
 # 开发时间: 2026-10-30
 # 文件名: rls_evaluate.py
-# 功能说明: 对四组既有TCN分别搜索RLS参数、校准区间并评价测试覆盖率
+# 功能说明: 对五组既有TCN分别搜索RLS参数、校准区间并评价测试覆盖率
 # 版本号：1.0
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def prepare_data(cfg: ExperimentConfig, force: bool = False) -> dict:
 
 def _copy_tcn_assets(cfg: ExperimentConfig, group: str) -> tuple[Path, Path]:
     """功能: 将TCN权重和标准化器复制为TCN+RLS统一命名产物。
-    参数: cfg为实验配置，group为A、B、C或D。
+    参数: cfg为实验配置，group为A、B、C、D或E。
     返回: 本实验目录中的checkpoint和scaler路径。
     调用位置: load_baseline。
     """
@@ -85,7 +85,7 @@ def _copy_tcn_assets(cfg: ExperimentConfig, group: str) -> tuple[Path, Path]:
 
 def load_baselines(cfg: ExperimentConfig, group: str) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, dict, dict]:
     """功能: 读取单组TCN权重并生成验证、测试功率基线。
-    参数: cfg为实验配置，group为A、B、C或D。
+    参数: cfg为实验配置，group为A、B、C、D或E。
     返回: 验证表、测试表、验证功率、测试功率、checkpoint和scaler。
     调用位置: tune_rls、evaluate_group。
     """
@@ -95,6 +95,8 @@ def load_baselines(cfg: ExperimentConfig, group: str) -> tuple[pd.DataFrame, pd.
     expected = feature_columns(GROUPS[group]["use_sma"])
     if checkpoint.get("group") != group or checkpoint.get("feature_columns") != expected:
         raise ValueError(f"{group}组TCN checkpoint特征契约不匹配")
+    if checkpoint.get("activation") != GROUPS[group]["activation"]:
+        raise ValueError(f"{group}组TCN checkpoint激活契约不匹配")
     if scaler.get("group") != group or scaler.get("feature_columns") != expected:
         raise ValueError(f"{group}组TCN scaler特征契约不匹配")
     _, validation, test = load_tables(cfg)
@@ -262,6 +264,9 @@ def tune_group(group: str, cfg: ExperimentConfig) -> dict:
                     "flights": int(len(output.flights)), "selection_split": "validation_even_flights",
                 })
         pd.DataFrame(rows).to_csv(group_paths(cfg, group)["rls_tuning"], index=False, encoding="utf-8")
+        best_so_far = min(row["flight_energy_wape_percent"] for row in rows)
+        print(f"组{group}已完成RLS窗口{window_seconds:g}s，累计{len(rows)}个候选，"
+              f"当前最优验证任务能耗WAPE={best_so_far:.6f}%", flush=True)
     result = pd.DataFrame(rows).sort_values(["flight_energy_wape_percent", "window_seconds"]).reset_index(drop=True)
     best = result.iloc[0].to_dict()
     group_paths(cfg, group)["tuning_log"].write_text(
@@ -352,9 +357,9 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
 
 
 def evaluate_all(cfg: ExperimentConfig, groups=None) -> pd.DataFrame:
-    """功能: 依次评价四组TCN加RLS并写入汇总表。
+    """功能: 依次评价五组TCN加RLS并写入汇总表。
     参数: cfg为实验配置，groups为待评价组别列表。
-    返回: 四组指标表。
+    返回: 五组指标表。
     调用位置: main.py。
     """
     selected = list(groups or GROUPS)

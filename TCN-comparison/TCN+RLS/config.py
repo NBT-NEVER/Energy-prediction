@@ -3,7 +3,7 @@
 # 文件名: config.py
 # 开发时间: 2026-10-30
 # 文件名: config.py
-# 功能说明: 集中管理四组TCN加RLS及置信区间实验路径和参数
+# 功能说明: 集中管理五组TCN加RLS及置信区间实验路径和参数
 # 版本号：1.0
 
 from __future__ import annotations
@@ -39,6 +39,7 @@ GROUPS = {
     "B": {"name": "原始10维_统一SiLU", "use_sma": False, "activation": "silu"},
     "C": {"name": "原始10维加5维SMA_混合激活", "use_sma": True, "activation": "mixed"},
     "D": {"name": "原始10维加5维SMA_统一SiLU", "use_sma": True, "activation": "silu"},
+    "E": {"name": "原始10维加5维SMA_统一LeakyReLU(0.05)", "use_sma": True, "activation": "leaky_relu"},
 }
 
 RESAMPLE_SECONDS = 0.2
@@ -82,7 +83,7 @@ class ExperimentConfig:
 
     @property
     def summary_csv(self) -> Path:
-        """功能: 返回四组RLS汇总表路径。
+        """功能: 返回五组RLS汇总表路径。
         参数: 无。
         返回: CSV路径。
         调用位置: rls_evaluate.py、report.py。
@@ -137,7 +138,7 @@ class ExperimentConfig:
 
 def group_paths(cfg: ExperimentConfig, group: str) -> dict[str, Path]:
     """功能: 返回单组RLS模型、调参、预测、指标和区间路径。
-    参数: cfg为配置，group为A、B、C或D。
+    参数: cfg为配置，group为A、B、C、D或E。
     返回: 统一命名的路径字典。
     调用位置: main.py、rls_evaluate.py、report.py。
     """
