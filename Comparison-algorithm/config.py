@@ -11,11 +11,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 # 对比实验严格复用 4.1 的加工数据，保证输入维度、采样步长、flight 划分和样本数量一致。
-_DATA_CANDIDATES = (
-    Path(r"D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.1/processed"),
-    PROJECT_ROOT.parent / "4.1" / "processed",
-)
-DATA_DIR = next((path for path in _DATA_CANDIDATES if path.exists()), _DATA_CANDIDATES[0])
+DATA_ROOT = Path(r"D:/Python-files/Energy-prediction/data/dji_matrice_100_data")
+DATA_DIR = DATA_ROOT / "4.1" / "processed"
 SAVE_DIR = PROJECT_ROOT / "out" / "model"
 OUT_DIR = PROJECT_ROOT / "out"
 # 4.1 主方法的固定输出目录；对比算法统一读取同一版本的数据契约。

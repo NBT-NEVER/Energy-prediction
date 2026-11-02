@@ -28,6 +28,7 @@
 | 2.0 | 引入时间卷积网络、RLS 在线校正、预测区间和自定义工况 | 因果 TCN 输出功率，RLS 逐采样点校正 |
 | 2.1 | 规范模型选择流程 | 先选择 TCN 时间窗，再固定 TCN 预测搜索 RLS 参数 |
 | 3.2 | 引入固定时间网格、时间感知 TCN 和每秒能量监督 | TCN 联合优化逐点功率与秒级能量，RLS 按状态和窗口在线更新，并增加能量窗变量分析 |
+| [TCN-comparison](TCN-comparison/README.md) | SMA与隐藏激活的A-E五组对照 | 独立TCN离线实验，以及冻结TCN后的RLS搜索与预测区间评价 |
 
 1.0、2.0、2.1 和 3.2 是并列实验版本。3.2 不覆盖 2.0 的代码或结果；2.0 目录同时保留 2.0 原始说明和 2.1 阶段新增说明。
 
@@ -62,6 +63,11 @@ TCN 版本将历史输入组成因果时间窗，网络只接收当前及历史�
 
 1.0、2.0、2.1、3.2 的完整结果展示、结果分析、变量解释、公式和图表路径均不在本页重复展开。3.2 将稳定项目说明、追加式改进日志和当次输出报告分别放在 `README.md`、`improve.md` 和 `out/outreadme.md`，避免历史结果与当前结果互相覆盖。
 
+DJI五组对照见 [TCN-comparison实验总览](TCN-comparison/README.md)：D组任务能耗WAPE最低（TCN 2.6898%、RLS累计0.5580%），E组反馈后区间评分最低（4.0943Wh，覆盖94.64%）。AMOVFLY实验按指定10维输入和5维因果SMA重新训练后，B组整航段能耗WAPE最低（5.0734%），C组功率与1秒能耗WAPE最低（8.7603%、8.5677%）。AMOVFLY的RLS尚未针对新TCN特征与权重重跑，旧RLS结果不可与新TCN结果配套解释。所有结果来自单种子与当前测试划分。
+
+
+AMOVFLY数据分析入口见 [数据统计与可视化](TCN-comparison/AMOVFLY/README.md)；预测实验入口见 [TCN-AMOVFLY](TCN-comparison/TCN-AMOVFLY/README.md) 与 [TCN+RLS-AMOVFLY](TCN-comparison/TCN+RLS-AMOVFLY/README.md)。加工256个裁剪航段，当前TCN使用指定10维状态输入，扩展组增加位置、风速和风向的5维SMA。其RLS权重仍对应旧特征契约，需重新训练后再评价。
+
 ## 6. 运行方式
 
 在对应版本目录执行：
@@ -71,6 +77,13 @@ python main.py all
 ```
 
 3.2 完整重跑命令为 `python main.py all --device cuda --force-prepare`；补充结果常用命令为 `prepare`、`compare-rls-windows`、`route-visualize` 和 `test`。只有包含 TCN 搜索的 `tune-tcn`、`train` 和 `all` 模式清空终端日志，其余模式追加。数据缺失或不符合标准时，从 D 盘固定采样原表重建 `out/data`。
+
+TCN-comparison的两个工程可在仓库根目录执行，先完成TCN再运行RLS；若只更新说明文档使用report模式：
+
+```powershell
+python TCN-comparison/TCN/main.py report
+python TCN-comparison/TCN+RLS/main.py report
+```
 
 ## 7. 文档与目录
 
@@ -86,6 +99,11 @@ Energy-prediction/
 │   ├── README.md
 │   ├── improve.md
 │   └── out/outreadme.md
+├── TCN-comparison/
+│   ├── README.md
+│   ├── AMOVFLY/              # AMOVFLY数据统计与质量诊断
+│   ├── TCN/                 # 五组离线TCN；README、improve、设计稿、out报告
+│   └── TCN+RLS/             # 五组冻结TCN+RLS；README、improve、out报告
 ├── README/
 │   ├── 1.0_out_readme+1.0.md
 │   ├── 2.0_out_readme+2.0.md
