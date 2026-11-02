@@ -144,6 +144,7 @@ def train_model(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray,
                             batch_size=cfg.batch_size, shuffle=False, pin_memory=(device.type == "cuda"))
     best_loss, best_state, best_epoch, logs = float("inf"), None, 0, []
     started = time.perf_counter()
+    stale_epochs = 0
     for epoch in range(1, epochs + 1):
         train_loss = _run_epoch(model, train_loader, optimizer, device)
         val_loss = _run_epoch(model, val_loader, None, device)
@@ -153,6 +154,12 @@ def train_model(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray,
         if val_loss < best_loss:
             best_loss, best_epoch = val_loss, epoch
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
+            stale_epochs = 0
+        else:
+            stale_epochs += 1
+        if stale_epochs >= cfg.early_stopping_patience:
+            print(f"\n验证损失连续{stale_epochs}轮未改善，提前停止")
+            break
     print()
     return {"state_dict": best_state, "best_val_loss": best_loss,
             "window_steps": window_steps, "window_seconds": window_steps * cfg.resample_seconds,
