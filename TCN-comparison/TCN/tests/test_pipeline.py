@@ -54,10 +54,10 @@ class PipelineTests(unittest.TestCase):
         """
         frame = fixture_frame()
         ordered = prepare_features(frame, True, 10)
-        name = "planned_position_east_m_sma10"
+        name = "position_x_m_sma10"
         np.testing.assert_allclose(ordered[name], [1., 2., 4., 100., 150.])
-        np.testing.assert_array_equal(ordered.planned_position_east_m, frame.planned_position_east_m)
-        frame.loc[2, "planned_position_east_m"] = 99999
+        np.testing.assert_array_equal(ordered.position_x_m, frame.position_x_m)
+        frame.loc[2, "position_x_m"] = 99999
         changed = prepare_features(frame, True, 10)
         np.testing.assert_array_equal(ordered.loc[:1, name], changed.loc[:1, name])
 

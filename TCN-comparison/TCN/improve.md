@@ -12,6 +12,14 @@
 
 按时间追加工程变更。只记录已经实施或已经测量的内容，效果未完成验证时明确标注。未提交Git时不编造提交哈希。逐次训练的完整指标、日志和图表说明以 `out/outreadme.md` 及其关联CSV/JSON为准。
 
+## 2026-11-03 DJI planned 数据与统一TCN架构
+
+- 实施范围：将输入统一为 `position_x_m, position_y_m, position_z_m, wind_speed, wind_angle, time_s, task_duration_s, payload_g, uav_type, planned`，机型使用1/2/3/4编号，启停状态合并为 `planned` 三态；15维组追加位置、风速、风向5个10步因果SMA。
+- 模型配置：两个TCN残差块通道 `(32, 32)`、卷积核3、膨胀率1/2、Dropout=0.05、AdamW权重衰减 `1e-4`、batch=2048、候选1/2/5/10 s各8轮、正式80轮。
+- 数据与产物：DJI加工数据位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/TCN-planned`，权重位于 `D:/Python-files/Energy-prediction/model/TCN-planned`；训练/验证/测试为113766/26300/48724行，flight为124/29/47。
+- 实测：A-E任务能耗WAPE为2.7155%、3.7001%、3.1647%、3.6226%、3.4659%；功率WAPE最低为B组10.2656%。6项TCN行为测试、编译和完整训练评价链路通过。
+- 文档：同步 `README.md`、`out/outreadme.md` 和报告生成器，当前事实以结果CSV、checkpoint元数据和数据清单为准。
+
 ## 2026-10-30 独立四组离线TCN工程
 
 - 实施范围：本目录新建配置、数据导入与SMA、模型、训练、评价、绘图、报告、命令行入口和关键行为测试；不修改4.1的源代码或模型。

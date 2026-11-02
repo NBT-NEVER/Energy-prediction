@@ -63,7 +63,7 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
         ["flight", "window"], sort=False).agg(actual_energy_wh=("energy_interval_wh", "sum"),
         predicted_energy_wh=("predicted_energy_wh", "sum"), samples=("time", "size")).reset_index()
     windows.to_csv(paths["window_metrics"], index=False, encoding="utf-8")
-    stages = np.select([test.planned_motor_on.eq(0), test.planned_airborne.eq(0)],
+    stages = np.select([test.planned.eq(0), test.planned.eq(1)],
                        ["motor_off", "ground_motor_on"], default="airborne")
     rows = []
     for stage in ("motor_off", "ground_motor_on", "airborne"):

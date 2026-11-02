@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import random
 import time
 
@@ -18,7 +19,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from config import GROUPS, RAW_FEATURE_COLUMNS, ExperimentConfig, group_paths
+from config import GROUPS, RAW_FEATURE_COLUMNS, SCHEMA_VERSION, ExperimentConfig, group_paths
 from data_utils import load_tables, prepare_features, validate_features, feature_columns
 from model import build_model
 
@@ -67,7 +68,8 @@ def fit_scaler(frame: pd.DataFrame, columns: list[str], cfg: ExperimentConfig, g
               "feature_columns": columns, "x_mean": x_mean.tolist(), "x_std": x_std.tolist(),
               "y_mean": y_mean, "y_std": y_std, "target_column": "power_w",
               "sma_window_steps": cfg.sma_window_steps, "resample_seconds": cfg.resample_seconds,
-              "schema_version": "TCN-comparison-1.0"}
+              "schema_version": SCHEMA_VERSION,
+              "data_manifest_sha256": hashlib.sha256(cfg.manifest_json.read_bytes()).hexdigest()}
     path = group_paths(cfg, group)["scaler"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(scaler, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -218,7 +220,7 @@ def _metrics(frame: pd.DataFrame, predicted: np.ndarray, cfg: ExperimentConfig) 
 
 
 def _select_score(metrics: dict) -> float:
-    """功能: 按当前4.1口径计算TCN窗口验证选择分数。
+    """功能: 按当前DJI planned口径计算TCN窗口验证选择分数。
     参数: metrics为功率、窗口能耗和flight能耗指标。
     返回: 综合选择分数。
     调用位置: tune_group。
@@ -241,7 +243,7 @@ def _model_from_checkpoint(checkpoint: dict, input_dim: int) -> nn.Module:
 
 
 def tune_group(group: str, cfg: ExperimentConfig) -> dict:
-    """功能: 对指定实验组搜索8个TCN时间窗，每个候选训练20轮。
+    """功能: 对指定实验组按配置搜索TCN时间窗和候选轮数。
     参数: group为A、B、C、D或E，cfg为配置。
     返回: 最优窗口和调参结果路径。
     调用位置: main.py。
@@ -315,7 +317,8 @@ def train_group(group: str, cfg: ExperimentConfig) -> dict:
                        "resample_seconds": cfg.resample_seconds, "tune_epochs": cfg.tune_epochs,
                        "learning_rate": cfg.learning_rate, "weight_decay": cfg.weight_decay,
                        "batch_size": cfg.batch_size, "target_column": "power_w",
-                       "schema_version": "TCN-comparison-1.0"})
+                       "schema_version": SCHEMA_VERSION,
+              "data_manifest_sha256": hashlib.sha256(cfg.manifest_json.read_bytes()).hexdigest()})
     paths = group_paths(cfg, group)
     torch.save(checkpoint, paths["checkpoint"])
     pd.DataFrame(logs).assign(group=group, window_seconds=seconds, activation=spec["activation"]).to_csv(

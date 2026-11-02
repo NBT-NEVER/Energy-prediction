@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 import torch
 
 from config import GROUPS, build_config, ensure_directories  # 实验组、集中路径和目录初始化
-from data_utils import copy_processed_data  # 将已划分的4.1加工表导入独立D盘目录
+from data_utils import prepare_planned_data  # 将DJI字段转换为planned统一数据契约
 from evaluate import evaluate_all  # 汇总离线功率与能耗测试指标
 from train import train_group, tune_group  # 正式训练与TCN窗口搜索
 from visualize import plot_results  # 根据CSV重建结果图表
@@ -133,7 +133,7 @@ def run_pipeline(args, cfg):
 
     groups = [args.group] if args.group else list(GROUPS)
     if args.mode in {"prepare", "all"}:
-        prepared = copy_processed_data(cfg, force=args.force_prepare)
+        prepared = prepare_planned_data(cfg, force=args.force_prepare)
         print(json.dumps({key: value for key, value in prepared.items()
                           if key not in {"sha256", "split_flights", "copied_files"}}, ensure_ascii=False, indent=2))
         if args.mode == "prepare":

@@ -1,7 +1,7 @@
 # _*_coding:UTF-8_*_
 # 开发者: NBT
 # 文件名: config.py
-# 开发时间: 2026-10-30
+# 开发时间: 2026-11-02
 # 文件名: config.py
 # 功能说明: 集中管理五组TCN离线功率与能耗预测实验路径和参数
 # 版本号：1.0
@@ -14,10 +14,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent  # 代码与说明文档目录
 DATA_ROOT = Path(r"D:/Python-files/Energy-prediction/data/dji_matrice_100_data")
-EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN"
-DATA_DIR = EXPERIMENT_DATA_DIR / "processed"  # 本实验独立加工数据
-SOURCE_PROCESSED_DIR = DATA_ROOT / "4.1" / "processed"  # 仅用于首次导入
-SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN")  # D盘权重和标准化器
+EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-planned"
+DATA_DIR = EXPERIMENT_DATA_DIR  # DJI planned独立加工数据
+SOURCE_PROCESSED_DIR = DATA_ROOT / "4.1" / "processed"  # DJI 4.1原始加工来源
+SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-planned")  # D盘权重和标准化器
 OUT_DIR = PROJECT_ROOT / "out"  # 本地统计表、日志和图表
 MODEL_DIR = SAVE_DIR
 LOG_DIR = OUT_DIR / "logs"
@@ -25,14 +25,13 @@ FIGURE_DIR = OUT_DIR / "figures"
 RESULT_DIR = OUT_DIR / "results"
 
 RAW_FEATURE_COLUMNS = [
-    "time_s", "task_duration_s", "planned_position_east_m",
-    "planned_position_north_m", "planned_position_up_m", "wind_east_mps",
-    "wind_north_mps", "payload_g", "planned_motor_on", "planned_airborne",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
+    "time_s", "task_duration_s", "payload_g", "uav_type", "planned",
 ]
 SMA_FEATURE_COLUMNS = [
-    "planned_position_east_m", "planned_position_north_m",
-    "planned_position_up_m", "wind_east_mps", "wind_north_mps",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
 ]
+SCHEMA_VERSION = "DJI-TCN-planned-1.0"
 TARGET_COLUMN = "power_w"
 ENERGY_COLUMN = "energy_interval_wh"
 GROUPS = {
@@ -45,8 +44,8 @@ GROUPS = {
 
 RESAMPLE_SECONDS = 0.2
 SMA_WINDOW_STEPS = 10
-TCN_WINDOW_SECONDS = (0.6, 1.0, 2.0, 3.0, 4.0, 5.0, 8.0, 10.0)
-TUNE_EPOCHS = 20
+TCN_WINDOW_SECONDS = (1.0, 2.0, 5.0, 10.0)
+TUNE_EPOCHS = 8
 EPOCHS = 80
 BATCH_SIZE = 2048
 LEARNING_RATE = 3e-4
