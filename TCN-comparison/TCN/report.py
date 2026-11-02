@@ -126,7 +126,7 @@ def write_reports(cfg: ExperimentConfig) -> dict:
         "所有输入列分别用训练集均值和标准差进行标准化；功率目标也只使用训练集统计量。"
         "TCN输入首部不足时重复该任务首个特征行。五组逐窗口和正式训练开始前都重置种子42，"
         "避免候选顺序改变随机状态。网络采用两个残差块，通道32、32，核3，膨胀率1、2，"
-        "每个块含两组因果卷积、GroupNorm(1,32)、SiLU、Dropout(0.05)。"
+        "A-D每个块含两组因果卷积、GroupNorm(1,32)、SiLU、Dropout(0.05)。"
         "A/C残差出口ReLU，B/D残差出口SiLU。跳连必要时使用1×1卷积。A—D预测头为Linear(32,32)、SiLU、Linear(32,1)。"
         "E将两残差块的四次卷积后激活、两次残差出口激活及预测头中间激活全部替换为LeakyReLU(negative_slope=0.05)，"
         "最后一层仍为线性。E与C/D均为12641参数；E是原四组2×2设计之外的附加激活对照。", "",
@@ -154,8 +154,16 @@ def write_reports(cfg: ExperimentConfig) -> dict:
         runtime = json.loads(cfg.runtime_json.read_text(encoding="utf-8"))
         lines.extend(["### 运行环境", "",
                       f"PyTorch：{runtime['torch']}；CUDA：{runtime['cuda']}；GPU：{runtime['gpu']}。"
-                      f"最近一次命令开始时间：{runtime['started_at']}。正式训练秒数只计算训练循环，"
+                      f"保存的训练运行开始时间：{runtime['started_at']}。报告刷新不覆盖该快照。正式训练秒数只计算训练循环，"
                       "不含数据读取、序列构造、窗口搜索、评价与绘图耗时。", ""])
+    lines.extend(["### 训练完成状态与复核记录", "",
+                  "当前五组均完成8个TCN窗口候选的每候选20轮搜索及80轮正式训练；"
+                  "本次E组新增160条候选逐轮记录和80条正式训练记录。E选择5s窗口，保留第24轮验证最优权重。"
+                  "A-D沿用已完成实验的权重与逐组结果，五组汇总和9套PNG/SVG由保存结果生成。", "",
+                  "[单元测试日志](logs/E_validation_tests.log)记录6项测试通过；"
+                  "[产物核验](logs/E_artifact_audit.json)记录数据副本、模型SHA-256、旧模型前向兼容性和覆盖率复算等检查。"
+                  "TCN与RLS冻结基线的逐采样CSV因float32写出格式存在不超过0.000031W的差异，"
+                  "其模型指纹与汇总基线指标一致；逐采样比较应明确数值精度。", ""])
     extra = {"group": "组别", "power_mae_w": "功率MAE(W)",
              "window_energy_mae_wh": "1s能耗MAE(Wh)", "flight_energy_mae_wh": "flight能耗MAE(Wh)",
              "flight_equal_weight_mape_percent": "flight等权MAPE(%)",

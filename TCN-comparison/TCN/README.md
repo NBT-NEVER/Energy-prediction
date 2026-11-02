@@ -11,6 +11,7 @@
 - [运行方法](#运行方法)
 - [实验结果](#实验结果)
 - [图表](#图表)
+- [核验与文档更新](#核验与文档更新)
 - [文件职责](#文件职责)
 - [结果边界](#结果边界)
 
@@ -44,7 +45,7 @@ D:/Python-files/Energy-prediction/data/dji_matrice_100_data/TCN/processed/
 D:/Python-files/Energy-prediction/model/TCN/
 ```
 
-日志、CSV 指标和 PNG 图表保存在当前工程的 `out/` 下。原始数据、4.1 加工表和旧模型不会被覆盖。
+日志、CSV 指标和 PNG 图表保存在当前工程的 `out/` 下。原始数据、4.1 加工表和 A-D 旧模型不会被覆盖；E 使用独立的模型、scaler、日志和结果文件名。
 
 ## 统一参数
 
@@ -96,7 +97,7 @@ $q$：向历史回溯的采样点数。
 
 统一 SiLU 组只替换残差相加后的 ReLU，卷积块内部和预测头中间层保持 SiLU，预测头最后一层保持线性。E组将卷积块、残差出口和预测头中间层的隐藏激活统一为 LeakyReLU(negative_slope=0.05)，最后一层保持线性。
 
-完整结构为两个残差块，每块含两层因果Conv1d，每层后接GroupNorm(1,32)、SiLU、Dropout(0.05)；残差出口按组别使用ReLU或SiLU。输入维数不等于32时跳连用1×1卷积。最后取窗口末端编码，接Linear(32,32)、SiLU、Linear(32,1)。A/B有12001个参数，C/D/E有12641个参数。
+完整结构为两个残差块，每块含两层因果Conv1d，每层后接GroupNorm(1,32)、隐藏激活和Dropout(0.05)；A/C使用SiLU卷积激活与ReLU残差出口，B/D使用SiLU，E的卷积激活、残差出口和预测头中间层全部使用LeakyReLU(0.05)。输入维数不等于32时跳连用1×1卷积。最后取窗口末端编码，接Linear(32,32)、组别对应的隐藏激活、Linear(32,1)。A/B有12001个参数，C/D/E有12641个参数。
 
 GroupNorm使用单个输入窗口内的时间与通道统计量。本工程按目标时刻分别构造历史窗口；不能将整段轨迹一次前向或单纯卷积缓存视为与当前逐窗口推理等价。SMA在完整flight上先计算，再构造TCN窗口，因此可以利用窗口左侧仍然有效的任务历史。
 
@@ -207,19 +208,27 @@ E 对 C（同15维输入，混合激活改为统一LeakyReLU(0.05)）的总能�
 
 ![五组窗口搜索](./out/figures/TCN-comparison_window_search.png)
 
+## 核验与文档更新
+
+E的模型文件为 `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_E_best.pt`，标准化器为同目录 `TCN-comparison_E_scaler.json`；输入15维，激活元数据为leaky_relu，负半轴斜率由模型实现固定为0.05。保存权重对应第24轮，训练日志仍保留完整80轮。
+
+[测试日志](out/logs/E_validation_tests.log)记录6项行为测试通过，[产物核验](out/logs/E_artifact_audit.json)记录模型指纹、历史结构前向兼容与数据划分核验。E环境快照见 [TCN-comparison_runtime_E.json](out/TCN-comparison_runtime_E.json)。
+
+仅更新报告使用 `python TCN-comparison/TCN/main.py report`，仅重绘图表使用plot模式；均不训练。README结果区和out报告由report.py更新，稳定说明在本README维护，工程历史在improve.md按日期追加。全部五组参数、窗口表与结果源文件见 [当前输出报告](out/outreadme.md)。
+
 ## 文件职责
 
 | 文件 | 职责 |
 | --- | --- |
 | `config.py` | 集中管理 D 盘数据、D 盘模型、输出路径和统一超参数 |
 | `data_utils.py` | 复制加工数据、计算 10 步 SMA、检查输入字段 |
-| `model.py` | 因果 TCN、混合激活和统一 SiLU 结构 |
+| `model.py` | 因果TCN、混合激活、统一SiLU和统一LeakyReLU(0.05)结构 |
 | `train.py` | 数据标准化、序列构造、20 轮窗口搜索和 80 轮正式训练 |
 | `evaluate.py` | 生成离线功率、1 s 能耗和 flight 总能耗指标 |
 | `visualize.py` | 生成五组对比图表 |
 | `main.py` | 统一命令行入口 |
 | `report.py` | 根据当前CSV/JSON同步README结果区和out/outreadme.md |
-| `tests/test_pipeline.py` | 检查SMA分组、序列边界、标签隔离、能量单位与模型路径 |
+| `tests/test_pipeline.py` | 检查SMA分组、序列边界、标签隔离、能量单位、模型路径及LeakyReLU负半轴行为 |
 
 ## 结果边界
 

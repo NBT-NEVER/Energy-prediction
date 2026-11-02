@@ -45,7 +45,7 @@ def write_report(cfg: ExperimentConfig) -> dict:
     checkpoints = []
     for group in metrics.group:
         checkpoint = torch.load(group_paths(cfg, group)["tcn_checkpoint"], map_location="cpu", weights_only=False)
-        checkpoints.append({"组别": group, "TCN步数": checkpoint["window_steps"],
+        checkpoints.append({"组别": group, "隐藏激活": GROUPS[group]["activation"], "TCN步数": checkpoint["window_steps"],
                             "候选轮数": checkpoint["tune_epochs"], "正式轮数": checkpoint["epochs_run"],
                             "最佳轮次": checkpoint["best_epoch"], "参数量": checkpoint["parameter_count"],
                             "种子": checkpoint["seed"]})
@@ -60,6 +60,11 @@ def write_report(cfg: ExperimentConfig) -> dict:
                            "tcn_window_energy_wape_percent", "window_energy_wape_percent", "rls_window_energy_wape_percent"]].copy()
     point_frame.columns = ["组别", "TCN功率WAPE(%)", "RLS功率WAPE(%)", "RLS功率RMSE(W)", "TCN 1s能耗WAPE(%)", "RLS 1s能耗WAPE(%)", "RLS反馈窗能耗WAPE(%)"]
     point_table = markdown_table(point_frame)
+    stages = pd.concat([pd.read_csv(group_paths(cfg, group)["stage_intervals"]) for group in metrics.group], ignore_index=True)
+    stage_coverage = stages.pivot(index="group", columns="observed_fraction", values="coverage_percent")
+    stage_coverage.columns = [f"进度{fraction:.0%}覆盖(%)" for fraction in stage_coverage.columns]
+    stage_coverage.index.name = "组别"
+    stage_coverage_table = markdown_table(stage_coverage.reset_index())
     table = metrics[["group", "name", "feature_count", "tcn_window_seconds", "rls_window_seconds",
                      "rls_forgetting_factor", "rls_initial_covariance", "tcn_flight_energy_wape_percent",
                      "flight_energy_wape_percent", "flight_interval_coverage_percent",
@@ -106,6 +111,8 @@ def write_report(cfg: ExperimentConfig) -> dict:
 - [五组设置](#五组设置)
 - [运行命令](#运行命令)
 - [结果摘要](#结果摘要)
+- [任务阶段覆盖率](#任务阶段覆盖率)
+- [图表与核验记录](#图表与核验记录)
 - [文件结构](#文件结构)
 - [边界与解释](#边界与解释)
 
@@ -125,7 +132,7 @@ def write_report(cfg: ExperimentConfig) -> dict:
 | D | 原始10维+5维10步SMA，共15维 | 统一 SiLU | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_D_best.pt` |
 | E | 原始10维+5维10步SMA，共15维 | 统一 LeakyReLU(0.05) | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_E_best.pt` |
 
-SMA 通道为三维规划位置和二维风分量，按 flight 分组、只使用当前与历史值计算。原始10维为任务时间、任务总时长、三维规划位置、二维风、载荷、电机状态和离地状态；完整字段及单位见 [TCN字段说明](../TCN/README.md#原始字段与派生字段)。TCN 的两个残差块通道均为32，卷积核3，膨胀率1和2，GroupNorm(1,32)，Dropout=0.05；预测头为 Linear(32,32)、SiLU、Linear(32,1)。混合激活仅在残差出口使用ReLU，统一SiLU组替换该出口；E组将卷积块、残差出口和预测头中间层的隐藏激活统一为LeakyReLU(0.05)，最终回归层均为线性。
+SMA 通道为三维规划位置和二维风分量，按 flight 分组、只使用当前与历史值计算。原始10维为任务时间、任务总时长、三维规划位置、二维风、载荷、电机状态和离地状态；完整字段及单位见 [TCN字段说明](../TCN/README.md#原始字段与派生字段)。TCN 的两个残差块通道均为32，卷积核3，膨胀率1和2，GroupNorm(1,32)，Dropout=0.05；A-D预测头为 Linear(32,32)、SiLU、Linear(32,1)。混合激活仅在残差出口使用ReLU，统一SiLU组替换该出口；E组将四次卷积后激活、两次残差出口激活和预测头中间激活统一为LeakyReLU(negative_slope=0.05)，最终回归层均为线性。
 
 训练采用SmoothL1Loss、AdamW、学习率3e-4、权重衰减1e-4、批大小2048、梯度裁剪2.0。采样间隔0.2s，SMA固定10步（2s）；TCN窗口候选为0.6、1、2、3、4、5、8、10s，每候选完整20轮，正式完整80轮，无提前停止，种子42。权重保留验证损失最低轮次，标准化器仅由训练集拟合。本轮读取的权重元数据为：
 
@@ -160,13 +167,27 @@ python main.py all --device cuda
 
 逐组结果：
 
-{chr(10).join(gain)}
+{chr(10).join('- ' + item for item in gain)}
 
 {dynamic_note}
 
 {activation_comparison}
 
+## 任务阶段覆盖率
+
+每个flight在任务开始和首次达到25%、50%、75%已观察进度时各取一个尚未完成任务的预测，当前每组每阶段均为47个flight。阶段样本按flight等权；反馈后在线汇总覆盖率则包含同一flight的多个相关时点，两者权重不同。
+
+{stage_coverage_table}
+
+E在25%阶段覆盖率为91.49%，50%为93.62%，75%为100.00%。反馈后在线汇总94.64%不能解释为所有阶段均达到名义95%。区间平均宽度和区间评分与覆盖率同时评价，完整逐阶段数据见当前输出报告。
+
+## 图表与核验记录
+
 图表、各阶段覆盖率、完整公式和逐文件说明见 [当前输出报告](out/outreadme.md)。
+
+图表共7套，均保存PNG和SVG：任务能耗WAPE、分层区间覆盖率、任务前覆盖率与宽度、RLS时间窗搜索、代表任务功率、五组在线区间分面和任务阶段覆盖率。在线分面采用2×3布局，显示A-E并隐藏空白格；代表flight按测试任务长度的中位位置选择。
+
+复核日志：[4项行为测试](out/logs/E_validation_tests.log)、[数据与模型产物核验](out/logs/E_artifact_audit.json)。模型复制SHA-256一致，TCN冻结基线的汇总指标一致；少量逐采样CSV有约0.000031W的float32写出精度差异。名义95%区间采用相同校准规则、各组独立倍率，覆盖率按CSV严格边界复算时使用 `float_precision="round_trip"`。
 
 ![任务能耗误差](out/figures/TCN_RLS_flight_energy_wape.svg)
 
@@ -227,7 +248,6 @@ RLS 使用的是完整窗口实际能耗反馈，属于离线回放的在线校�
              "## B. 当前结果", "", result, "", "### 功率与窗口点预测", "", point_table, "",
              "### 分层区间覆盖率", "", interval_table, "",
              "### 任务阶段覆盖率", "", "每flight每阶段仅取首次达到指定已观察进度且任务未完成的一个预测，样本等权。", ""]
-    stages = pd.concat([pd.read_csv(group_paths(cfg, group)["stage_intervals"]) for group in metrics.group], ignore_index=True)
     stage_table = stages.rename(columns={"group":"组别", "observed_fraction":"已观察比例", "flights":"flight数", "coverage_percent":"覆盖率(%)", "mean_width_wh":"平均宽度(Wh)", "interval_score_wh":"区间评分(Wh)", "energy_wape_percent":"总能耗WAPE(%)"})
     lines += [markdown_table(stage_table), "", "### 数值解释", ""]
     lines.extend([f"- {item}" for item in gain])
@@ -249,7 +269,7 @@ RLS 使用的是完整窗口实际能耗反馈，属于离线回放的在线校�
     figure_notes = {
         "flight_energy_wape": "源文件为五组 `*_metrics.json`；横轴为 A/B/C/D/E，纵轴为 Flight 总能耗 WAPE(%)，比较冻结 TCN 基线和 RLS 后结果。当前各组 RLS 后误差与基线的差异见汇总表。",
         "interval_coverage": "源文件为 `TCN_RLS_all_metrics.csv`；横轴A/B/C/D/E，纵轴为功率采样、RLS窗口、任务前总能耗和在线轨迹(含初始点)覆盖率(%)，虚线为名义95%。仅反馈后覆盖率另见分层表，不能把单一层级结果外推到其他层级。",
-        "interval_coverage_width": "源文件为 `TCN_RLS_all_metrics.csv`；横轴为任务前区间平均宽度(Wh)，纵轴为任务前覆盖率(%)。D组覆盖率接近名义水平，同时区间较宽，需结合区间评分解释。",
+        "interval_coverage_width": "源文件为 `TCN_RLS_all_metrics.csv`；横轴为任务前区间平均宽度(Wh)，纵轴为任务前覆盖率(%)。D为97.87%/2.8021Wh，E为93.62%/3.0357Wh；该图属于任务前口径，反馈后宽度分别为4.2100/3.2980Wh，二者不可混用。",
         "rls_window_search": "源文件为五组 `*_rls_tuning.csv`；横轴为 RLS 反馈时间窗(s)，纵轴为该时间窗下最优验证 Flight 能耗 WAPE(%)，用于检查时间窗搜索是否完整。",
         "representative_power": "源文件为五组 `*_test_predictions.csv`；横轴为任务时间(s)，纵轴为功率(W)，代表 flight 按测试集任务长度中位位置选取，不按误差挑选。",
         "remaining_energy_trace": "源文件为五组 `*_test_trace.csv`；同一中位长度代表flight的五组分面图，横轴为已完成反馈窗口数，纵轴为最终总能耗预测(Wh)，曲线为预测，色带为名义95%区间，黑色虚线为实际最终能耗。只显示尚有剩余任务的点，不能用单个代表任务替代全部flight覆盖统计。",
