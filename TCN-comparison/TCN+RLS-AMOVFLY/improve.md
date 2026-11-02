@@ -14,6 +14,14 @@
 
 按时间追加已经实施或已经测量的工程变化。RLS和区间结果以 `out/results/TCN_RLS_all_metrics.csv`、各组JSON、调参CSV和 `out/outreadme.md` 为准。未进行多种子重复时不表述为统计显著结论。
 
+## 2026-11-03 AMOVFLY planned 数据与TCN基线对齐
+
+- 实施范围：AMOVFLY输入统一为10维字段，并将机型改为 `uav_type=1/2/3`、启停与飞行状态改为 `planned=0/1/2`；C/D/E追加位置、风速、风向5个10步因果SMA。
+- 模型配置：与DJI TCN完全一致，通道 `(32, 32)`、核3、膨胀率1/2、Dropout=0.05、权重衰减 `1e-4`、batch=2048、候选8轮、正式80轮；RLS每组搜索245个候选。
+- 数据与产物：加工数据位于 `D:/Python-files/Energy-prediction/data/AMOVFLY-Dataset/TCN-AMOVFLY-planned`，RLS模型位于 `D:/Python-files/Energy-prediction/model/TCN+RLS-AMOVFLY-planned`；训练/验证/测试为519698/114661/120930行，flight为174/38/40。
+- 实测：RLS后flight能耗WAPE为A 0.2819%、B 0.5066%、C 0.3125%、D 0.3250%、E 0.2730%；E组最低。RLS 4项行为测试、编译和完整评价链路通过。
+- 文档：修正共享报告生成器中的旧字段、旧训练预算和旧数据规模，刷新 `README.md`、`out/outreadme.md`。
+
 ## 2026-10-30 目录迁移和RLS实验
 
 - 实施范围：将原四组离线TCN工程迁入 `../TCN`；在本目录建立独立的TCN+RLS数据、模型、日志、结果和图表链路。

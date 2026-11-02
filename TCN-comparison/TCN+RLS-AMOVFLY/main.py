@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     返回: 参数解析器。
     调用位置: main。
     """
-    parser = argparse.ArgumentParser(description="AMOVFLY五组TCN加RLS和预测区间评估")
+    parser = argparse.ArgumentParser(description="AMOVFLY planned五组TCN加RLS和预测区间评估")
     parser.add_argument("mode", nargs="?", default="all", choices=["prepare", "tune", "calibrate", "evaluate", "plot", "report", "all"])
     parser.add_argument("--group", choices=list(GROUPS), default=None)
     parser.add_argument("--device", default=None)

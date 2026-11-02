@@ -14,9 +14,11 @@ import pandas as pd
 
 FEATURES = [
     ("position_x_m, position_y_m, position_z_m", "3", "m", "裁剪航段首点归一化gps_x/y/z"),
-    ("wind_sensor_sin_mps, wind_sensor_cos_mps", "2", "m/s", "wind_speed乘wind_angle的正弦/余弦"),
-    ("payload_g", "1", "g", "文件名P参数"), ("speed_mps", "1", "m/s", "v_x/y/z三维模长"),
-    ("vertical_speed_mps", "1", "m/s", "源v_z"), ("uav_R, uav_G", "2", "0/1", "机型指示")]
+    ("wind_speed", "1", "m/s", "由正交风分量还原"),
+    ("wind_angle", "1", "rad", "由正交风分量还原，范围[-π, π]"),
+    ("time_s, task_duration_s", "2", "s", "航段已过时间和完整航段时长"),
+    ("payload_g", "1", "g", "文件名P参数"), ("uav_type", "1", "1/2/3", "Y/R/G机型编号"),
+    ("planned", "1", "0/1/2", "停机/原地启动/飞行")]
 
 FIGURE_NOTES = {
     "power_wape": "来源：汇总metrics.csv；横轴A-E，纵轴功率WAPE(%)。",
@@ -42,7 +44,7 @@ def algorithm_text(online, cfg=None):
     返回: Markdown文本。
     调用位置: write_reports。
     """
-    text = r"""读取FAFS/FAVS/VAFS/VAVS/Random中与父目录同名的ready文件夹，共277个CSV；不重复导入raw_data。Flight_info列出270个文件，本地额外7个也按同一规则清洗。必要数值字段去非有限行，时间稳定排序后去重，gps_z>2m首末证据之间保留连续航段，航段内部可以存在短暂低空段。航段内有效采样间隔>2s时整文件拒收。清洗后256个航段、21个拒收；详情在D盘数据目录的审计CSV和摘要JSON。
+    text = r"""读取FAFS/FAVS/VAFS/VAVS/Random中的源CSV，共277个文件；不重复导入raw_data。必要数值字段去非有限行，时间稳定排序后去重，gps_z>2m首末证据之间保留连续航段，航段内部可以存在短暂低空段。航段内有效采样间隔>2s时整文件拒收。清洗后接受252个航段、拒收25个文件；详情在D盘数据目录的审计CSV和摘要JSON。
 
 源位置先减航段首点，风角先变成正余弦分量再插值，避免角度跨360度的插值错误。0.2s线性重采样后按源航段梯形能量整体缩放监督功率，最后时间箱用实际剩余秒数，非完整0.2s不补长。标签因此是能量守恒加工功率，不能声称与原始每点传感器读数完全相同。
 
@@ -60,22 +62,22 @@ $$E_f=\frac{1}{3600}\int_{t_0}^{t_1}P_f(t)\,dt,\quad c_f=\frac{E_f}{\sum_i\widet
 - $c_f$：航段能量守恒缩放系数。
 - $P^*_{f,i}$：最终监督功率，W。
 
-按完整flight和Multi-UAV关联组划分，种子42随机排列分组，70%/15%/15%组数经四舍五入形成183/36/37个flight。验证关联组排序后交替指定选模与校准角色，各18个flight；校准flight不参与TCN选窗、最优轮次或RLS搜索。训练使用全部183个flight、505176行；测试37个flight、105370行，未抽取训练子集。
+按完整flight和Multi-UAV关联组划分，种子42随机排列分组，70%/15%/15%形成174/38/40个flight。验证关联组排序后交替指定选模与校准角色，具体数量以数据清单中的 `validation_roles` 为准；校准flight不参与TCN选窗、最优轮次或RLS搜索。训练519698行，验证114661行，测试120930行。
 
-标准化仅用训练集均值和总体标准差，常数列的标准差置1。C/D/E在10维后拼接位置3维、相对风2维的10点SMA，原始列和未经SMA的功率标签保留，SMA不跨flight。
+标准化仅用训练集均值和总体标准差，常数列的标准差置1。C/D/E在10维后拼接位置3维、风速和风向的10点SMA，原始列和未经SMA的功率标签保留，SMA不跨flight。
 
 $$s_{f,i,j}=\frac{1}{n_i}\sum_{q=0}^{n_i-1}x_{f,i-q,j},\quad n_i=\min(10,i+1)$$
 
 其中：
 
 - $s_{f,i,j}$：新增SMA通道。
-- $x_{f,i-q,j}$：当前或历史原始输入；$j$为位置或风的特征索引。
+- $x_{f,i-q,j}$：当前或历史原始输入；$j$为位置、风速或风向特征索引。
 - $n_i$：当前实际参与均值的样本数。
 - $q$：历史回溯步数。
 
-TCN窗口只包含截至目标时刻的加工特征；不足时重复本flight首行。两个残差块通道均32，膨胀率1/2，每块含两次核3的左补齐卷积、GroupNorm(1,32)、隐藏激活、Dropout(0.05)，跳连必要时1×1卷积。A/C卷积后SiLU、残差出口ReLU；B/D卷积后及出口SiLU；E四次卷积后、两次残差出口和预测头隐藏层均用LeakyReLU(0.05)。预测头Linear(32,32)→SiLU（E为LeakyReLU）→Linear(32,1)，输出标准化功率，反标准化后截到非负。参数量A/B为12001，C/D/E为12641。GroupNorm在整个已截取的历史窗统计，不能把整段一次前向与逐窗推理等同。
+TCN窗口只包含截至目标时刻的加工特征；不足时重复本flight首行。两个残差块通道均32，膨胀率1/2，每块含两次核3的左补齐卷积、GroupNorm(1,32)、SiLU、Dropout(0.05)，跳连必要时1×1卷积；残差出口按组别使用ReLU、SiLU或LeakyReLU(0.05)，预测头为Linear(32,32)→对应隐藏激活→Linear(32,1)，输出标准化功率，反标准化后截到非负。GroupNorm在整个已截取的历史窗统计，不能把整段一次前向与逐窗推理等同。
 
-候选1/2/5/10s各训练5轮，候选内保留验证SmoothL1最小权重，以“1s能量WAPE+0.2×功率WAPE+0.5×航段能量WAPE”选窗。正式训练重新按种子42初始化，完整20轮后保留最小验证SmoothL1权重；无早停。AdamW学习率0.0003、权衰减0.0001，batch8192，梯度范数裁剪2。损失是标准化功率SmoothL1，未额外加入能量损失或RLS梯度。训练预算与原DJI工程不同，因此仅解释AMOVFLY内部比较。
+候选1/2/5/10s各训练8轮，候选内保留验证SmoothL1最小权重，以“1s能量WAPE+0.2×功率WAPE+0.5×航段能量WAPE”选窗。正式训练完整80轮后保留最小验证SmoothL1权重。AdamW学习率0.0003、权衰减0.0001，batch=2048，Dropout=0.05，梯度范数裁剪2。损失是标准化功率SmoothL1，未额外加入能量损失或RLS梯度。该配置与DJI TCN项目完全一致。
 
 $$\widehat E_f=\sum_i\widehat P_{f,i}\Delta t_{f,i}/3600,\quad \mathrm{WAPE}=100\frac{\sum_u|\widehat y_u-y_u|}{\sum_u|y_u|}$$
 
@@ -97,15 +99,15 @@ $$\widehat E_f=\sum_i\widehat P_{f,i}\Delta t_{f,i}/3600,\quad \mathrm{WAPE}=100
         text = text.replace("预测头Linear(32,32)→SiLU（E为LeakyReLU）→Linear(32,1)",
                             f"预测头Linear({cfg.tcn_channels[-1]},{cfg.tcn_channels[-1]})→SiLU（E为LeakyReLU）→Linear({cfg.tcn_channels[-1]},1)")
         text = text.replace("候选1/2/5/10s各训练5轮", f"候选1/2/5/10s各训练{cfg.tune_epochs}轮")
-        text = text.replace("完整20轮后保留最小验证SmoothL1权重；无早停。AdamW学习率0.0003、权衰减0.0001，batch8192",
-                            f"最多训练{cfg.epochs}轮，验证损失连续{cfg.early_stopping_patience}轮未改善则早停，保留最小验证SmoothL1权重。AdamW学习率{cfg.learning_rate}、权衰减{cfg.weight_decay}，Dropout({cfg.tcn_dropout})，batch{cfg.batch_size}")
+        text = text.replace("正式训练完整80轮后保留最小验证SmoothL1权重。AdamW学习率0.0003、权衰减0.0001，batch=2048",
+                            f"正式训练完整{cfg.epochs}轮后保留最小验证SmoothL1权重。AdamW学习率{cfg.learning_rate}、权衰减{cfg.weight_decay}，Dropout({cfg.tcn_dropout})，batch={cfg.batch_size}")
         text = text.replace("参数量A/B为12001，C/D/E为12641。", "参数量随10维或15维输入及当前通道配置确定。")
     if online:
         text += r"""
 
 ### RLS更新和预测区间
 
-每组245候选由遗忘因子0.85/0.88/0.90/0.93/0.96/0.98/0.99、初始协方差0.05/0.1/0.25/0.5/1/2/4、反馈窗1/2/5/10/20s组合。18个选模flight最小化逐窗累计航段WAPE；18个校准flight固定区间倍率；测试参数冻结。
+每组245候选由遗忘因子0.85/0.88/0.90/0.93/0.96/0.98/0.99、初始协方差0.05/0.1/0.25/0.5/1/2/4、反馈窗1/2/5/10/20s组合。验证集按当前数据角色划分，选模和校准flight分别用于搜索与倍率校准；测试参数冻结。
 
 $$\boldsymbol\phi_k=[1,E_k^{\mathrm{TCN}}]^\top,\quad r_k=E_k^{\mathrm{true}}-\boldsymbol\phi_k^\top\boldsymbol\theta_{k-1}$$
 
@@ -181,20 +183,21 @@ def write_reports(cfg, online=False):
     name = "TCN+RLS-AMOVFLY" if online else "TCN-AMOVFLY"
     if online:
         feature_rows = FEATURES
-        sma_description = "位置3维+风2维"
+        sma_description = "位置3维+风速/风向2维"
     else:
         feature_rows = [("position_x_m, position_y_m, position_z_m", "3", "m", "裁剪航段首点归一化gps_x/y/z"),
                         ("wind_speed", "1", "m/s", "由正交风分量还原"),
                         ("wind_angle", "1", "rad", "由正交风分量还原，范围[-π, π]"),
                         ("time_s, task_duration_s", "2", "s", "航段已过时间和完整航段时长"),
-                        ("payload_g", "1", "g", "文件名P参数"), ("uav_R, uav_G", "2", "0/1", "机型指示")]
+                        ("payload_g", "1", "g", "文件名P参数"), ("uav_type", "1", "1/2/3", "Y/R/G机型编号"),
+                        ("planned", "1", "0/1/2", "停机/原地启动/飞行")]
         sma_description = "位置3维+风速和风向2维"
     feature_table = table(pd.DataFrame(feature_rows, columns=["字段", "维数", "单位", "构造"]))
     group_table = table(pd.DataFrame([{"组别": g, "输入维数": 15 if s["use_sma"] else 10, "激活": s["activation"], "SMA": sma_description if s["use_sma"] else "无"} for g, s in GROUPS.items()]))
     data_path = summary["output_directory"]
     source = summary["source_directory"]
     extra = ("冻结TCN，只搜索RLS遗忘因子、初始协方差、反馈窗并校准区间。" if online else "重新训练TCN，比较输入SMA和隐藏激活。")
-    param = ("RLS网格为7×7×5=245候选，验证集18个flight搜索、18个独立flight校准；反馈窗结束后才更新，短尾窗不更新。" if online else f"TCN窗口1/2/5/10s各训练{cfg.tune_epochs}轮，最佳窗口重新初始化训练至多{cfg.epochs}轮，验证损失耐心值{cfg.early_stopping_patience}；batch={cfg.batch_size}，AdamW学习率{cfg.learning_rate}，权衰减{cfg.weight_decay}，Dropout={cfg.tcn_dropout}，种子{cfg.random_seed}。")
+    param = ("RLS网格为7×7×5=245候选，验证集按数据清单划分搜索与校准flight；反馈窗结束后才更新，短尾窗不更新。" if online else f"TCN窗口1/2/5/10s各训练{cfg.tune_epochs}轮，最佳窗口重新初始化训练至多{cfg.epochs}轮，验证损失耐心值{cfg.early_stopping_patience}；batch={cfg.batch_size}，AdamW学习率{cfg.learning_rate}，权衰减{cfg.weight_decay}，Dropout={cfg.tcn_dropout}，种子{cfg.random_seed}。")
     result_cols = (["group", "tcn_flight_energy_wape_percent", "flight_energy_wape_percent", "task_start_interval_coverage_percent", "post_feedback_interval_coverage_percent", "post_feedback_interval_mean_width_wh", "post_feedback_interval_score_wh"] if online else ["group", "feature_count", "window_seconds", "power_wape_percent", "window_energy_wape_percent", "flight_energy_wape_percent"])
     result = table(metrics[result_cols])
     analysis = []
@@ -223,7 +226,7 @@ def write_reports(cfg, online=False):
 
 ## 实验与输入
 
-本项目是{experiment_title}，使用AMOVFLY ready data的裁剪飞行状态预测功率并积分能耗。{extra}
+本项目是{experiment_title}，使用AMOVFLY加工数据的裁剪飞行状态预测功率并积分能耗。{extra}
 
 {group_table}
 
@@ -237,7 +240,7 @@ def write_reports(cfg, online=False):
 - 加工目录：`{data_path}`，train/val/test共用一套CSV和SHA-256。
 - 模型目录：`{cfg.model_dir}`；输出目录：`{cfg.out_dir}`。
 
-接受{summary['accepted_flights']}个飞行，拒绝{len(summary['rejected_flights'])}个；训练/验证/测试为{summary['train_flights']}/{summary['val_flights']}/{summary['test_flights']}个flight、{summary['train_rows']}/{summary['val_rows']}/{summary['test_rows']}行。完整flight及Multi-UAV关联组按种子42划分70/15/15；验证再拆成18个选模和18个校准flight。清洗去非有限和重复时间，保留gps_z>2m首末航段，航段内断点>2s整文件拒收；0.2s线性重采样，功率按源航段梯形能量守恒校准，最后时间箱保留真实时长。
+接受{summary['accepted_flights']}个飞行，拒绝{len(summary['rejected_flights'])}个；训练/验证/测试为{summary['train_flights']}/{summary['val_flights']}/{summary['test_flights']}个flight、{summary['train_rows']}/{summary['val_rows']}/{summary['test_rows']}行。完整flight及Multi-UAV关联组按种子42划分70/15/15；验证搜索与校准角色以数据清单中的 `validation_roles` 为准。清洗去非有限和重复时间，保留gps_z>2m首末航段，航段内断点>2s整文件拒收；0.2s线性重采样，功率按源航段梯形能量守恒校准，最后时间箱保留真实时长。
 
 ```powershell
 python main.py all --device cuda

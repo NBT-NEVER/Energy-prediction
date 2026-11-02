@@ -9,34 +9,35 @@
 
 ## 实验与输入
 
-使用AMOVFLY ready data的裁剪飞行状态预测功率并积分能耗。冻结TCN，只搜索RLS遗忘因子、初始协方差、反馈窗并校准区间。
+本项目是原始TCN权重上的RLS在线修正实验，使用AMOVFLY加工数据的裁剪飞行状态预测功率并积分能耗。冻结TCN，只搜索RLS遗忘因子、初始协方差、反馈窗并校准区间。
 
 | 组别 | 输入维数 | 激活 | SMA |
 | --- | --- | --- | --- |
 | A | 10 | mixed | 无 |
 | B | 10 | silu | 无 |
-| C | 15 | mixed | 位置3维+风2维 |
-| D | 15 | silu | 位置3维+风2维 |
-| E | 15 | leaky_relu | 位置3维+风2维 |
+| C | 15 | mixed | 位置3维+风速/风向2维 |
+| D | 15 | silu | 位置3维+风速/风向2维 |
+| E | 15 | leaky_relu | 位置3维+风速/风向2维 |
 
 | 字段 | 维数 | 单位 | 构造 |
 | --- | --- | --- | --- |
 | position_x_m, position_y_m, position_z_m | 3 | m | 裁剪航段首点归一化gps_x/y/z |
-| wind_sensor_sin_mps, wind_sensor_cos_mps | 2 | m/s | wind_speed乘wind_angle的正弦/余弦 |
+| wind_speed | 1 | m/s | 由正交风分量还原 |
+| wind_angle | 1 | rad | 由正交风分量还原，范围[-π, π] |
+| time_s, task_duration_s | 2 | s | 航段已过时间和完整航段时长 |
 | payload_g | 1 | g | 文件名P参数 |
-| speed_mps | 1 | m/s | v_x/y/z三维模长 |
-| vertical_speed_mps | 1 | m/s | 源v_z |
-| uav_R, uav_G | 2 | 0/1 | 机型指示 |
+| uav_type | 1 | 1/2/3 | Y/R/G机型编号 |
+| planned | 1 | 0/1/2 | 停机/原地启动/飞行 |
 
 功率、电池、电流、电压、四元数、加速度、气压和经纬度目标列只作标签或审计，不进入模型。C/D/E的5个SMA通道按flight只用当前及历史10点计算，窗口起点按已有点数求均值。
 
 ## 数据与运行
 
 - 原始目录：`D:\Python-files\Energy-prediction\data\AMOVFLY-Dataset\sourse`。
-- 加工目录：`D:\Python-files\Energy-prediction\data\AMOVFLY-Dataset\TCN-comparison`，train/val/test共用一套CSV和SHA-256。
-- 模型目录：`D:\Python-files\Energy-prediction\model\TCN+RLS-AMOVFLY`；输出目录：`I:\STUDY\python\project\Energy-prediction\TCN-comparison\TCN+RLS-AMOVFLY\out`。
+- 加工目录：`D:\Python-files\Energy-prediction\data\AMOVFLY-Dataset\TCN-AMOVFLY-planned`，train/val/test共用一套CSV和SHA-256。
+- 模型目录：`D:\Python-files\Energy-prediction\model\TCN+RLS-AMOVFLY-planned`；输出目录：`I:\STUDY\python\project\Energy-prediction\TCN-comparison\TCN+RLS-AMOVFLY\out`。
 
-接受256个飞行，拒绝21个；训练/验证/测试为183/36/37个flight、505176/99980/105370行。完整flight及Multi-UAV关联组按种子42划分70/15/15；验证再拆成18个选模和18个校准flight。清洗去非有限和重复时间，保留gps_z>2m首末航段，航段内断点>2s整文件拒收；0.2s线性重采样，功率按源航段梯形能量守恒校准，最后时间箱保留真实时长。
+接受252个飞行，拒绝25个；训练/验证/测试为174/38/40个flight、519698/114661/120930行。完整flight及Multi-UAV关联组按种子42划分70/15/15；验证搜索与校准角色以数据清单中的 `validation_roles` 为准。清洗去非有限和重复时间，保留gps_z>2m首末航段，航段内断点>2s整文件拒收；0.2s线性重采样，功率按源航段梯形能量守恒校准，最后时间箱保留真实时长。
 
 ```powershell
 python main.py all --device cuda
@@ -46,7 +47,7 @@ python main.py report
 python -m unittest discover -s tests -v
 ```
 
-RLS网格为7×7×5=245候选，验证集18个flight搜索、18个独立flight校准；反馈窗结束后才更新，短尾窗不更新。
+RLS网格为7×7×5=245候选，验证集按数据清单划分搜索与校准flight；反馈窗结束后才更新，短尾窗不更新。
 
 ## 模块与复现
 
@@ -61,27 +62,27 @@ RLS网格为7×7×5=245候选，验证集18个flight搜索、18个独立flight�
 
 | group | tcn_flight_energy_wape_percent | flight_energy_wape_percent | task_start_interval_coverage_percent | post_feedback_interval_coverage_percent | post_feedback_interval_mean_width_wh | post_feedback_interval_score_wh |
 | --- | --- | --- | --- | --- | --- | --- |
-| A | 4.3628 | 0.8377 | 48.6486 | 89.6981 | 2.2600 | 19.6268 |
-| B | 4.6295 | 0.7825 | 56.7568 | 88.7877 | 2.0840 | 24.5309 |
-| C | 4.5733 | 0.8929 | 48.6486 | 89.5544 | 2.2113 | 21.4714 |
-| D | 5.0193 | 1.0315 | 40.5405 | 89.1711 | 2.1197 | 24.7137 |
-| E | 4.9995 | 0.8598 | 64.8649 | 90.1294 | 2.2774 | 24.3220 |
+| A | 2.8410 | 0.2819 | 87.5000 | 97.8387 | 7.3309 | 7.6275 |
+| B | 2.8836 | 0.5066 | 92.5000 | 96.3009 | 5.0430 | 5.4034 |
+| C | 2.8640 | 0.3125 | 95.0000 | 98.0050 | 3.9823 | 4.1357 |
+| D | 3.0212 | 0.3250 | 87.5000 | 97.9219 | 4.3572 | 4.6759 |
+| E | 2.6308 | 0.2730 | 85.0000 | 97.2984 | 3.8836 | 4.1590 |
 
 RLS区间为验证残差比率95%经验分位数校准；反馈后区间评分同时惩罚宽度和未覆盖。
 
-功率WAPE最低为C组（4.5408%）。
+功率WAPE最低为E组（5.4909%）。
 
-任务能耗WAPE最低为B组（0.7825%）。
+任务能耗WAPE最低为E组（0.2730%）。
 
-A组TCN任务能耗WAPE为4.3628%，RLS后为0.8377%；任务前覆盖48.65%，反馈后覆盖89.70%。
+A组TCN任务能耗WAPE为2.8410%，RLS后为0.2819%；任务前覆盖87.50%，反馈后覆盖97.84%。
 
-B组TCN任务能耗WAPE为4.6295%，RLS后为0.7825%；任务前覆盖56.76%，反馈后覆盖88.79%。
+B组TCN任务能耗WAPE为2.8836%，RLS后为0.5066%；任务前覆盖92.50%，反馈后覆盖96.30%。
 
-C组TCN任务能耗WAPE为4.5733%，RLS后为0.8929%；任务前覆盖48.65%，反馈后覆盖89.55%。
+C组TCN任务能耗WAPE为2.8640%，RLS后为0.3125%；任务前覆盖95.00%，反馈后覆盖98.00%。
 
-D组TCN任务能耗WAPE为5.0193%，RLS后为1.0315%；任务前覆盖40.54%，反馈后覆盖89.17%。
+D组TCN任务能耗WAPE为3.0212%，RLS后为0.3250%；任务前覆盖87.50%，反馈后覆盖97.92%。
 
-E组TCN任务能耗WAPE为4.9995%，RLS后为0.8598%；任务前覆盖64.86%，反馈后覆盖90.13%。
+E组TCN任务能耗WAPE为2.6308%，RLS后为0.2730%；任务前覆盖85.00%，反馈后覆盖97.30%。
 
 单种子和有限训练预算下，结果只代表当前划分。RLS反馈后的覆盖率低于名义95%时，区间不能解释为理论覆盖保证。
 

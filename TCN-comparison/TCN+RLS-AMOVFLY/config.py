@@ -1,7 +1,7 @@
 # _*_coding:UTF-8_*_
 # 开发者: NBT
 # 文件名: config.py
-# 开发时间: 2026-11-01
+# 开发时间: 2026-11-02
 # 文件名: config.py
 # 功能说明: 集中管理五组TCN加RLS及置信区间实验路径和参数
 # 版本号：1.0
@@ -13,11 +13,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_ROOT = Path(r"D:/Python-files/Energy-prediction/data/AMOVFLY-Dataset")
-EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-comparison"
+EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-AMOVFLY-planned"
 DATA_DIR = EXPERIMENT_DATA_DIR
-SOURCE_DATA_DIR = DATA_ROOT / "TCN-comparison"
-SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN+RLS-AMOVFLY")
-TCN_SOURCE_MODEL_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-AMOVFLY")
+SOURCE_DATA_DIR = EXPERIMENT_DATA_DIR
+SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN+RLS-AMOVFLY-planned")
+TCN_SOURCE_MODEL_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-AMOVFLY-planned")
 OUT_DIR = PROJECT_ROOT / "out"
 MODEL_DIR = SAVE_DIR
 LOG_DIR = OUT_DIR / "logs"
@@ -25,12 +25,13 @@ FIGURE_DIR = OUT_DIR / "figures"
 RESULT_DIR = OUT_DIR / "results"
 
 RAW_FEATURE_COLUMNS = [
-    "position_x_m", "position_y_m", "position_z_m", "wind_sensor_sin_mps",
-    "wind_sensor_cos_mps", "payload_g", "speed_mps", "vertical_speed_mps", "uav_R", "uav_G",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
+    "time_s", "task_duration_s", "payload_g", "uav_type", "planned",
 ]
 SMA_FEATURE_COLUMNS = [
-    "position_x_m", "position_y_m", "position_z_m", "wind_sensor_sin_mps", "wind_sensor_cos_mps",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
 ]
+SCHEMA_VERSION = "AMOVFLY-TCN-planned-1.0"
 TARGET_COLUMN = "power_w"
 GROUPS = {
     "A": {"name": "原始10维_混合激活", "use_sma": False, "activation": "mixed"},
@@ -46,7 +47,7 @@ RLS_FORGETTING_FACTORS = (0.85, 0.88, 0.90, 0.93, 0.96, 0.98, 0.99)
 RLS_INITIAL_COVARIANCES = (0.05, 0.10, 0.25, 0.50, 1.00, 2.00, 4.00)
 RLS_WINDOW_SECONDS = (1.0, 2.0, 5.0, 10.0, 20.0)
 CONFIDENCE_LEVEL = 0.95
-BATCH_SIZE = 8192
+BATCH_SIZE = 2048
 RANDOM_SEED = 42
 
 
@@ -96,6 +97,24 @@ class ExperimentConfig:
         调用位置: main.py、report.py。
         """
         return self.data_dir / "dataset_summary_TCN_RLS.json"
+
+    @property
+    def source_manifest_json(self) -> Path:
+        """功能: 返回冻结TCN的数据清单路径。
+        参数: 无。
+        返回: JSON路径。
+        调用位置: rls_evaluate.py、audit.py。
+        """
+        return self.source_data_dir / "dataset_summary_TCN-comparison.json"
+
+    @property
+    def audit_json(self) -> Path:
+        """功能: 返回本次产物审计路径。
+        参数: 无。
+        返回: JSON路径。
+        调用位置: audit.py、report.py。
+        """
+        return self.log_dir / "planned_artifact_audit.json"
 
     @property
     def runtime_json(self) -> Path:
