@@ -20,7 +20,11 @@ from config import (RAW_FEATURE_COLUMNS, SMA_FEATURE_COLUMNS, TARGET_COLUMN,
                     ExperimentConfig, ensure_directories, table_path)
 
 
-REQUIRED_COLUMNS = ["flight", "time", "dt_seconds", TARGET_COLUMN, "energy_interval_wh", *RAW_FEATURE_COLUMNS]
+REQUIRED_COLUMNS = [
+    "flight", "time", "time_s", "task_duration_s", "dt_seconds", TARGET_COLUMN,
+    "energy_interval_wh", "position_x_m", "position_y_m", "position_z_m",
+    "wind_sensor_sin_mps", "wind_sensor_cos_mps", "payload_g", "uav_R", "uav_G",
+]
 
 
 def copy_processed_data(cfg: ExperimentConfig, force: bool = False) -> dict:
@@ -85,6 +89,10 @@ def prepare_features(frame: pd.DataFrame, use_sma: bool, sma_window: int) -> pd.
     """
 
     ordered = frame.sort_values(["flight", "time"], kind="stable").reset_index(drop=True).copy()
+    east_wind = ordered["wind_sensor_cos_mps"].to_numpy(float)
+    north_wind = ordered["wind_sensor_sin_mps"].to_numpy(float)
+    ordered["wind_speed"] = np.hypot(east_wind, north_wind)
+    ordered["wind_angle"] = np.arctan2(north_wind, east_wind)
     if not use_sma:
         return ordered
     if sma_window < 1:
@@ -92,9 +100,18 @@ def prepare_features(frame: pd.DataFrame, use_sma: bool, sma_window: int) -> pd.
     grouped = ordered.groupby("flight", sort=False)
     for column in SMA_FEATURE_COLUMNS:
         target = f"{column}_sma10"
-        ordered[target] = grouped[column].transform(
-            lambda values: values.rolling(sma_window, min_periods=1).mean()
-        )
+        if column == "wind_angle":
+            sin_mean = grouped[column].transform(
+                lambda values: np.sin(values).rolling(sma_window, min_periods=1).mean()
+            )
+            cos_mean = grouped[column].transform(
+                lambda values: np.cos(values).rolling(sma_window, min_periods=1).mean()
+            )
+            ordered[target] = np.arctan2(sin_mean, cos_mean)
+        else:
+            ordered[target] = grouped[column].transform(
+                lambda values: values.rolling(sma_window, min_periods=1).mean()
+            )
     return ordered
 
 

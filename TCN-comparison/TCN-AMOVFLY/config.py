@@ -25,11 +25,11 @@ FIGURE_DIR = OUT_DIR / "figures"
 RESULT_DIR = OUT_DIR / "results"
 
 RAW_FEATURE_COLUMNS = [
-    "position_x_m", "position_y_m", "position_z_m", "wind_sensor_sin_mps",
-    "wind_sensor_cos_mps", "payload_g", "speed_mps", "vertical_speed_mps", "uav_R", "uav_G",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
+    "time_s", "task_duration_s", "payload_g", "uav_R", "uav_G",
 ]
 SMA_FEATURE_COLUMNS = [
-    "position_x_m", "position_y_m", "position_z_m", "wind_sensor_sin_mps", "wind_sensor_cos_mps",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
 ]
 TARGET_COLUMN = "power_w"
 ENERGY_COLUMN = "energy_interval_wh"
@@ -44,14 +44,15 @@ GROUPS = {
 RESAMPLE_SECONDS = 0.2
 SMA_WINDOW_STEPS = 10
 TCN_WINDOW_SECONDS = (1.0, 2.0, 5.0, 10.0)
-TUNE_EPOCHS = 5
-EPOCHS = 20
+TUNE_EPOCHS = 8
+EPOCHS = 40
 BATCH_SIZE = 8192
 LEARNING_RATE = 3e-4
-WEIGHT_DECAY = 1e-4
-TCN_CHANNELS = (32, 32)
+WEIGHT_DECAY = 1e-3
+TCN_CHANNELS = (16, 16)
 TCN_KERNEL_SIZE = 3
-TCN_DROPOUT = 0.05
+TCN_DROPOUT = 0.15
+EARLY_STOPPING_PATIENCE = 8
 RANDOM_SEED = 42
 
 
@@ -83,6 +84,7 @@ class ExperimentConfig:
     tcn_channels: tuple[int, ...] = TCN_CHANNELS
     tcn_kernel_size: int = TCN_KERNEL_SIZE
     tcn_dropout: float = TCN_DROPOUT
+    early_stopping_patience: int = EARLY_STOPPING_PATIENCE
     random_seed: int = RANDOM_SEED
     device: str = "cuda"
 

@@ -31,6 +31,8 @@ def fixture_frame():
     """
 
     frame = pd.DataFrame({column: [1., 3., 8., 100., 200.] for column in RAW_FEATURE_COLUMNS})
+    frame["wind_sensor_sin_mps"] = [0., 1., 2., 3., 4.]
+    frame["wind_sensor_cos_mps"] = [1., 0., 0., 0., 1.]
     frame["flight"] = [1, 1, 1, 2, 2]
     frame["time"] = [0., .2, .4, 0., .2]
     frame["dt_seconds"] = .2
@@ -60,6 +62,8 @@ class PipelineTests(unittest.TestCase):
         frame.loc[2, "position_x_m"] = 99999
         changed = prepare_features(frame, True, 10)
         np.testing.assert_array_equal(ordered.loc[:1, name], changed.loc[:1, name])
+        self.assertAlmostEqual(ordered.wind_speed.iloc[0], 1.)
+        self.assertAlmostEqual(ordered.wind_angle.iloc[1], np.pi / 2)
 
     def test_sequence_padding_alignment_and_task_reset(self):
         """功能: 检查窗口补齐与不同任务的历史重置。
