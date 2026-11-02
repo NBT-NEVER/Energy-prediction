@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import random
 import time
 
@@ -18,7 +19,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from config import GROUPS, RAW_FEATURE_COLUMNS, ExperimentConfig, group_paths
+from config import GROUPS, RAW_FEATURE_COLUMNS, SCHEMA_VERSION, ExperimentConfig, group_paths
 from data_utils import load_tables, prepare_features, validate_features, feature_columns
 from model import build_model
 
@@ -67,7 +68,8 @@ def fit_scaler(frame: pd.DataFrame, columns: list[str], cfg: ExperimentConfig, g
               "feature_columns": columns, "x_mean": x_mean.tolist(), "x_std": x_std.tolist(),
               "y_mean": y_mean, "y_std": y_std, "target_column": "power_w",
               "sma_window_steps": cfg.sma_window_steps, "resample_seconds": cfg.resample_seconds,
-              "schema_version": "AMOVFLY-TCN-comparison-1.0"}
+              "schema_version": SCHEMA_VERSION,
+              "data_manifest_sha256": hashlib.sha256(cfg.manifest_json.read_bytes()).hexdigest()}
     path = group_paths(cfg, group)["scaler"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(scaler, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -144,7 +146,6 @@ def train_model(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray,
                             batch_size=cfg.batch_size, shuffle=False, pin_memory=(device.type == "cuda"))
     best_loss, best_state, best_epoch, logs = float("inf"), None, 0, []
     started = time.perf_counter()
-    stale_epochs = 0
     for epoch in range(1, epochs + 1):
         train_loss = _run_epoch(model, train_loader, optimizer, device)
         val_loss = _run_epoch(model, val_loader, None, device)
@@ -154,12 +155,6 @@ def train_model(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray,
         if val_loss < best_loss:
             best_loss, best_epoch = val_loss, epoch
             best_state = {key: value.detach().cpu().clone() for key, value in model.state_dict().items()}
-            stale_epochs = 0
-        else:
-            stale_epochs += 1
-        if stale_epochs >= cfg.early_stopping_patience:
-            print(f"\n验证损失连续{stale_epochs}轮未改善，提前停止")
-            break
     print()
     return {"state_dict": best_state, "best_val_loss": best_loss,
             "window_steps": window_steps, "window_seconds": window_steps * cfg.resample_seconds,
@@ -322,7 +317,8 @@ def train_group(group: str, cfg: ExperimentConfig) -> dict:
                        "resample_seconds": cfg.resample_seconds, "tune_epochs": cfg.tune_epochs,
                        "learning_rate": cfg.learning_rate, "weight_decay": cfg.weight_decay,
                        "batch_size": cfg.batch_size, "target_column": "power_w",
-                       "schema_version": "AMOVFLY-TCN-comparison-1.0"})
+                       "schema_version": SCHEMA_VERSION,
+                       "data_manifest_sha256": scaler["data_manifest_sha256"]})
     paths = group_paths(cfg, group)
     torch.save(checkpoint, paths["checkpoint"])
     pd.DataFrame(logs).assign(group=group, window_seconds=seconds, activation=spec["activation"]).to_csv(

@@ -9,12 +9,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 import numpy as np
 import pandas as pd
 import torch
 
-from config import GROUPS, ExperimentConfig, group_paths
+from config import GROUPS, SCHEMA_VERSION, ExperimentConfig, group_paths
 from data_utils import load_tables, prepare_features, feature_columns, validate_features
 from train import _metrics, _model_from_checkpoint, build_sequences, predict_array
 
@@ -31,6 +32,8 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
     scaler = json.loads(paths["scaler"].read_text(encoding="utf-8"))
     expected_columns = feature_columns(GROUPS[group]["use_sma"])
     for data in (checkpoint, scaler):
+        if data.get("schema_version") != SCHEMA_VERSION or data.get("data_manifest_sha256") != hashlib.sha256(cfg.manifest_json.read_bytes()).hexdigest():
+            raise ValueError("模型与当前planned加工数据指纹不一致")
         if data["group"] != group or data["feature_columns"] != expected_columns:
             raise ValueError("模型、标准化器与实验组的特征契约不一致")
         if data["sma_window_steps"] != cfg.sma_window_steps:
@@ -44,7 +47,7 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
     sequence, _ = build_sequences(test, scaler, int(checkpoint["window_steps"]), require_target=False)
     model = _model_from_checkpoint(checkpoint, len(columns))
     predicted = predict_array(model, sequence, scaler, cfg)
-    output = test[["flight", "route", "time", "time_s", "dt_seconds", "power_w", "energy_interval_wh"]].copy()
+    output = test[["flight", "route", "time", "time_s", "dt_seconds", "power_w", "energy_interval_wh", "uav_type", "planned"]].copy()
     output["predicted_power_w"] = predicted
     output["predicted_energy_wh"] = predicted * output["dt_seconds"].to_numpy(float) / 3600.0
     output["power_error_w"] = output["predicted_power_w"] - output["power_w"]
@@ -72,6 +75,12 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
             stage_metrics = _metrics(test.loc[mask].reset_index(drop=True), predicted[mask], cfg)
             rows.append({"stage": stage, **{key: value for key, value in stage_metrics.items()
                                             if key.startswith("power_") or key in {"rows", "flights"}}})
+    for state, label in ((0, "motor_off"), (1, "ground_motor_on"), (2, "airborne")):
+        mask = test.planned.eq(state).to_numpy()
+        if mask.any():
+            state_metrics = _metrics(test.loc[mask].reset_index(drop=True), predicted[mask], cfg)
+            rows.append({"stage": label, **{key: value for key, value in state_metrics.items()
+                                            if key.startswith("power_") or key in {"rows", "flights"}}})
     pd.DataFrame(rows).to_csv(paths["stage_metrics"], index=False, encoding="utf-8")
     route_rows = []
     for route, subset in test.groupby("route"):
@@ -88,6 +97,7 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
                     "flight_equal_weight_mape_percent": float(flights.absolute_error_percent.mean()),
                     "flight_absolute_error_p90_wh": float(flights.absolute_error_wh.quantile(.9)),
                     "model_file": str(paths["checkpoint"]),
+                    "schema_version": SCHEMA_VERSION, "data_manifest_sha256": checkpoint["data_manifest_sha256"],
                     "prediction_file": str(paths["predictions"])})
     paths["metrics"].write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics

@@ -14,10 +14,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent  # 代码与说明文档目录
 DATA_ROOT = Path(r"D:/Python-files/Energy-prediction/data/AMOVFLY-Dataset")
-EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-comparison"
+EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-AMOVFLY-planned"
 DATA_DIR = EXPERIMENT_DATA_DIR  # 本实验独立加工数据
 SOURCE_PROCESSED_DIR = DATA_ROOT / "sourse"  # AMOVFLY原始ready data目录
-SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-AMOVFLY")  # D盘权重和标准化器
+SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-AMOVFLY-planned")  # 新契约权重和标准化器
 OUT_DIR = PROJECT_ROOT / "out"  # 本地统计表、日志和图表
 MODEL_DIR = SAVE_DIR
 LOG_DIR = OUT_DIR / "logs"
@@ -26,7 +26,7 @@ RESULT_DIR = OUT_DIR / "results"
 
 RAW_FEATURE_COLUMNS = [
     "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
-    "time_s", "task_duration_s", "payload_g", "uav_R", "uav_G",
+    "time_s", "task_duration_s", "payload_g", "uav_type", "planned",
 ]
 SMA_FEATURE_COLUMNS = [
     "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
@@ -45,14 +45,18 @@ RESAMPLE_SECONDS = 0.2
 SMA_WINDOW_STEPS = 10
 TCN_WINDOW_SECONDS = (1.0, 2.0, 5.0, 10.0)
 TUNE_EPOCHS = 8
-EPOCHS = 40
-BATCH_SIZE = 8192
+EPOCHS = 80
+BATCH_SIZE = 2048
 LEARNING_RATE = 3e-4
-WEIGHT_DECAY = 1e-3
-TCN_CHANNELS = (16, 16)
+WEIGHT_DECAY = 1e-4
+TCN_CHANNELS = (32, 32)
 TCN_KERNEL_SIZE = 3
-TCN_DROPOUT = 0.15
-EARLY_STOPPING_PATIENCE = 8
+TCN_DROPOUT = 0.05
+SCHEMA_VERSION = "AMOVFLY-TCN-planned-1.0"
+MAX_GAP_SECONDS = 2.0
+MOTOR_ON_POWER_THRESHOLD_W = 100.0
+AIRBORNE_HORIZONTAL_THRESHOLD_M = 1.0
+AIRBORNE_VERTICAL_THRESHOLD_M = 0.5
 RANDOM_SEED = 42
 
 
@@ -84,7 +88,6 @@ class ExperimentConfig:
     tcn_channels: tuple[int, ...] = TCN_CHANNELS
     tcn_kernel_size: int = TCN_KERNEL_SIZE
     tcn_dropout: float = TCN_DROPOUT
-    early_stopping_patience: int = EARLY_STOPPING_PATIENCE
     random_seed: int = RANDOM_SEED
     device: str = "cuda"
 

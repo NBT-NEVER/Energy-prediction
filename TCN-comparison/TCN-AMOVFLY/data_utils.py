@@ -17,13 +17,14 @@ import numpy as np
 import pandas as pd
 
 from config import (RAW_FEATURE_COLUMNS, SMA_FEATURE_COLUMNS, TARGET_COLUMN,
-                    ExperimentConfig, ensure_directories, table_path)
+                    SCHEMA_VERSION, ExperimentConfig, ensure_directories, table_path)
 
 
 REQUIRED_COLUMNS = [
     "flight", "time", "time_s", "task_duration_s", "dt_seconds", TARGET_COLUMN,
     "energy_interval_wh", "position_x_m", "position_y_m", "position_z_m",
-    "wind_sensor_sin_mps", "wind_sensor_cos_mps", "payload_g", "uav_R", "uav_G",
+    "wind_sensor_sin_mps", "wind_sensor_cos_mps", "payload_g", "uav_type", "planned",
+    "planned_motor_on", "planned_airborne",
 ]
 
 
@@ -35,16 +36,12 @@ def copy_processed_data(cfg: ExperimentConfig, force: bool = False) -> dict:
     """
 
     ensure_directories(cfg)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("prepare_amovfly", cfg.project_root.parent / "prepare_amovfly.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.OUTPUT_DIR = cfg.data_dir
-    module.SOURCE_DIR = cfg.source_processed_dir
-    module.STEP_SECONDS = cfg.resample_seconds
+    from prepare_data import build_dataset
     if not cfg.manifest_json.exists() or force:
-        module.build_dataset()
+        build_dataset(cfg)
     summary = json.loads(cfg.manifest_json.read_text(encoding="utf-8"))
+    if summary.get("version") != SCHEMA_VERSION:
+        raise ValueError("加工数据不属于当前planned特征契约，请重新prepare")
     for name, expected in summary["sha256"].items():
         if hashlib.sha256((cfg.data_dir / name).read_bytes()).hexdigest() != expected:
             raise ValueError(f"AMOVFLY加工数据已改变: {name}")
@@ -64,6 +61,12 @@ def load_tables(cfg: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
         missing = sorted(set(REQUIRED_COLUMNS) - set(frame.columns))
         if missing:
             raise ValueError(f"加工数据缺少字段: {missing}")
+        if not frame["uav_type"].isin([1, 2, 3]).all() or not frame["planned"].isin([0, 1, 2]).all():
+            raise ValueError("机型或planned状态编码越界")
+        if not np.array_equal(frame["planned"], frame["planned_motor_on"] + frame["planned_airborne"]):
+            raise ValueError("planned与二进制状态审计列不一致")
+        if (frame["planned_airborne"] > frame["planned_motor_on"]).any():
+            raise ValueError("飞行状态必须处于电机运行区间")
     train, val, test = tables
     val = val.loc[val.split_role == "val"].reset_index(drop=True)
     return train, val, test
