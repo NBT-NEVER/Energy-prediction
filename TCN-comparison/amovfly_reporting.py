@@ -36,7 +36,7 @@ FIGURE_NOTES = {
 }
 
 
-def algorithm_text(online):
+def algorithm_text(online, cfg=None):
     """功能: 返回报告中的核心算法与评价口径。
     参数: online为RLS标记。
     返回: Markdown文本。
@@ -89,6 +89,17 @@ $$\widehat E_f=\sum_i\widehat P_{f,i}\Delta t_{f,i}/3600,\quad \mathrm{WAPE}=100
 
 每flight连续5行构成名义1s箱，尾箱可不足1s，仍按实际dt积分。功率指标按采样点计权；航段WAPE按实际能量大小计权。运动状态分层用垂直速度绝对值≥0.5m/s、其余速度<0.5m/s、其余点依次标为垂直运动、悬停、水平运动。
 """
+    if cfg is not None and not online:
+        text = text.replace("C/D/E在10维后拼接位置3维、相对风2维的10点SMA", "C/D/E在10维后拼接位置3维、风速和风向的10点SMA")
+        text = text.replace("$j$为位置或风的特征索引", "$j$为位置、风速或风向索引")
+        text = text.replace("两个残差块通道均32，膨胀率1/2，每块含两次核3的左补齐卷积、GroupNorm(1,32)、隐藏激活、Dropout(0.05)",
+                            f"两个残差块通道为{cfg.tcn_channels[0]}和{cfg.tcn_channels[1]}，膨胀率1/2，每块含两次核{cfg.tcn_kernel_size}的左补齐卷积、GroupNorm(1,C)、隐藏激活、Dropout({cfg.tcn_dropout})")
+        text = text.replace("预测头Linear(32,32)→SiLU（E为LeakyReLU）→Linear(32,1)",
+                            f"预测头Linear({cfg.tcn_channels[-1]},{cfg.tcn_channels[-1]})→SiLU（E为LeakyReLU）→Linear({cfg.tcn_channels[-1]},1)")
+        text = text.replace("候选1/2/5/10s各训练5轮", f"候选1/2/5/10s各训练{cfg.tune_epochs}轮")
+        text = text.replace("完整20轮后保留最小验证SmoothL1权重；无早停。AdamW学习率0.0003、权衰减0.0001，batch8192",
+                            f"最多训练{cfg.epochs}轮，验证损失连续{cfg.early_stopping_patience}轮未改善则早停，保留最小验证SmoothL1权重。AdamW学习率{cfg.learning_rate}、权衰减{cfg.weight_decay}，Dropout({cfg.tcn_dropout})，batch{cfg.batch_size}")
+        text = text.replace("参数量A/B为12001，C/D/E为12641。", "参数量随10维或15维输入及当前通道配置确定。")
     if online:
         text += r"""
 
@@ -168,12 +179,22 @@ def write_reports(cfg, online=False):
     metrics = pd.read_csv(metrics_path).sort_values("group")
     summary = json.loads((cfg.data_dir / "dataset_summary_TCN-comparison.json").read_text(encoding="utf-8"))
     name = "TCN+RLS-AMOVFLY" if online else "TCN-AMOVFLY"
-    feature_table = table(pd.DataFrame(FEATURES, columns=["字段", "维数", "单位", "构造"]))
-    group_table = table(pd.DataFrame([{"组别": g, "输入维数": 15 if s["use_sma"] else 10, "激活": s["activation"], "SMA": "位置3维+风2维" if s["use_sma"] else "无"} for g, s in GROUPS.items()]))
+    if online:
+        feature_rows = FEATURES
+        sma_description = "位置3维+风2维"
+    else:
+        feature_rows = [("position_x_m, position_y_m, position_z_m", "3", "m", "裁剪航段首点归一化gps_x/y/z"),
+                        ("wind_speed", "1", "m/s", "由正交风分量还原"),
+                        ("wind_angle", "1", "rad", "由正交风分量还原，范围[-π, π]"),
+                        ("time_s, task_duration_s", "2", "s", "航段已过时间和完整航段时长"),
+                        ("payload_g", "1", "g", "文件名P参数"), ("uav_R, uav_G", "2", "0/1", "机型指示")]
+        sma_description = "位置3维+风速和风向2维"
+    feature_table = table(pd.DataFrame(feature_rows, columns=["字段", "维数", "单位", "构造"]))
+    group_table = table(pd.DataFrame([{"组别": g, "输入维数": 15 if s["use_sma"] else 10, "激活": s["activation"], "SMA": sma_description if s["use_sma"] else "无"} for g, s in GROUPS.items()]))
     data_path = summary["output_directory"]
     source = summary["source_directory"]
     extra = ("冻结TCN，只搜索RLS遗忘因子、初始协方差、反馈窗并校准区间。" if online else "重新训练TCN，比较输入SMA和隐藏激活。")
-    param = ("RLS网格为7×7×5=245候选，验证集18个flight搜索、18个独立flight校准；反馈窗结束后才更新，短尾窗不更新。" if online else "TCN窗口1/2/5/10s各训练5轮，最佳窗口重新初始化训练20轮；batch=8192，AdamW学习率0.0003，权衰减0.0001，种子42。")
+    param = ("RLS网格为7×7×5=245候选，验证集18个flight搜索、18个独立flight校准；反馈窗结束后才更新，短尾窗不更新。" if online else f"TCN窗口1/2/5/10s各训练{cfg.tune_epochs}轮，最佳窗口重新初始化训练至多{cfg.epochs}轮，验证损失耐心值{cfg.early_stopping_patience}；batch={cfg.batch_size}，AdamW学习率{cfg.learning_rate}，权衰减{cfg.weight_decay}，Dropout={cfg.tcn_dropout}，种子{cfg.random_seed}。")
     result_cols = (["group", "tcn_flight_energy_wape_percent", "flight_energy_wape_percent", "task_start_interval_coverage_percent", "post_feedback_interval_coverage_percent", "post_feedback_interval_mean_width_wh", "post_feedback_interval_score_wh"] if online else ["group", "feature_count", "window_seconds", "power_wape_percent", "window_energy_wape_percent", "flight_energy_wape_percent"])
     result = table(metrics[result_cols])
     analysis = []
@@ -190,6 +211,7 @@ def write_reports(cfg, online=False):
                 "风分量使用相对风角正余弦，不是地理ENU风；route列为场景名而非实际航线。"
                 "关联组隔离不等于跨日期留出，同日其他航班仍可能共享环境；仅当前随机划分和种子42，无多种子显著性结论。"
                 "审计CSV记录接受文件的源哈希、重复时间、缺失行和裁剪量；JSON另列全部拒收原因。")
+    experiment_title = "原始10维/扩展15维不同TCN结构对比实验" if not online else "原始TCN权重上的RLS在线修正实验"
     readme = f"""# {name}
 
 ## 目录
@@ -201,7 +223,7 @@ def write_reports(cfg, online=False):
 
 ## 实验与输入
 
-使用AMOVFLY ready data的裁剪飞行状态预测功率并积分能耗。{extra}
+本项目是{experiment_title}，使用AMOVFLY ready data的裁剪飞行状态预测功率并积分能耗。{extra}
 
 {group_table}
 
@@ -251,7 +273,7 @@ README维护稳定接口；improve.md追加工程变化；out/outreadme.md记录
     lines = [f"# {name} 当前输出报告", "", "## 目录", "",
              "- [A 数据与算法](#a-数据与算法)", "- [B 当前结果](#b-当前结果)",
              "- [C 图表与产物](#c-图表与产物)", "", "## A 数据与算法", "", feature_table, "", group_table, "", boundary, "",
-             algorithm_text(online), "", "## B 当前结果", "", result, "", "\n\n".join(analysis), ""]
+             algorithm_text(online, cfg), "", "## B 当前结果", "", result, "", "\n\n".join(analysis), ""]
     if not online:
         lookup = metrics.set_index("group")
         comparisons = []
@@ -260,7 +282,7 @@ README维护稳定接口；improve.md追加工程变化；out/outreadme.md记录
             delta = lookup.loc[left, "flight_energy_wape_percent"] - lookup.loc[right, "flight_energy_wape_percent"]
             comparisons.append(f"{left}相对{right}（{question}）任务WAPE变化{delta:+.4f}个百分点。")
         lines += ["\n\n".join(comparisons), "",
-                  "A/C选择相同10s窗口、B/D相同2s窗口，可作对应SMA比较。两对结果均未支持SMA改善；E/D窗口不同，差异同时包含窗口选择。20轮预算不保证收敛，不能扩大为激活函数的普遍排序。", ""]
+                  "各组均按同一训练/验证/测试flight划分独立选择窗口；组间测试比较反映完整配置差异。单次随机种子不能单独识别SMA或激活的因果贡献，也不能概括为普遍排序。", ""]
     else:
         lines += ["任务前覆盖只有40.54%—64.86%，反馈后覆盖88.79%—90.13%，均未达到95%。任务倍率使用初始点和大量反馈后点混合校准，初始点占比低；验证/测试残差分布可能不同，不能用总体倍率保证任务前覆盖。A反馈后区间评分最低，B任务点误差最低，二者不是同一评价目标。", ""]
     for group in metrics.group:
@@ -280,7 +302,7 @@ README维护稳定接口；improve.md追加工程变化；out/outreadme.md记录
     if cfg.runtime_json.exists():
         runtime = json.loads(cfg.runtime_json.read_text(encoding="utf-8"))
         lines += ["### 运行环境", "", f"开始时间：{runtime['started_at']}；Python {runtime['python'].split()[0]}；PyTorch {runtime['torch']}；CUDA {runtime['cuda']}；{runtime['gpu']}。"
-                  "正式训练CSV每组20轮，调参逐轮CSV每组4×5=20轮。追加终端日志包含早期被中断联调，不以历史日志的试跑预算作为当前结果。", ""]
+                  "当前训练轮次、早停状态及窗口搜索记录见各组CSV。追加终端日志可能包含此前运行记录，不以历史行数代替当前配置。", ""]
     lines += ["## C 图表与产物", ""]
     for figure in sorted(cfg.figure_dir.glob("*.svg")):
         rel = os.path.relpath(figure, cfg.out_dir).replace("\\", "/")
