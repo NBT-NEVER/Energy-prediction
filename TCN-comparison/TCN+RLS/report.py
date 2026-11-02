@@ -126,15 +126,15 @@ def write_report(cfg: ExperimentConfig) -> dict:
 
 | 组别 | 输入 | 激活 | 原始TCN来源 |
 | --- | --- | --- | --- |
-| A | 原始10维 | 混合 SiLU/ReLU | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_A_best.pt` |
-| B | 原始10维 | 统一 SiLU | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_B_best.pt` |
-| C | 原始10维+5维10步SMA，共15维 | 混合 SiLU/ReLU | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_C_best.pt` |
-| D | 原始10维+5维10步SMA，共15维 | 统一 SiLU | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_D_best.pt` |
-| E | 原始10维+5维10步SMA，共15维 | 统一 LeakyReLU(0.05) | `D:/Python-files/Energy-prediction/model/TCN/TCN-comparison_E_best.pt` |
+| A | 原始10维 | 混合 SiLU/ReLU | `D:/Python-files/Energy-prediction/model/TCN-planned/TCN-comparison_A_best.pt` |
+| B | 原始10维 | 统一 SiLU | `D:/Python-files/Energy-prediction/model/TCN-planned/TCN-comparison_B_best.pt` |
+| C | 原始10维+5维10步SMA，共15维 | 混合 SiLU/ReLU | `D:/Python-files/Energy-prediction/model/TCN-planned/TCN-comparison_C_best.pt` |
+| D | 原始10维+5维10步SMA，共15维 | 统一 SiLU | `D:/Python-files/Energy-prediction/model/TCN-planned/TCN-comparison_D_best.pt` |
+| E | 原始10维+5维10步SMA，共15维 | 统一 LeakyReLU(0.05) | `D:/Python-files/Energy-prediction/model/TCN-planned/TCN-comparison_E_best.pt` |
 
-SMA 通道为三维规划位置和二维风分量，按 flight 分组、只使用当前与历史值计算。原始10维为任务时间、任务总时长、三维规划位置、二维风、载荷、电机状态和离地状态；完整字段及单位见 [TCN字段说明](../TCN/README.md#原始字段与派生字段)。TCN 的两个残差块通道均为32，卷积核3，膨胀率1和2，GroupNorm(1,32)，Dropout=0.05；A-D预测头为 Linear(32,32)、SiLU、Linear(32,1)。混合激活仅在残差出口使用ReLU，统一SiLU组替换该出口；E组将四次卷积后激活、两次残差出口激活和预测头中间激活统一为LeakyReLU(negative_slope=0.05)，最终回归层均为线性。
+SMA 通道为三维规划位置和风速、风向，按 flight 分组、只使用当前与历史值计算。原始10维字段为 `position_x_m, position_y_m, position_z_m, wind_speed, wind_angle, time_s, task_duration_s, payload_g, uav_type, planned`；其中 `uav_type` 为机型编号，`planned` 为停机/原地启动/飞行三态。TCN 的两个残差块通道均为32，卷积核3，膨胀率1和2，GroupNorm(1,32)，Dropout=0.05；A-D预测头为 Linear(32,32)、SiLU、Linear(32,1)。
 
-训练采用SmoothL1Loss、AdamW、学习率3e-4、权重衰减1e-4、批大小2048、梯度裁剪2.0。采样间隔0.2s，SMA固定10步（2s）；TCN窗口候选为0.6、1、2、3、4、5、8、10s，每候选完整20轮，正式完整80轮，无提前停止，种子42。权重保留验证损失最低轮次，标准化器仅由训练集拟合。本轮读取的权重元数据为：
+训练采用SmoothL1Loss、AdamW、学习率3e-4、权重衰减1e-4、批大小2048、梯度裁剪2.0。采样间隔0.2s，SMA固定10步（2s）；TCN窗口候选为1、2、5、10s，每候选8轮，正式80轮，种子42。权重保留验证损失最低轮次，标准化器仅由训练集拟合。本轮读取的权重元数据为：
 
 {checkpoint_table}
 
@@ -219,11 +219,11 @@ RLS 使用的是完整窗口实际能耗反馈，属于离线回放的在线校�
              "- [结果文件](#结果文件)", "- [日志与运行配置](#日志与运行配置)", "",
              "## A. 算法、数据和评价口径", "",
              "### A.1 实验边界与数据流", "",
-             "本报告对应 `TCN+RLS` 当前输出。五组 TCN 权重来自 `../TCN`，本目录不重新训练 TCN；新增计算只包括 RLS 超参搜索、因果反馈模拟、区间校准和测试评价。加工表由 4.1 数据副本生成，训练/验证/测试分别为 "
-             f"{manifest['train_rows']} 行/{manifest['train_flights']} 个 flight、{manifest['val_rows']} 行/{manifest['val_flights']} 个 flight、{manifest['test_rows']} 行/{manifest['test_flights']} 个 flight。三部分的 flight 集合没有交叉，数据指纹保存在 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/TCN+RLS/processed/dataset_summary_TCN_RLS.json`。", "",
-             "每个样本的采样间隔为 0.2 s。A/B 输入为原始 10 维字段；C/D/E 在原始字段后追加规划东、北、上位置和东、北风分量的 5 个 10 步因果 SMA 通道，共 15 维。SMA 在单个 flight 内按时间升序计算，只使用当前和历史样本。TCN 输出当前采样点功率，功率乘以 `dt_seconds/3600` 得到采样能耗，再按 RLS 反馈窗口聚合。数据流为：加工表 → 特征构造与训练集标准化 → TCN 功率基线 → 窗口能耗 → RLS 校正 → 任务级/窗口级区间 → 测试指标。", "",
+             "本报告对应 `TCN+RLS` 当前输出。五组 TCN 权重来自 `../TCN`，本目录不重新训练 TCN；新增计算只包括 RLS 超参搜索、因果反馈模拟、区间校准和测试评价。加工表由 D 盘 `TCN-planned` 数据副本生成，训练/验证/测试分别为 "
+             f"{manifest['train_rows']} 行/{manifest['train_flights']} 个 flight、{manifest['val_rows']} 行/{manifest['val_flights']} 个 flight、{manifest['test_rows']} 行/{manifest['test_flights']} 个 flight。三部分的 flight 集合没有交叉，数据指纹保存在 `{cfg.manifest_json.as_posix()}`。", "",
+             "每个样本的采样间隔为 0.2 s。A/B 输入为原始 10 维字段 `position_x_m, position_y_m, position_z_m, wind_speed, wind_angle, time_s, task_duration_s, payload_g, uav_type, planned`；C/D/E 在原始字段后追加位置、风速和风向的 5 个 10 步因果 SMA 通道，共 15 维。SMA 在单个 flight 内按时间升序计算，只使用当前和历史样本。TCN 输出当前采样点功率，功率乘以 `dt_seconds/3600` 得到采样能耗，再按 RLS 反馈窗口聚合。数据流为：加工表 → 特征构造与训练集标准化 → TCN 功率基线 → 窗口能耗 → RLS 校正 → 任务级/窗口级区间 → 测试指标。", "",
              "### A.2 TCN 基线结构", "",
-             "每组沿用冻结 TCN：两个通道数为 32 的残差块，每块两次因果卷积，卷积核为 3，膨胀率为 1 和 2，A-D卷积后均接 GroupNorm(1,32)、SiLU 和 Dropout=0.05；残差出口按组别采用 ReLU 或 SiLU，预测头为 `Linear(32,32)-SiLU-Linear(32,1)`。E的四次卷积后激活、两次残差出口激活和预测头中间激活全部为LeakyReLU(0.05)，最后回归层保持线性；A/B为12001参数，C/D/E为12641参数。训练使用 SmoothL1Loss、AdamW、学习率 `3e-4`、权重衰减 `1e-4`、批大小 2048、梯度范数裁剪2.0、随机种子 42；8个窗口候选各训练 20 轮，正式模型训练 80 轮，保存验证损失最低轮次。RLS 阶段只加载冻结权重和训练集标准化器，不更新神经网络梯度。GroupNorm使用整个历史输入窗内的统计量，当前逐目标历史窗口推理不能替换成整条flight一次前向或简单卷积缓存。窗口起点用该flight首个输入重复补齐。", "", checkpoint_table, "",
+             "每组沿用冻结 TCN：两个通道数为 32 的残差块，每块两次因果卷积，卷积核为 3，膨胀率为 1 和 2，Dropout=0.05；预测头为 `Linear(32,32)-对应隐藏激活-Linear(32,1)`。训练使用 SmoothL1Loss、AdamW、学习率 `3e-4`、权重衰减 `1e-4`、批大小 2048、梯度范数裁剪2.0、随机种子 42；4个窗口候选（1、2、5、10s）各训练 8 轮，正式模型训练 80 轮，保存验证损失最低轮次。RLS 阶段只加载冻结权重和训练集标准化器，不更新神经网络梯度。GroupNorm使用整个历史输入窗内的统计量，当前逐目标历史窗口推理不能替换成整条flight一次前向或简单卷积缓存。窗口起点用该flight首个输入重复补齐。", "", checkpoint_table, "",
              "### A.3 RLS 回归和因果更新", "",
              "第 $k$ 个完整反馈窗口的 TCN 能耗为 $x_k$，实际能耗为 $y_k$，RLS 用偏置和比例两个参数进行校正：", "",
              "$$\\hat y_k=\\boldsymbol{\\phi}_k^{\\mathsf T}\\boldsymbol{\\theta}_k,\\qquad \\boldsymbol{\\phi}_k=[1,x_k]^{\\mathsf T}$$", "",

@@ -62,9 +62,18 @@ def prepare_features(frame: pd.DataFrame, use_sma: bool, sma_window: int) -> pd.
     grouped = ordered.groupby("flight", sort=False)
     for column in SMA_FEATURE_COLUMNS:
         target = f"{column}_sma10"
-        ordered[target] = grouped[column].transform(
-            lambda values: values.rolling(sma_window, min_periods=1).mean()
-        )
+        if column == "wind_angle":
+            sin_mean = grouped[column].transform(
+                lambda values: np.sin(values).rolling(sma_window, min_periods=1).mean()
+            )
+            cos_mean = grouped[column].transform(
+                lambda values: np.cos(values).rolling(sma_window, min_periods=1).mean()
+            )
+            ordered[target] = np.arctan2(sin_mean, cos_mean)
+        else:
+            ordered[target] = grouped[column].transform(
+                lambda values: values.rolling(sma_window, min_periods=1).mean()
+            )
     return ordered
 
 

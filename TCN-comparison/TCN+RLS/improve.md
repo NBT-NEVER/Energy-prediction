@@ -12,6 +12,13 @@
 
 按时间追加已经实施或已经测量的工程变化。RLS和区间结果以 `out/results/TCN_RLS_all_metrics.csv`、各组JSON、调参CSV和 `out/outreadme.md` 为准。未进行多种子重复时不表述为统计显著结论。
 
+## 2026-11-03 DJI planned 数据契约与TCN基线对齐
+
+- 实施范围：RLS项目改用与 `../TCN` 完全相同的DJI planned数据、10/15维输入、TCN模型结构和训练元数据；冻结权重、标准化器、RLS配方及结果独立保存。
+- 数据与配置：数据位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/TCN-planned`，RLS模型位于 `D:/Python-files/Energy-prediction/model/TCN+RLS-DJI-planned`；TCN窗口候选为1/2/5/10 s，正式预算80轮，batch=2048，245个RLS候选/组。
+- 实测：RLS后flight能耗WAPE为A 0.9487%、B 1.1636%、C 0.7187%、D 0.9257%、E 1.0554%；C组最低。RLS项目4项行为测试和全流程评价通过。
+- 文档：修正旧4.1数据路径、旧字段和旧训练预算，刷新 `README.md`、`out/outreadme.md` 和报告生成器。
+
 ## 2026-10-30 目录迁移和RLS实验
 
 - 实施范围：将原四组离线TCN工程迁入 `../TCN`；在本目录建立独立的TCN+RLS数据、模型、日志、结果和图表链路。

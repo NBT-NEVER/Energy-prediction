@@ -17,15 +17,15 @@ import numpy as np
 import pandas as pd
 import torch
 
-from config import GROUPS, RAW_FEATURE_COLUMNS, ExperimentConfig, ensure_directories, group_paths, table_path
+from config import GROUPS, RAW_FEATURE_COLUMNS, SCHEMA_VERSION, ExperimentConfig, ensure_directories, group_paths, table_path
 from data_utils import feature_columns, load_tables, prepare_features, validate_features
 from rls import SimulationOutput, calibrate_scales, coverage, interval_score, simulate_rls
 from train import _model_from_checkpoint, build_sequences, predict_array
 
 
 def prepare_data(cfg: ExperimentConfig, force: bool = False) -> dict:
-    """功能: 校验TCN+RLS独立数据副本和flight划分。
-    参数: cfg为实验配置，force为是否从TCN目录重建副本。
+    """功能: 校验共享加工表的源指纹和flight划分。
+    参数: cfg为实验配置，force为独立路径时是否重建副本。
     返回: 数据行数、flight数和SHA-256摘要。
     调用位置: main.py。
     """
@@ -37,7 +37,7 @@ def prepare_data(cfg: ExperimentConfig, force: bool = False) -> dict:
         target = cfg.data_dir / name
         if not source.exists():
             raise FileNotFoundError(f"缺少TCN数据副本: {source}")
-        if force or not target.exists():
+        if source.resolve() != target.resolve() and (force or not target.exists()):
             shutil.copy2(source, cfg.data_dir / name)
         if hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(target.read_bytes()).digest():
             raise ValueError(f"数据副本与来源不一致: {name}，请检查或显式使用--force-prepare重建")
@@ -45,6 +45,13 @@ def prepare_data(cfg: ExperimentConfig, force: bool = False) -> dict:
     if missing:
         raise FileNotFoundError(f"TCN+RLS数据目录缺少文件: {missing}")
     checksums = {name: hashlib.sha256((cfg.data_dir / name).read_bytes()).hexdigest() for name in names}
+    canonical_path = cfg.source_manifest_json
+    canonical = json.loads(canonical_path.read_text(encoding="utf-8"))
+    if canonical.get("schema_version", canonical.get("version")) != SCHEMA_VERSION:
+        raise ValueError("共享数据的版本契约不匹配")
+    for name, actual in checksums.items():
+        if canonical["sha256"].get(name) != actual:
+            raise ValueError(f"DJI planned共享加工表与预处理指纹不一致: {name}")
     train, val, test = (pd.read_csv(table_path(cfg, split), usecols=["flight"])
                         for split in ("train", "val", "test"))
     sets = [set(train.flight), set(val.flight), set(test.flight)]
@@ -52,7 +59,8 @@ def prepare_data(cfg: ExperimentConfig, force: bool = False) -> dict:
         raise ValueError("TCN+RLS的train、val、test存在flight交叉")
     summary = {
         "data_dir": str(cfg.data_dir), "source_data_dir": str(cfg.source_data_dir),
-        "sha256": checksums, "split_overlap": False,
+        "sha256": checksums, "split_overlap": False, "schema_version": SCHEMA_VERSION,
+        "source_manifest_sha256": hashlib.sha256(canonical_path.read_bytes()).hexdigest(),
         "train_rows": int(len(train)), "val_rows": int(len(val)), "test_rows": int(len(test)),
         "train_flights": int(train.flight.nunique()), "val_flights": int(val.flight.nunique()),
         "test_flights": int(test.flight.nunique()),
@@ -76,9 +84,9 @@ def _copy_tcn_assets(cfg: ExperimentConfig, group: str) -> tuple[Path, Path]:
         raise FileNotFoundError(f"找不到TCN权重: {source_checkpoint}")
     if not source_scaler.exists():
         raise FileNotFoundError(f"找不到TCN标准化器: {source_scaler}")
-    if not paths["tcn_checkpoint"].exists():
+    if not paths["tcn_checkpoint"].exists() or hashlib.sha256(source_checkpoint.read_bytes()).digest() != hashlib.sha256(paths["tcn_checkpoint"].read_bytes()).digest():
         shutil.copy2(source_checkpoint, paths["tcn_checkpoint"])
-    if not paths["scaler"].exists():
+    if not paths["scaler"].exists() or hashlib.sha256(source_scaler.read_bytes()).digest() != hashlib.sha256(paths["scaler"].read_bytes()).digest():
         shutil.copy2(source_scaler, paths["scaler"])
     return paths["tcn_checkpoint"], paths["scaler"]
 
@@ -99,6 +107,16 @@ def load_baselines(cfg: ExperimentConfig, group: str) -> tuple[pd.DataFrame, pd.
         raise ValueError(f"{group}组TCN checkpoint激活契约不匹配")
     if scaler.get("group") != group or scaler.get("feature_columns") != expected:
         raise ValueError(f"{group}组TCN scaler特征契约不匹配")
+    if checkpoint.get("channels") != [32, 32] or checkpoint.get("kernel_size") != 3 or checkpoint.get("dropout") != 0.05:
+        raise ValueError("冻结TCN结构与参考架构不一致")
+    if checkpoint.get("weight_decay") != 1e-4 or checkpoint.get("batch_size") != 2048 or checkpoint.get("epochs_run") != 80:
+        raise ValueError("冻结TCN训练预算与本实验不一致")
+    fingerprint = hashlib.sha256(cfg.source_manifest_json.read_bytes()).hexdigest()
+    for asset in (checkpoint, scaler):
+        if asset.get("schema_version") != SCHEMA_VERSION or asset.get("data_manifest_sha256") != fingerprint:
+            raise ValueError("冻结TCN或scaler不属于当前数据清单")
+        if asset.get("sma_window_steps") != cfg.sma_window_steps or asset.get("resample_seconds") != cfg.resample_seconds:
+            raise ValueError("冻结TCN的采样与SMA配置不一致")
     _, validation, test = load_tables(cfg)
     validation = prepare_features(validation, GROUPS[group]["use_sma"], cfg.sma_window_steps)
     test = prepare_features(test, GROUPS[group]["use_sma"], cfg.sma_window_steps)
@@ -268,6 +286,9 @@ def tune_group(group: str, cfg: ExperimentConfig) -> dict:
         print(f"组{group}已完成RLS窗口{window_seconds:g}s，累计{len(rows)}个候选，"
               f"当前最优验证任务能耗WAPE={best_so_far:.6f}%", flush=True)
     result = pd.DataFrame(rows).sort_values(["flight_energy_wape_percent", "window_seconds"]).reset_index(drop=True)
+    result["data_manifest_sha256"] = checkpoint["data_manifest_sha256"]
+    result["tcn_sha256"] = hashlib.sha256(group_paths(cfg, group)["tcn_checkpoint"].read_bytes()).hexdigest()
+    result.to_csv(group_paths(cfg, group)["rls_tuning"], index=False, encoding="utf-8")
     best = result.iloc[0].to_dict()
     group_paths(cfg, group)["tuning_log"].write_text(
         "TCN+RLS超参搜索\n"
@@ -288,7 +309,7 @@ def calibrate_group(group: str, cfg: ExperimentConfig, best: dict) -> dict:
     返回: 区间校准摘要和校准结果路径。
     调用位置: main.py。
     """
-    validation, _, val_baseline, _, _, _ = load_baselines(cfg, group)
+    validation, _, val_baseline, _, checkpoint, _ = load_baselines(cfg, group)
     flights = sorted(validation.flight.unique())
     calibration_ids = set(flights[1::2])
     subset = validation[validation.flight.isin(calibration_ids)].reset_index(drop=True)
@@ -296,7 +317,9 @@ def calibrate_group(group: str, cfg: ExperimentConfig, best: dict) -> dict:
     output = simulate_rls(subset, baseline, float(best["forgetting_factor"]), float(best["initial_covariance"]),
                           float(best["window_seconds"]), cfg.resample_seconds, cfg.confidence_level)
     calibration = calibrate_scales(output, cfg.confidence_level)
-    calibration.update({"group": group, "calibration_split": "validation_odd_flights",
+    calibration.update({"data_manifest_sha256": checkpoint["data_manifest_sha256"],
+                        "tcn_sha256": hashlib.sha256(group_paths(cfg, group)["tcn_checkpoint"].read_bytes()).hexdigest(),
+                        "group": group, "calibration_split": "validation_odd_flights",
                         "rls_forgetting_factor": best["forgetting_factor"],
                         "rls_initial_covariance": best["initial_covariance"],
                         "rls_window_seconds": best["window_seconds"],
@@ -330,6 +353,11 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
     if not np.isclose(calibration["confidence_level"], cfg.confidence_level):
         raise ValueError("置信水平已改变，请重新运行calibrate")
     _, test, _, test_baseline, checkpoint, _ = load_baselines(cfg, group)
+    fingerprint = checkpoint["data_manifest_sha256"]
+    tcn_hash = hashlib.sha256(group_paths(cfg, group)["tcn_checkpoint"].read_bytes()).hexdigest()
+    for asset in (tuning, calibration):
+        if asset.get("data_manifest_sha256") != fingerprint or asset.get("tcn_sha256") != tcn_hash:
+            raise ValueError("搜索或校准产物已过期，请重新tune和calibrate")
     output = simulate_rls(test, test_baseline, float(tuning["forgetting_factor"]), float(tuning["initial_covariance"]),
                           float(tuning["window_seconds"]), cfg.resample_seconds, cfg.confidence_level,
                           float(calibration["task_interval_scale"]), float(calibration["window_interval_scale"]))
@@ -349,7 +377,8 @@ def evaluate_group(group: str, cfg: ExperimentConfig) -> dict:
     checkpoint_summary = {"group": group, "feature_count": len(feature_columns(GROUPS[group]["use_sma"])),
                           "window_seconds": checkpoint["window_seconds"], "window_steps": checkpoint["window_steps"]}
     metrics = summarise_output(output, cfg, group, checkpoint_summary, tuning, calibration)
-    metrics.update({"tuning_candidates": int(len(pd.read_csv(tuning_path))), "validation_calibration_flights": int(calibration["calibration_flights"]),
+    metrics.update({"schema_version": SCHEMA_VERSION, "data_manifest_sha256": fingerprint, "tcn_sha256": tcn_hash,
+                    "tuning_candidates": int(len(pd.read_csv(tuning_path))), "validation_calibration_flights": int(calibration["calibration_flights"]),
                     "model_file": str(paths["tcn_checkpoint"]), "prediction_file": str(paths["test_predictions"]),
                     "trace_file": str(paths["test_trace"])})
     paths["metrics"].write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")

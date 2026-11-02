@@ -13,11 +13,11 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_ROOT = Path(r"D:/Python-files/Energy-prediction/data/dji_matrice_100_data")
-EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN+RLS"
-DATA_DIR = EXPERIMENT_DATA_DIR / "processed"
-SOURCE_DATA_DIR = DATA_ROOT / "TCN" / "processed"
-SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN+RLS")
-TCN_SOURCE_MODEL_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN")
+EXPERIMENT_DATA_DIR = DATA_ROOT / "TCN-planned"
+DATA_DIR = EXPERIMENT_DATA_DIR
+SOURCE_DATA_DIR = EXPERIMENT_DATA_DIR
+SAVE_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN+RLS-DJI-planned")
+TCN_SOURCE_MODEL_DIR = Path(r"D:/Python-files/Energy-prediction/model/TCN-planned")
 OUT_DIR = PROJECT_ROOT / "out"
 MODEL_DIR = SAVE_DIR
 LOG_DIR = OUT_DIR / "logs"
@@ -25,14 +25,13 @@ FIGURE_DIR = OUT_DIR / "figures"
 RESULT_DIR = OUT_DIR / "results"
 
 RAW_FEATURE_COLUMNS = [
-    "time_s", "task_duration_s", "planned_position_east_m",
-    "planned_position_north_m", "planned_position_up_m", "wind_east_mps",
-    "wind_north_mps", "payload_g", "planned_motor_on", "planned_airborne",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
+    "time_s", "task_duration_s", "payload_g", "uav_type", "planned",
 ]
 SMA_FEATURE_COLUMNS = [
-    "planned_position_east_m", "planned_position_north_m", "planned_position_up_m",
-    "wind_east_mps", "wind_north_mps",
+    "position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle",
 ]
+SCHEMA_VERSION = "DJI-TCN-planned-1.0"
 TARGET_COLUMN = "power_w"
 GROUPS = {
     "A": {"name": "原始10维_混合激活", "use_sma": False, "activation": "mixed"},
@@ -98,6 +97,24 @@ class ExperimentConfig:
         调用位置: main.py、report.py。
         """
         return self.data_dir / "dataset_summary_TCN_RLS.json"
+
+    @property
+    def source_manifest_json(self) -> Path:
+        """功能: 返回冻结TCN的数据清单路径。
+        参数: 无。
+        返回: JSON路径。
+        调用位置: rls_evaluate.py、audit.py。
+        """
+        return self.source_data_dir / "dataset_summary_TCN-comparison.json"
+
+    @property
+    def audit_json(self) -> Path:
+        """功能: 返回本次产物审计路径。
+        参数: 无。
+        返回: JSON路径。
+        调用位置: audit.py、report.py。
+        """
+        return self.log_dir / "planned_artifact_audit.json"
 
     @property
     def runtime_json(self) -> Path:
