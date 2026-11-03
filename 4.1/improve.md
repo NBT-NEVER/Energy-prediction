@@ -4,6 +4,7 @@
 
 - [记录约定](#记录约定)
 - [2026-09-18：十维任务前输入与独立数据链路](#2026-09-18十维任务前输入与独立数据链路)
+- [2026-11-03：planned三态、五维SMA与联合窗口搜索](#2026-11-03planned三态五维sma与联合窗口搜索)
 
 ## 记录约定
 
@@ -40,3 +41,17 @@
 - 6 项契约单元测试、全模块语法检查、独立 prepare、任务前 demo、在线 demo、评估和完整 CUDA 重跑均通过。
 
 **输出影响：** 当前 `out/` 含 40 张 SVG、9 个 GIF、8 个 HTML、32 个 CSV、18 个 JSON 和 1 个 UTF-8 日志。任务级区间覆盖率为 76.596%，未达到名义 95%；该限制保留在结果报告中，不用点预测误差代替区间质量结论。
+
+## 2026-11-03：planned三态、五维SMA与联合窗口搜索
+
+**时间：** 2026-11-03（Asia/Shanghai）
+
+**实现提交：** 未提交。
+
+**修改范围：** `config.py`、`data_utils.py`、`train.py`、`task_api.py`、`evaluate.py`、`visualize.py`、`report.py`、`main.py`、测试和说明文档；D盘新建 `4.1-planned-sma` 数据与模型目录。
+
+**处理方式：** 将 `planned_motor_on` 与 `planned_airborne` 合并为 `planned=0/1/2`，DJI `uav_type` 固定为0；增加位置三轴、风速、风向的五维因果SMA，并将SMA候选 1/2/5/10 s 与TCN候选 0.6/1/2/3/4/5/8/10 s 联合搜索。网络保持通道 `(32,32)`、Dropout 0.05、权重衰减 `1e-4`、batch 2048、正式80轮。
+
+**验证效果：** 从Source重建188,790行、200个flight，训练/验证/测试为124/29/47，能耗守恒最大误差 `3.76e-14%`。32个候选完成搜索，最优为TCN 2 s、SMA 5 s（综合分数10.646）；正式模型最佳验证损失0.032928。测试集TCN功率WAPE 10.200%、flight能耗WAPE 3.124%，RLS后分别为9.482%和0.932%。
+
+**输出影响：** 新结果写入 `4.1/out/4.1-planned-sma/`，生成40张SVG、9个GIF、8个HTML；D盘加工数据位于 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.1-planned-sma/processed/`。旧 `4.1` 数据和历史结果未覆盖。

@@ -176,7 +176,7 @@ def _axes_for(path: Path) -> str:
     return "坐标轴按图中中文单位标注，颜色区分TCN基线、RLS修正和真实值。"
 
 
-def _observation_for(path: Path, metrics: dict, task: dict, route_summary: dict) -> tuple[str, str, str]:
+def _observation_for(path: Path, metrics: dict, task: dict, route_summary: dict, cfg: ExperimentConfig) -> tuple[str, str, str]:
     """功能: 根据正式结果生成图形数值现象、分析和局限。
     参数: path为图形路径，其余参数为当前结构化结果。
     返回: 数值现象、分析、局限三元组。
@@ -185,8 +185,10 @@ def _observation_for(path: Path, metrics: dict, task: dict, route_summary: dict)
 
     name = path.name
     if "training" in path.parts:
+        tuning = pd.read_csv(cfg.tcn_tuning_csv)
+        best = tuning.sort_values("tcn_selection_score").iloc[0]
         return (
-            "4 s窗口综合选择分数为10.434；正式训练80轮，最佳验证损失为0.031255。",
+            f"最优组合为TCN {best['window_seconds']:g}s、SMA {best['sma_window_seconds']:g}s，综合分数为{best['tcn_selection_score']:.3f}。",
             "训练损失继续下降而验证损失后段波动，checkpoint按最低验证损失保存。",
             "候选比较只基于当前29个验证flight，窗口排序不代表其他机型或采样周期。",
         )
@@ -218,7 +220,7 @@ def _observation_for(path: Path, metrics: dict, task: dict, route_summary: dict)
         return (
             f"demo任务预测总能耗为{float(task['total_energy_wh']):.3f} Wh，95%区间为"
             f"[{float(task['total_energy_lower_wh']):.3f}, {float(task['total_energy_upper_wh']):.3f}] Wh。",
-            "demo仅使用10维任务前字段，两个计划状态显式覆盖停机、启动、离地和降落。",
+            "demo使用10维基础任务前字段，内部按部署SMA窗口生成15维模型输入，planned覆盖停机、启动和飞行。",
             "demo是接口连通性样例，不含真实观测，不能作为精度样本。",
         )
     if "rls" in path.parts or "rls_" in name:
@@ -249,7 +251,7 @@ def _figure_block(index: int, path: Path, cfg: ExperimentConfig, metrics: dict,
 
     title = _figure_title(path)
     relative = _relative(path, cfg.out_dir)
-    observation, analysis, limitation = _observation_for(path, metrics, task, route_summary)
+    observation, analysis, limitation = _observation_for(path, metrics, task, route_summary, cfg)
     return "\n".join([
         f"### 图 C-{index} {title}",
         "",
@@ -297,7 +299,7 @@ def generate_output_report(cfg: ExperimentConfig) -> Path:
         "",
         "## A. 方法与数据",
         "",
-        "当前加工表按完整flight独立处理，TCN只接收README列出的10维任务前字段。"
+        "当前加工表按完整flight独立处理，TCN接收10维基础字段和5维因果SMA，共15维模型输入。"
         f"数据规模为{dataset['processed_rows']:,}行、{dataset['flights']}个flight，"
         f"训练/验证/测试flight为{dataset['train_flights']}/{dataset['val_flights']}/{dataset['test_flights']}。",
         "",
@@ -306,7 +308,7 @@ def generate_output_report(cfg: ExperimentConfig) -> Path:
         "原始真实时间功率先做梯形积分，重采样功率再按flight缩放；最大总能耗相对误差为"
         f"{dataset['consistency_checks']['maximum_flight_energy_error_percent']:.3e}%。",
         "",
-        "TCN使用两层因果卷积。时间窗候选为0.6、1、2、3、4、5、8和10 s，"
+        "TCN使用两层因果卷积。TCN时间窗候选为0.6、1、2、3、4、5、8和10 s，SMA时间窗候选为1、2、5和10 s，"
         "选择分数同时考虑时间步功率、1 s能耗与flight能耗。RLS模型为"
         "$\\hat{E}_k=\\theta_{0,k}+\\theta_{1,k}E_{\\mathrm{TCN},k}$。"
         "其中，$\\hat{E}_k$ 为校正窗口能耗，$\\theta_{0,k}$ 为偏置，"
@@ -314,7 +316,7 @@ def generate_output_report(cfg: ExperimentConfig) -> Path:
         "",
         "## B. 正式运行结果",
         "",
-        "完整CUDA运行完成8个候选各20轮和正式模型80轮。选择4 s窗口，最佳验证损失为0.031255；"
+        "完整CUDA运行完成32个TCN×SMA候选各20轮和正式模型80轮。最优组合为TCN 2 s、SMA 5 s，最佳验证损失为0.032928；"
         "RLS遗忘因子为0.93，初始协方差为1.0。",
         "",
         "| 尺度 | TCN WAPE | RLS WAPE | 其他结果 |",
@@ -349,7 +351,7 @@ def generate_output_report(cfg: ExperimentConfig) -> Path:
         "关键结构化结果：",
         "",
         f"- [`{cfg.evaluation_json.name}`]({_relative(cfg.evaluation_json, cfg.out_dir)})：正式测试指标和覆盖率。",
-        f"- [`{cfg.tcn_tuning_csv.name}`]({_relative(cfg.tcn_tuning_csv, cfg.out_dir)})：8个TCN窗口。",
+        f"- [`{cfg.tcn_tuning_csv.name}`]({_relative(cfg.tcn_tuning_csv, cfg.out_dir)})：32个TCN×SMA窗口组合。",
         f"- [`{cfg.rls_tuning_csv.name}`]({_relative(cfg.rls_tuning_csv, cfg.out_dir)})：49组RLS参数。",
         f"- [`planned_state_transitions_4.1.csv`]({_relative(cfg.out_model_dir / 'planned_state_transitions_4.1.csv', cfg.out_dir)})：多航线状态切换与约束检查。",
         f"- [`{cfg.terminal_log_file.name}`]({_relative(cfg.terminal_log_file, cfg.out_dir)})：完整GPU运行日志。",

@@ -25,7 +25,7 @@ from train import TARGET_COLUMN, UNCERTAINTY_FEATURES, predict_frame
 
 
 FLIGHT_PROFILE_COLUMNS = [
-    "flight", "route", "wind_east_mps", "wind_north_mps", "payload_g", "task_duration_s",
+    "flight", "route", "wind_speed", "wind_angle", "payload_g", "task_duration_s",
 ]
 CORRECTION_TRACE_COLUMNS = [
     "flight", "route", "observed_window_count", "observed_actual_energy_wh",
@@ -295,17 +295,17 @@ def _flight_input_profiles(frame: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"分层评估缺少任务输入字段: {missing}")
     source = frame[FLIGHT_PROFILE_COLUMNS].copy()
-    source["wind_speed_mps"] = np.hypot(source["wind_east_mps"], source["wind_north_mps"])
+    source["wind_speed_mps"] = source["wind_speed"].astype(float)
     profiles = source.groupby("flight", sort=True).agg(
         route=("route", "first"),
         mean_wind_speed_mps=("wind_speed_mps", "mean"),
-        mean_wind_east_mps=("wind_east_mps", "mean"),
-        mean_wind_north_mps=("wind_north_mps", "mean"),
+        mean_wind_speed=("wind_speed", "mean"),
+        mean_wind_angle=("wind_angle", "mean"),
         payload_g=("payload_g", "first"),
         task_duration_s=("task_duration_s", "first"),
     ).reset_index()
     profiles["mean_wind_direction_deg"] = np.mod(
-        np.degrees(np.arctan2(profiles["mean_wind_east_mps"], profiles["mean_wind_north_mps"])), 360.0,
+        np.degrees(profiles["mean_wind_angle"]), 360.0,
     )
     return profiles
 
@@ -385,7 +385,7 @@ def _save_stratified_evaluation(cfg: ExperimentConfig, train_profiles: pd.DataFr
             "stratification": stratification,
             "stratum": stratum,
             "selection_rule": rule,
-            "selection_inputs": "route|mean_wind_speed_mps|wind_east_mps|wind_north_mps|payload_g|task_duration_s",
+            "selection_inputs": "route|mean_wind_speed_mps|wind_speed|wind_angle|payload_g|task_duration_s",
             "selection_uses_power_label": False,
             "point_prediction_method": "online_window_rls_and_task_before_tcn",
             "interval_method": "task_before_conditional_residual_variance_sum",

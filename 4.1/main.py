@@ -112,22 +112,21 @@ def _demo_task(cfg) -> pd.DataFrame:
     dt = cfg.resample_seconds
     times = np.arange(0.0, 40.0, dt)
     progress = times / 40.0
-    motor_on = ((times >= 2.0) & (times <= 38.0)).astype(int)
-    airborne = ((times >= 4.0) & (times <= 36.0)).astype(int)
+    planned = np.where((times >= 4.0) & (times <= 36.0), 2, np.where((times >= 2.0) & (times <= 38.0), 1, 0)).astype(int)
     up = np.where(times < 4.0, 0.0, np.where(times <= 8.0, (times - 4.0) * 5.0, 20.0))
     up = np.where(times > 32.0, np.maximum((36.0 - times) * 5.0, 0.0), up)
     task = pd.DataFrame({
         "task_id": "demo_new_route_001",
         "time_s": times,
         "task_duration_s": 40.0,
-        "planned_position_east_m": 120.0 * progress,
-        "planned_position_north_m": 25.0 * np.sin(np.pi * progress),
-        "planned_position_up_m": up,
-        "wind_east_mps": 1.5 + 0.2 * np.sin(times / 10.0),
-        "wind_north_mps": 2.6 + 0.2 * np.cos(times / 10.0),
+        "position_x_m": 120.0 * progress,
+        "position_y_m": 25.0 * np.sin(np.pi * progress),
+        "position_z_m": up,
+        "wind_speed": 3.0 + 0.2 * np.sin(times / 10.0),
+        "wind_angle": 0.5 + 0.05 * np.cos(times / 10.0),
         "payload_g": 220.0,
-        "planned_motor_on": motor_on,
-        "planned_airborne": airborne,
+        "uav_type": 0,
+        "planned": planned,
     })
     return task
 

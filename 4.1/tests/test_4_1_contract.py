@@ -21,22 +21,25 @@ VERSION_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(VERSION_DIR))
 
 from config import build_config  # noqa: E402
-from data_utils import FEATURE_COLUMNS, validate_processed_data  # noqa: E402
+from data_utils import BASE_FEATURE_COLUMNS, FEATURE_COLUMNS, SMA_FEATURE_COLUMNS, validate_processed_data  # noqa: E402
 from main import _demo_task  # noqa: E402
 from task_api import REQUIRED_PLANNING_COLUMNS, validate_task_input  # noqa: E402
 
 
-EXPECTED_FEATURES = [
+EXPECTED_BASE_FEATURES = [
     "time_s",
     "task_duration_s",
-    "planned_position_east_m",
-    "planned_position_north_m",
-    "planned_position_up_m",
-    "wind_east_mps",
-    "wind_north_mps",
+    "position_x_m",
+    "position_y_m",
+    "position_z_m",
+    "wind_speed",
+    "wind_angle",
     "payload_g",
-    "planned_motor_on",
-    "planned_airborne",
+    "uav_type",
+    "planned",
+]
+EXPECTED_FEATURES = EXPECTED_BASE_FEATURES + [
+    "position_x_m_sma", "position_y_m_sma", "position_z_m_sma", "wind_speed_sma", "wind_angle_sma",
 ]
 
 
@@ -52,8 +55,9 @@ class ContractTests(unittest.TestCase):
         cls.cfg = build_config()
 
     def test_feature_order_is_exact(self) -> None:
+        self.assertEqual(BASE_FEATURE_COLUMNS, EXPECTED_BASE_FEATURES)
         self.assertEqual(FEATURE_COLUMNS, EXPECTED_FEATURES)
-        self.assertEqual(REQUIRED_PLANNING_COLUMNS, ["task_id", *EXPECTED_FEATURES])
+        self.assertEqual(REQUIRED_PLANNING_COLUMNS, ["task_id", *EXPECTED_BASE_FEATURES])
         self.assertNotIn("route", FEATURE_COLUMNS)
 
     def test_demo_uses_only_interface_columns(self) -> None:
@@ -61,11 +65,10 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(task.columns.tolist(), REQUIRED_PLANNING_COLUMNS)
         validate_task_input(task, self.cfg)
 
-    def test_binary_and_logical_constraints_are_enforced(self) -> None:
+    def test_planned_and_type_constraints_are_enforced(self) -> None:
         task = _demo_task(self.cfg)
-        task.loc[0, "planned_airborne"] = 1
-        task.loc[0, "planned_motor_on"] = 0
-        with self.assertRaisesRegex(ValueError, "planned_airborne"):
+        task.loc[0, "planned"] = 3
+        with self.assertRaisesRegex(ValueError, "planned"):
             validate_task_input(task, self.cfg)
 
     def test_forbidden_observation_is_rejected(self) -> None:
@@ -85,7 +88,8 @@ class ContractTests(unittest.TestCase):
         metadata = json.loads(self.cfg.feature_meta_json.read_text(encoding="utf-8"))
         scaler = json.loads(self.cfg.scaler_json.read_text(encoding="utf-8"))
         checkpoint = torch.load(self.cfg.final_model_file, map_location="cpu", weights_only=False)
-        self.assertEqual(metadata["feature_columns"], EXPECTED_FEATURES)
+        self.assertEqual(metadata["feature_columns"], EXPECTED_BASE_FEATURES)
+        self.assertEqual(metadata["sma_feature_columns"], SMA_FEATURE_COLUMNS)
         self.assertEqual(scaler["feature_columns"], EXPECTED_FEATURES)
         self.assertEqual(checkpoint["feature_columns"], EXPECTED_FEATURES)
         self.assertEqual(scaler["target_column"], "power_w")

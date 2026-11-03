@@ -4,7 +4,7 @@
 
 - [项目定位](#项目定位)
 - [数据来源与输出](#数据来源与输出)
-- [十维模型输入](#十维模型输入)
+- [十五维模型输入](#十五维模型输入)
 - [数据处理](#数据处理)
 - [任务前接口](#任务前接口)
 - [模型与在线修正](#模型与在线修正)
@@ -15,7 +15,7 @@
 
 ## 项目定位
 
-实验 4.1 用任务执行前可获得的规划轨迹、任务时长、风场、载荷和计划状态预测无人机逐时刻功率与任务能耗。TCN 固定接收 10 维输入，`route` 只参与数据追踪、切分和分路线统计。真实功率、电流、电压、实飞运动量和姿态只能用于离线标签或原始数据分析，任务前接口会拒绝这些字段。
+实验 4.1 用任务执行前可获得的规划轨迹、任务时长、风场、载荷、机型和合并计划状态预测无人机逐时刻功率与任务能耗。TCN 接收 10 维基础字段和位置/风场五维因果 SMA，共 15 维输入；`route` 只参与数据追踪、切分和分路线统计。
 
 模型给出任务前功率基线，在线阶段每收到一个完整 1 s 窗口的实际能耗后，用二维 RLS 修正后续未执行路线。测试集只在 TCN、RLS 参数和区间倍率冻结后使用。
 
@@ -33,7 +33,7 @@ D:/Python-files/Energy-prediction/data/dji_matrice_100_data
 Source/Data_Collected_with_Package_etc/raw/12683453.zip::flights.csv
 ```
 
-加工结果写入 `4.1/processed/`：
+加工结果写入 `D:/Python-files/Energy-prediction/data/dji_matrice_100_data/4.1-planned-sma/processed/`：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -52,34 +52,33 @@ Source/Data_Collected_with_Package_etc/raw/12683453.zip::flights.csv
 - 监督目标：`power_w`、`energy_interval_wh`，不进入 TCN 输入。
 - 追踪审计：`flight`、`route`、`split`、`split_role`、`time`、`dt_seconds`、状态标注方法、质量标记和能耗守恒字段。
 
-## 十维模型输入
+## 十五维模型输入
 
 | 维度 | 字段 | 单位 | 含义 | 任务前来源 |
 | ---: | --- | --- | --- | --- |
 | 1 | `time_s` | s | 当前 flight 开始后的相对时间 | 规划时间轴 |
 | 2 | `task_duration_s` | s | 完整任务计划时长 | 规划轨迹末时刻 |
-| 3 | `planned_position_east_m` | m | 相对任务起点的 ENU 东向位置 | 轨迹规划器 |
-| 4 | `planned_position_north_m` | m | 相对任务起点的 ENU 北向位置 | 轨迹规划器 |
-| 5 | `planned_position_up_m` | m | 相对任务起点的 ENU 上向位置 | 规划高度减起点高度 |
-| 6 | `wind_east_mps` | m/s | 风矢量的 ENU 东向分量 | 风场预报转换 |
-| 7 | `wind_north_mps` | m/s | 风矢量的 ENU 北向分量 | 风场预报转换 |
+| 3 | `position_x_m` | m | 局部坐标 x 位置 | 轨迹规划器 |
+| 4 | `position_y_m` | m | 局部坐标 y 位置 | 轨迹规划器 |
+| 5 | `position_z_m` | m | 局部坐标 z 位置 | 轨迹规划器 |
+| 6 | `wind_speed` | m/s | 风速 | 风场预报 |
+| 7 | `wind_angle` | rad | 风向角 | 风场预报 |
 | 8 | `payload_g` | g | 任务有效载荷 | 调度器任务信息 |
-| 9 | `planned_motor_on` | 0/1 | 计划电机运行状态 | 飞控任务状态或起降计划 |
-| 10 | `planned_airborne` | 0/1 | 计划离地状态 | 起飞、降落和航段状态 |
+| 9 | `uav_type` | 整数 | 机型编码，本数据集为 0 | 任务机型配置 |
+| 10 | `planned` | 0/1/2 | 停机/原地启动/飞行 | 飞控任务状态或离线阈值标注 |
+| 11–15 | `position_x_m_sma` 等五列 | 原字段单位 | 位置三轴、风速和风向的因果 SMA | 当前及历史输入 |
 
-`planned_motor_on` 和 `planned_airborne` 必须严格为 0 或 1，并满足：
+`planned` 使用 0、1、2 三态编码：
 
 $$
-\mathrm{planned\_airborne}_t \le \mathrm{planned\_motor\_on}_t
+planned_t \in \{0,1,2\}
 $$
 
 其中：
 
 $t$：任务离散时刻。
 
-$\mathrm{planned\_airborne}_t$：时刻 $t$ 的计划离地状态。
-
-$\mathrm{planned\_motor\_on}_t$：时刻 $t$ 的计划电机状态。
+$planned_t$：时刻 $t$ 的合并计划状态，0 表示停机，1 表示原地启动，2 表示飞行。
 
 ## 数据处理
 
@@ -131,7 +130,7 @@ prediction, summary = predict_task_before(task_dataframe, cfg)
 
 ## 模型与在线修正
 
-TCN 使用因果卷积，仅访问当前及历史任务前输入。8 个候选窗口在验证集比较时间步功率、1 s 窗口能耗和 flight 总能耗后，当前选择 4 s（20 步）窗口。网络通道为 `(32, 32)`，卷积核为 3，dropout 为 0.05；AdamW 学习率为 $3\times10^{-4}$，正式训练 80 轮。
+TCN 使用因果卷积，仅访问当前及历史任务前输入。TCN 时间窗与 SMA 时间窗分别搜索 8 和 4 个候选组合，在验证集比较时间步功率、1 s 窗口能耗和 flight 总能耗后，当前选择 TCN 2 s（10 步）与 SMA 5 s（25 步）。网络通道为 `(32, 32)`，卷积核为 3，dropout 为 0.05；AdamW 学习率为 $3\times10^{-4}$，正式训练 80 轮。
 
 RLS 以完整 1 s 窗口为更新单位，估计偏置与缩放系数：
 
@@ -192,16 +191,16 @@ python -m unittest discover -s 4.1/tests -v
 | [`main.py`](./main.py) | 统一命令行调度 |
 | [`tests/test_4_1_contract.py`](./tests/test_4_1_contract.py) | 10 维、状态、数据和模型产物契约测试 |
 
-模型文件保存在 `4.1/model/`，包括最终 checkpoint、最佳 checkpoint 和 scaler。运行结果保存在 `4.1/out/`。外部加工数据只保存在数据根目录的 `4.1/processed/`，绘图不回读 Source 或其他版本目录。
+模型文件保存在 `D:/Python-files/Energy-prediction/model/4.1-planned-sma/`，运行结果保存在 `4.1/out/4.1-planned-sma/`。外部加工数据只保存在 D 盘 `4.1-planned-sma/processed/`，绘图不回读 Source 或其他版本目录。
 
 ## 当前结果边界
 
-正式测试集含 47 个 flight。TCN 时间步功率 WAPE 为 10.454%，TCN flight 总能耗 WAPE 为 3.774%；1 s 在线 RLS 后，时间步功率 WAPE 为 9.498%，flight 总能耗 WAPE 为 0.956%。
+正式测试集含 47 个 flight。TCN 时间步功率 WAPE 为 10.200%，TCN flight 总能耗 WAPE 为 3.124%；1 s 在线 RLS 后，时间步功率 WAPE 为 9.482%，flight 总能耗 WAPE 为 0.932%。
 
-点预测优于任务级区间校准。当前名义 95% 的任务级覆盖率为 76.596%，超长任务组只有 33.333%，单个未见大载荷 flight 的覆盖率为 0%。这些分组样本量较小，但结果说明任务前区间不能当作已充分校准的安全保证。完整指标、逐图数据源和局限见 [`out/outreadme.md`](./out/outreadme.md)。
+点预测优于任务级区间校准。当前名义 95% 的 flight 区间覆盖率为 80.851%，超长任务组为 33.333%，单个未见大载荷 flight 的覆盖率为 0%。这些分组样本量较小，但结果说明任务前区间不能当作已充分校准的安全保证。完整指标、逐图数据源和局限见 [`out/4.1-planned-sma/outreadme.md`](./out/4.1-planned-sma/outreadme.md)。
 
 ## 文档分工
 
 - 本文件保存稳定接口、数据规则、目录和运行方法。
 - [`improve.md`](./improve.md) 记录 4.1 的工程变更和验证证据。
-- [`out/outreadme.md`](./out/outreadme.md) 与当前 `out/` 同步，保存算法细节、正式指标和每张 SVG/GIF 的图解。
+- [`out/4.1-planned-sma/outreadme.md`](./out/4.1-planned-sma/outreadme.md) 与当前结果目录同步，保存算法细节、正式指标和每张 SVG/GIF 的图解。

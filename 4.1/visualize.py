@@ -402,7 +402,7 @@ def plot_state_outputs(cfg: ExperimentConfig) -> list[str]:
     processed = _read_csv(cfg.clean_data_csv)
     if processed is None:
         raise FileNotFoundError(f"缺少4.1加工数据: {cfg.clean_data_csv}")
-    required = {"route", "flight", "time_s", "planned_motor_on", "planned_airborne"}
+    required = {"route", "flight", "time_s", "planned"}
     missing = sorted(required - set(processed.columns))
     if missing:
         raise ValueError(f"4.1状态图缺少字段: {missing}")
@@ -412,32 +412,26 @@ def plot_state_outputs(cfg: ExperimentConfig) -> list[str]:
         ranked: list[tuple[int, int, object, pd.DataFrame]] = []
         for flight_id, group in route_frame.groupby("flight", sort=True):
             ordered = group.sort_values("time_s", kind="stable")
-            motor_switches = int(ordered["planned_motor_on"].diff().abs().fillna(0).sum())
-            airborne_switches = int(ordered["planned_airborne"].diff().abs().fillna(0).sum())
-            ranked.append((motor_switches + airborne_switches, len(ordered), flight_id, ordered))
+            planned_switches = int(ordered["planned"].diff().abs().fillna(0).sum())
+            ranked.append((planned_switches, len(ordered), flight_id, ordered))
         _, _, flight_id, chosen = max(ranked, key=lambda item: (item[0], item[1]))
         selected.append((str(route), flight_id, chosen))
         records.append({
             "route": str(route),
             "flight": flight_id,
             "rows": int(len(chosen)),
-            "motor_on_rows": int(chosen["planned_motor_on"].sum()),
-            "airborne_rows": int(chosen["planned_airborne"].sum()),
-            "motor_switch_count": int(chosen["planned_motor_on"].diff().abs().fillna(0).sum()),
-            "airborne_switch_count": int(chosen["planned_airborne"].diff().abs().fillna(0).sum()),
-            "binary_constraint_passed": bool(set(chosen["planned_motor_on"].unique()).issubset({0, 1})
-                                             and set(chosen["planned_airborne"].unique()).issubset({0, 1})),
-            "logical_constraint_passed": bool((chosen["planned_airborne"] <= chosen["planned_motor_on"]).all()),
+            "planned_active_rows": int(chosen["planned"].gt(0).sum()),
+            "planned_flight_rows": int(chosen["planned"].eq(2).sum()),
+            "planned_switch_count": planned_switches,
+            "planned_constraint_passed": bool(set(chosen["planned"].unique()).issubset({0, 1, 2})),
         })
     summary_path = cfg.out_model_dir / "planned_state_transitions_4.1.csv"
     pd.DataFrame(records).to_csv(summary_path, index=False, encoding="utf-8")
     fig, axes = plt.subplots(len(selected), 1, figsize=(12, max(8, 1.6 * len(selected))), sharex=False)
     axes = np.atleast_1d(axes)
     for axis, (route, flight_id, group) in zip(axes, selected):
-        axis.step(group["time_s"], group["planned_motor_on"], where="post", lw=1.5,
-                  color=COLORS["tcn"], label="planned_motor_on")
-        axis.step(group["time_s"], group["planned_airborne"], where="post", lw=1.5,
-                  color=COLORS["rls"], label="planned_airborne")
+        axis.step(group["time_s"], group["planned"], where="post", lw=1.5,
+                  color=COLORS["tcn"], label="planned (0停机/1启动/2飞行)")
         axis.set_ylim(-0.1, 1.1)
         axis.set_yticks([0, 1])
         axis.set_ylabel(f"{route}\n状态")
@@ -873,9 +867,9 @@ def _prepare_route_frame(group: pd.DataFrame) -> pd.DataFrame:
     time_column = _pick_column(frame, ("time_s", "time"), required=True)
     frame = frame.sort_values(time_column, kind="stable").reset_index(drop=True)
     frame["plot_time_s"] = pd.to_numeric(frame[time_column], errors="coerce").fillna(0.0)
-    frame["trajectory_x_m"] = _numeric(frame, ("planned_position_east_m",))
-    frame["trajectory_y_m"] = _numeric(frame, ("planned_position_north_m",))
-    frame["trajectory_z_m"] = _numeric(frame, ("planned_position_up_m",))
+    frame["trajectory_x_m"] = _numeric(frame, ("position_x_m", "planned_position_east_m"))
+    frame["trajectory_y_m"] = _numeric(frame, ("position_y_m", "planned_position_north_m"))
+    frame["trajectory_z_m"] = _numeric(frame, ("position_z_m", "planned_position_up_m"))
     time_values = frame["plot_time_s"].to_numpy(float)
     if len(frame) > 1:
         east_speed = np.gradient(frame["trajectory_x_m"].to_numpy(float), time_values)
@@ -887,10 +881,8 @@ def _prepare_route_frame(group: pd.DataFrame) -> pd.DataFrame:
     frame["diagnostic_velocity_north_mps"] = north_speed
     frame["diagnostic_velocity_up_mps"] = up_speed
     frame["diagnostic_speed_mps"] = np.sqrt(east_speed ** 2 + north_speed ** 2 + up_speed ** 2)
-    wind_east = _numeric(frame, ("wind_east_mps",))
-    wind_north = _numeric(frame, ("wind_north_mps",))
-    frame["wind_speed_plot_mps"] = np.hypot(wind_east, wind_north)
-    frame["wind_direction_plot_deg"] = np.degrees(np.arctan2(wind_east, wind_north)) % 360.0
+    frame["wind_speed_plot_mps"] = _numeric(frame, ("wind_speed", "wind_speed_mps"))
+    frame["wind_direction_plot_deg"] = np.degrees(_numeric(frame, ("wind_angle",))) % 360.0
     dt = _numeric(frame, ("dt_seconds",), default=0.2)
     energy_column = _pick_column(frame, ("actual_energy_wh", "energy_interval_wh"))
     actual_energy = (_numeric(frame, (energy_column,)) if energy_column

@@ -14,12 +14,12 @@ import numpy as np
 import pandas as pd
 
 from config import ExperimentConfig
-from data_utils import FEATURE_COLUMNS
+from data_utils import BASE_FEATURE_COLUMNS, FEATURE_COLUMNS, ensure_model_features
 from model import DynamicEnergyRLS
 from train import predict_frame
 
 
-REQUIRED_PLANNING_COLUMNS = ["task_id", *FEATURE_COLUMNS]
+REQUIRED_PLANNING_COLUMNS = ["task_id", *BASE_FEATURE_COLUMNS]
 FORBIDDEN_TASK_COLUMNS = {
     "battery_voltage", "battery_current", "battery_current_discharge_a",
     "power_w", "base_power_w", "energy_interval_wh", "base_energy_interval_wh",
@@ -50,8 +50,8 @@ def validate_task_input(task: pd.DataFrame, cfg: ExperimentConfig) -> None:
         raise ValueError(f"任务前输入禁止包含实测、标签或伪代理字段: {present}")
     extra = sorted(set(task.columns) - set(REQUIRED_PLANNING_COLUMNS))
     if extra:
-        raise ValueError(f"任务前接口只接受task_id和固定10维输入，检测到额外字段: {extra}")
-    numeric_columns = FEATURE_COLUMNS
+        raise ValueError(f"任务前接口只接受task_id和固定10维基础输入，检测到额外字段: {extra}")
+    numeric_columns = BASE_FEATURE_COLUMNS
     numeric = task[numeric_columns].apply(pd.to_numeric, errors="coerce")
     if numeric.isna().any().any() or not np.isfinite(numeric.to_numpy(float)).all():
         bad = numeric.columns[numeric.isna().any()].tolist()
@@ -62,12 +62,10 @@ def validate_task_input(task: pd.DataFrame, cfg: ExperimentConfig) -> None:
         raise ValueError("task_id不能为空字符串")
     if (numeric["payload_g"] < 0).any():
         raise ValueError("payload_g不得为负")
-    for column in ("planned_motor_on", "planned_airborne"):
-        values = set(numeric[column].unique().tolist())
-        if not values.issubset({0.0, 1.0}):
-            raise ValueError(f"{column}只能为0或1")
-    if (numeric["planned_airborne"] > numeric["planned_motor_on"]).any():
-        raise ValueError("必须满足planned_airborne<=planned_motor_on")
+    if not numeric["uav_type"].eq(0).all():
+        raise ValueError("uav_type只能为0")
+    if not numeric["planned"].isin([0.0, 1.0, 2.0]).all():
+        raise ValueError("planned只能为0、1或2")
     for task_id, group in task.groupby("task_id", sort=False):
         times = pd.to_numeric(group["time_s"], errors="coerce").to_numpy(float)
         if not np.isclose(times[0], 0.0, rtol=0.0, atol=1e-6):
@@ -101,6 +99,7 @@ def planning_to_model_frame(task: pd.DataFrame, cfg: ExperimentConfig) -> pd.Dat
     result["time"] = pd.to_numeric(result["time_s"], errors="raise").astype(float)
     result["dt_seconds"] = float(cfg.resample_seconds)
     result["auxiliary_power_w"] = 0.0
+    result = ensure_model_features(result, max(1, int(round(cfg.sma_default_window_seconds / cfg.resample_seconds))))
     missing_features = sorted(set(FEATURE_COLUMNS) - set(result.columns))
     if missing_features:
         raise ValueError(f"规划器字段无法派生以下TCN输入: {missing_features}")
@@ -134,13 +133,12 @@ def _conditional_residual_std(model_frame: pd.DataFrame, cfg: ExperimentConfig) 
         missing = sorted(required - set(model))
         raise RuntimeError(f"任务前不确定性模型字段不完整，请重新训练: {missing}")
     design = np.column_stack([
-        model_frame["wind_east_mps"].to_numpy(float),
-        model_frame["wind_north_mps"].to_numpy(float),
+        model_frame["wind_speed"].to_numpy(float),
+        model_frame["wind_angle"].to_numpy(float),
         model_frame["payload_g"].to_numpy(float),
         model_frame["task_duration_s"].to_numpy(float),
         model_frame["time_s"].to_numpy(float),
-        model_frame["planned_motor_on"].to_numpy(float),
-        model_frame["planned_airborne"].to_numpy(float),
+        model_frame["planned"].to_numpy(float),
     ])
     mean = np.asarray(model["feature_mean"], dtype=float)
     std = np.asarray(model["feature_std"], dtype=float)

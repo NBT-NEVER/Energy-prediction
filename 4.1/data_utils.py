@@ -36,18 +36,21 @@ STATUS_LABEL_METHOD = (
     "强制airborne<=motor_on"
 )
 
-FEATURE_COLUMNS = [
+BASE_FEATURE_COLUMNS = [
     "time_s",
     "task_duration_s",
-    "planned_position_east_m",
-    "planned_position_north_m",
-    "planned_position_up_m",
-    "wind_east_mps",
-    "wind_north_mps",
+    "position_x_m",
+    "position_y_m",
+    "position_z_m",
+    "wind_speed",
+    "wind_angle",
     "payload_g",
-    "planned_motor_on",
-    "planned_airborne",
+    "uav_type",
+    "planned",
 ]
+SMA_SOURCE_COLUMNS = ["position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle"]
+SMA_FEATURE_COLUMNS = [f"{column}_sma" for column in SMA_SOURCE_COLUMNS]
+FEATURE_COLUMNS = BASE_FEATURE_COLUMNS + SMA_FEATURE_COLUMNS
 
 TARGET_COLUMNS = ["power_w", "energy_interval_wh"]
 AUDIT_COLUMNS = [
@@ -92,6 +95,11 @@ FIELD_METADATA = {
         "historical_source": "当前flight最后真实时刻减首时刻",
         "runtime_source": "规划轨迹末时刻",
     },
+    "position_x_m": {"unit": "m", "meaning": "局部坐标x位置", "historical_source": "经度差换算", "runtime_source": "规划轨迹"},
+    "position_y_m": {"unit": "m", "meaning": "局部坐标y位置", "historical_source": "纬度差换算", "runtime_source": "规划轨迹"},
+    "position_z_m": {"unit": "m", "meaning": "局部坐标z位置", "historical_source": "高度差", "runtime_source": "规划轨迹"},
+    "wind_speed": {"unit": "m/s", "meaning": "风速", "historical_source": "原始风速", "runtime_source": "风场预报"},
+    "wind_angle": {"unit": "rad", "meaning": "风向角", "historical_source": "原始风向角转换", "runtime_source": "风场预报"},
     "planned_position_east_m": {
         "unit": "m",
         "meaning": "相对任务起点的ENU东向位置",
@@ -128,6 +136,18 @@ FIELD_METADATA = {
         "historical_source": "原始payload",
         "runtime_source": "调度器任务信息",
     },
+    "uav_type": {
+        "unit": "整数编码",
+        "meaning": "机型编码；本数据集固定为0",
+        "historical_source": "DJI Matrice 100",
+        "runtime_source": "任务机型配置",
+    },
+    "planned": {
+        "unit": "0/1/2",
+        "meaning": "合并后的计划状态：0停机、1原地启动、2飞行",
+        "historical_source": "planned_motor_on + planned_airborne",
+        "runtime_source": "飞控任务状态或起降计划",
+    },
     "planned_motor_on": {
         "unit": "0/1",
         "meaning": "计划电机运行状态",
@@ -140,6 +160,11 @@ FIELD_METADATA = {
         "historical_source": "相对起点位移阈值和连续阶段分析",
         "runtime_source": "起飞、降落和航段状态",
     },
+    "position_x_m_sma": {"unit": "m", "meaning": "位置x的因果简单移动平均", "historical_source": "当前及历史position_x_m", "runtime_source": "由模型窗口生成"},
+    "position_y_m_sma": {"unit": "m", "meaning": "位置y的因果简单移动平均", "historical_source": "当前及历史position_y_m", "runtime_source": "由模型窗口生成"},
+    "position_z_m_sma": {"unit": "m", "meaning": "位置z的因果简单移动平均", "historical_source": "当前及历史position_z_m", "runtime_source": "由模型窗口生成"},
+    "wind_speed_sma": {"unit": "m/s", "meaning": "风速的因果简单移动平均", "historical_source": "当前及历史wind_speed", "runtime_source": "由模型窗口生成"},
+    "wind_angle_sma": {"unit": "rad", "meaning": "风向的因果圆均值", "historical_source": "当前及历史wind_angle", "runtime_source": "由模型窗口生成"},
 }
 
 
@@ -266,22 +291,37 @@ def _resample_flight(group: pd.DataFrame, cfg: ExperimentConfig) -> tuple[pd.Dat
     ) | (np.abs(up_source) >= AIRBORNE_VERTICAL_THRESHOLD_M)
     airborne_source = _continuous_stage(airborne_evidence) * motor_source
 
+    position_x = np.interp(time_s, relative_source_time, east_source)
+    position_y = np.interp(time_s, relative_source_time, north_source)
+    position_z = np.interp(time_s, relative_source_time, up_source)
+    speed = np.interp(time_s, relative_source_time, wind_speed)
+    angle = np.interp(time_s, relative_source_time, wind_angle)
+    motor = np.rint(np.interp(time_s, relative_source_time, motor_source)).astype(np.int8)
+    airborne = np.rint(np.interp(time_s, relative_source_time, airborne_source)).astype(np.int8)
     output = pd.DataFrame({
         "flight": int(group["flight"].iloc[0]),
         "route": str(group["route"].iloc[0]),
         "time": absolute_time,
         "time_s": time_s,
         "task_duration_s": duration,
-        "planned_position_east_m": np.interp(time_s, relative_source_time, east_source),
-        "planned_position_north_m": np.interp(time_s, relative_source_time, north_source),
-        "planned_position_up_m": np.interp(time_s, relative_source_time, up_source),
-        "wind_east_mps": np.interp(time_s, relative_source_time, wind_east_source),
-        "wind_north_mps": np.interp(time_s, relative_source_time, wind_north_source),
+        "position_x_m": position_x,
+        "position_y_m": position_y,
+        "position_z_m": position_z,
+        "wind_speed": speed,
+        "wind_angle": np.mod(angle, 2.0 * np.pi),
         "payload_g": np.interp(time_s, relative_source_time, np.clip(group["payload"], 0.0, None)),
-        "planned_motor_on": np.rint(np.interp(time_s, relative_source_time, motor_source)).astype(np.int8),
-        "planned_airborne": np.rint(np.interp(time_s, relative_source_time, airborne_source)).astype(np.int8),
+        "uav_type": 0,
+        "planned_motor_on": motor,
+        "planned_airborne": airborne,
     })
     output["planned_airborne"] = np.minimum(output["planned_airborne"], output["planned_motor_on"])
+    output["planned"] = (output["planned_motor_on"] + output["planned_airborne"]).astype(np.int8)
+    # 保留旧字段作为审计别名，模型输入只使用BASE_FEATURE_COLUMNS和SMA_FEATURE_COLUMNS。
+    output["planned_position_east_m"] = output["position_x_m"]
+    output["planned_position_north_m"] = output["position_y_m"]
+    output["planned_position_up_m"] = output["position_z_m"]
+    output["wind_east_mps"] = output["wind_speed"] * np.sin(output["wind_angle"])
+    output["wind_north_mps"] = output["wind_speed"] * np.cos(output["wind_angle"])
     interpolated_power = np.interp(time_s, relative_source_time, raw_power)
     raw_energy = _raw_energy_wh(relative_source_time, raw_power)
     preliminary_energy = float(interpolated_power.sum() * dt / 3600.0)
@@ -338,6 +378,43 @@ def build_planning_frame(raw: pd.DataFrame, cfg: ExperimentConfig) -> tuple[pd.D
     return pd.concat(frames, ignore_index=True), pd.concat(mappings, ignore_index=True)
 
 
+def add_sma_features(frame: pd.DataFrame, window_steps: int) -> pd.DataFrame:
+    """功能: 按flight生成位置和风场五维因果SMA特征。
+    参数: frame为含基础规划字段的数据表，window_steps为SMA窗口步数。
+    返回: 追加五维SMA列并按flight/time排序的数据表。
+    调用位置: prepare_dataset、train.py、task_api.py。
+    """
+
+    if int(window_steps) < 1:
+        raise ValueError("SMA窗口必须为正整数")
+    ordered = frame.sort_values(["flight", "time"], kind="stable").reset_index(drop=True).copy()
+    grouped = ordered.groupby("flight", sort=False)
+    for source, target in zip(SMA_SOURCE_COLUMNS, SMA_FEATURE_COLUMNS):
+        if source == "wind_angle":
+            sin_mean = grouped[source].transform(lambda values: np.sin(values).rolling(int(window_steps), min_periods=1).mean())
+            cos_mean = grouped[source].transform(lambda values: np.cos(values).rolling(int(window_steps), min_periods=1).mean())
+            ordered[target] = np.arctan2(sin_mean, cos_mean)
+        else:
+            ordered[target] = grouped[source].transform(
+                lambda values: values.rolling(int(window_steps), min_periods=1).mean()
+            )
+    return ordered
+
+
+def ensure_model_features(frame: pd.DataFrame, sma_window_steps: int) -> pd.DataFrame:
+    """功能: 根据指定SMA窗口生成完整15维模型输入表。
+    参数: frame为基础规划表，sma_window_steps为SMA历史步数。
+    返回: 含基础10维和五维SMA的模型输入表。
+    调用位置: train.py、task_api.py。
+    """
+
+    result = add_sma_features(frame, sma_window_steps)
+    missing = sorted(set(FEATURE_COLUMNS) - set(result.columns))
+    if missing:
+        raise ValueError(f"无法生成模型输入字段: {missing}")
+    return result
+
+
 def _split_assignments(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.DataFrame:
     """功能: 仅按完整flight和任务前条件生成训练、验证、测试归属。
     参数: frame为4.1加工表，cfg提供比例和随机种子。
@@ -346,14 +423,11 @@ def _split_assignments(frame: pd.DataFrame, cfg: ExperimentConfig) -> pd.DataFra
     """
 
     profiles = frame.groupby(["flight", "route"], sort=True).agg(
-        mean_wind_mps=("wind_east_mps", lambda values: 0.0),
+        mean_wind_mps=("wind_speed", "mean"),
         payload_g=("payload_g", "first"),
         task_duration_s=("task_duration_s", "first"),
     ).reset_index()
-    wind = frame.assign(
-        wind_mps=np.hypot(frame["wind_east_mps"], frame["wind_north_mps"]),
-    ).groupby("flight", sort=True)["wind_mps"].mean()
-    profiles["mean_wind_mps"] = profiles["flight"].map(wind)
+    profiles["mean_wind_mps"] = profiles["mean_wind_mps"].astype(float)
     forced = (
         profiles["route"].isin(UNSEEN_ROUTE_HOLDOUTS)
         | profiles["mean_wind_mps"].ge(UNSEEN_WIND_HOLDOUT_MPS)
@@ -401,7 +475,12 @@ def split_by_flight(frame: pd.DataFrame, cfg: ExperimentConfig) -> tuple[pd.Data
     tagged = frame.merge(assignments, on="flight", how="left", validate="many_to_one")
     if tagged[["split", "split_role"]].isna().any().any():
         raise RuntimeError("存在未分配到训练、验证或测试集的flight")
-    ordered = AUDIT_COLUMNS + FEATURE_COLUMNS + TARGET_COLUMNS
+    ordered = AUDIT_COLUMNS + [
+        "planned_motor_on", "planned_airborne",
+        "planned_position_east_m", "planned_position_north_m", "planned_position_up_m",
+        "wind_east_mps", "wind_north_mps",
+    ] + BASE_FEATURE_COLUMNS + TARGET_COLUMNS
+    ordered = list(dict.fromkeys(ordered))
     tagged = tagged[ordered].sort_values(["flight", "time"], kind="stable").reset_index(drop=True)
     splits = {name: tagged.loc[tagged["split"].eq(name)].copy() for name in ("train", "val", "test")}
     return tagged, splits
@@ -414,11 +493,11 @@ def validate_processed_data(frame: pd.DataFrame, cfg: ExperimentConfig) -> dict:
     调用位置: prepare_dataset及测试。
     """
 
-    required = set(AUDIT_COLUMNS + FEATURE_COLUMNS + TARGET_COLUMNS)
+    required = set(AUDIT_COLUMNS + BASE_FEATURE_COLUMNS + TARGET_COLUMNS + ["planned_motor_on", "planned_airborne"])
     missing = sorted(required - set(frame.columns))
     if missing:
         raise ValueError(f"4.1加工数据缺少字段: {missing}")
-    numeric_columns = FEATURE_COLUMNS + TARGET_COLUMNS + [
+    numeric_columns = BASE_FEATURE_COLUMNS + TARGET_COLUMNS + [
         "time", "dt_seconds", "source_sample_count", "raw_energy_wh",
         "resampled_energy_wh", "resample_energy_error_percent",
     ]
@@ -430,6 +509,12 @@ def validate_processed_data(frame: pd.DataFrame, cfg: ExperimentConfig) -> dict:
     deltas = frame.groupby("flight", sort=False)["time_s"].diff().dropna().to_numpy(float)
     if len(deltas) and not np.allclose(deltas, cfg.resample_seconds, rtol=0.0, atol=1e-9):
         raise ValueError("4.1加工数据存在非0.2秒间隔或跨flight差分")
+    if not frame["uav_type"].eq(0).all():
+        raise ValueError("uav_type必须固定为0")
+    if not frame["planned"].isin([0, 1, 2]).all():
+        raise ValueError("planned必须严格为0、1或2")
+    if not np.array_equal(frame["planned"].to_numpy(int), frame["planned_motor_on"].to_numpy(int) + frame["planned_airborne"].to_numpy(int)):
+        raise ValueError("planned与审计状态不一致")
     for column in ("planned_motor_on", "planned_airborne"):
         values = set(frame[column].astype(int).unique().tolist())
         if not values.issubset({0, 1}):
@@ -454,7 +539,7 @@ def validate_processed_data(frame: pd.DataFrame, cfg: ExperimentConfig) -> dict:
             f"重采样前后flight总能耗最大误差{maximum_error:.6f}%超过"
             f"{ENERGY_TOLERANCE_PERCENT:.3f}%容差"
         )
-    if "route" in FEATURE_COLUMNS:
+    if "route" in BASE_FEATURE_COLUMNS:
         raise ValueError("route不得进入TCN输入")
     return {
         "finite_values": True,
@@ -477,7 +562,7 @@ def _write_feature_analysis(frame: pd.DataFrame, cfg: ExperimentConfig) -> None:
     """
 
     rows: list[dict] = []
-    for column in FEATURE_COLUMNS + TARGET_COLUMNS:
+    for column in BASE_FEATURE_COLUMNS + TARGET_COLUMNS:
         values = pd.to_numeric(frame[column], errors="coerce")
         rows.append({
             "field": column,
@@ -527,8 +612,9 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
 
     metadata = {
         "version": "4.1",
-        "feature_count": len(FEATURE_COLUMNS),
-        "feature_columns": FEATURE_COLUMNS,
+        "feature_count": len(BASE_FEATURE_COLUMNS),
+        "feature_columns": BASE_FEATURE_COLUMNS,
+        "sma_feature_columns": SMA_FEATURE_COLUMNS,
         "target_fields": {
             "power_w": "重采样后按flight能耗守恒校准的监督功率",
             "energy_interval_wh": "power_w乘0.2秒再除以3600的区间能耗",
@@ -536,7 +622,7 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
         "audit_fields": AUDIT_COLUMNS,
         "feature_dimensions": [
             {"dimension": index, "field": name, **FIELD_METADATA[name], "enters_tcn": True}
-            for index, name in enumerate(FEATURE_COLUMNS, start=1)
+            for index, name in enumerate(BASE_FEATURE_COLUMNS, start=1)
         ],
         "field_metadata": FIELD_METADATA,
         "source": {
@@ -579,14 +665,16 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
     save_json(cfg.feature_meta_json, metadata)
 
     raw_deltas = raw.groupby("flight", sort=False)["time"].diff().dropna()
-    status_counts = frame.groupby(["route", "planned_motor_on", "planned_airborne"], sort=True).size()
+    status_counts = frame.groupby(["route", "planned"], sort=True).size()
     summary = {
         "version": "4.1",
         "resample_seconds": cfg.resample_seconds,
         "processed_rows": int(len(frame)),
         "flights": int(frame["flight"].nunique()),
-        "feature_count": len(FEATURE_COLUMNS),
-        "feature_columns": FEATURE_COLUMNS,
+        "feature_count": len(BASE_FEATURE_COLUMNS),
+        "model_input_dimension": len(FEATURE_COLUMNS),
+        "feature_columns": BASE_FEATURE_COLUMNS,
+        "sma_feature_columns": SMA_FEATURE_COLUMNS,
         "routes": sorted(frame["route"].unique().tolist()),
         "excluded_routes": sorted(EXCLUDED_ROUTES),
         "train_rows": int(len(splits["train"])),
@@ -603,8 +691,8 @@ def prepare_dataset(cfg: ExperimentConfig, force: bool = False) -> dict:
         },
         "status_quality_flights": frame.groupby("status_quality_flag")["flight"].nunique().to_dict(),
         "status_combination_rows": {
-            f"{route}|motor={motor}|airborne={airborne}": int(count)
-            for (route, motor, airborne), count in status_counts.items()
+            f"{route}|planned={planned}": int(count)
+            for (route, planned), count in status_counts.items()
         },
         "consistency_checks": checks,
     }

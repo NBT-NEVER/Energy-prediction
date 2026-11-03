@@ -19,15 +19,15 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from config import ExperimentConfig
-from data_utils import FEATURE_COLUMNS, save_json
+from data_utils import BASE_FEATURE_COLUMNS, FEATURE_COLUMNS, ensure_model_features, save_json
 from model import build_model
 from terminal_logger import log_result
 
 
 TARGET_COLUMN = "power_w"
 UNCERTAINTY_FEATURES = [
-    "wind_east_mps", "wind_north_mps", "payload_g", "task_duration_s",
-    "time_s", "planned_motor_on", "planned_airborne",
+    "wind_speed", "wind_angle", "payload_g", "task_duration_s",
+    "time_s", "planned",
 ]
 
 
@@ -75,13 +75,15 @@ def load_tables(cfg: ExperimentConfig) -> tuple[pd.DataFrame, pd.DataFrame, pd.D
     return tuple(pd.read_csv(path) for path in (cfg.train_csv, cfg.val_csv, cfg.test_csv))
 
 
-def fit_scaler(train: pd.DataFrame, cfg: ExperimentConfig) -> dict:
+def fit_scaler(train: pd.DataFrame, cfg: ExperimentConfig, sma_window_steps: int | None = None) -> dict:
     """功能: 只用训练集估计规划特征和功率目标的标准化参数。
     参数: train为训练集，cfg为配置对象。
     返回: 可序列化的标准化参数。
     调用位置: train_tcn。
     """
 
+    sma_window_steps = int(sma_window_steps or round(cfg.sma_default_window_seconds / cfg.resample_seconds))
+    train = ensure_model_features(train, sma_window_steps)
     missing = sorted(set(FEATURE_COLUMNS + [TARGET_COLUMN]) - set(train.columns))
     if missing:
         raise ValueError(f"训练集缺少标准化所需字段: {missing}")
@@ -94,7 +96,10 @@ def fit_scaler(train: pd.DataFrame, cfg: ExperimentConfig) -> dict:
               "y_mean": y_mean, "y_std": y_std, "target_column": TARGET_COLUMN,
               "resample_seconds": cfg.resample_seconds,
               "version": "4.1", "task_before_only": True,
-              "input_dimension": len(FEATURE_COLUMNS)}
+              "input_dimension": len(FEATURE_COLUMNS), "base_feature_columns": BASE_FEATURE_COLUMNS,
+              "sma_feature_columns": [f"{name}_sma" for name in ("position_x_m", "position_y_m", "position_z_m", "wind_speed", "wind_angle")],
+              "sma_window_steps": sma_window_steps,
+              "sma_window_seconds": sma_window_steps * cfg.resample_seconds}
     cfg.scaler_json.parent.mkdir(parents=True, exist_ok=True)
     cfg.scaler_json.write_text(json.dumps(scaler, ensure_ascii=False, indent=2), encoding="utf-8")
     return scaler
@@ -118,6 +123,7 @@ def build_sequences(frame: pd.DataFrame, scaler: dict, window_steps: int,
     调用位置: train_tcn、predict_frame。
     """
 
+    frame = ensure_model_features(frame, int(scaler.get("sma_window_steps", 1)))
     mean = np.asarray(scaler["x_mean"], dtype=np.float32)
     std = np.asarray(scaler["x_std"], dtype=np.float32)
     feature_columns = list(scaler["feature_columns"])
@@ -201,6 +207,8 @@ def predict_frame(frame: pd.DataFrame, cfg: ExperimentConfig, checkpoint_path: P
     if list(scaler.get("feature_columns", [])) != FEATURE_COLUMNS or list(checkpoint.get("feature_columns", [])) != FEATURE_COLUMNS:
         raise RuntimeError(f"当前scaler或模型权重与4.1的{len(FEATURE_COLUMNS)}维规划特征不一致，请重新训练")
     ordered = frame.sort_values(["flight", "time"], kind="stable").reset_index(drop=True).copy()
+    if int(scaler.get("sma_window_steps", -1)) != int(checkpoint.get("sma_window_steps", -2)):
+        raise RuntimeError("模型和标准化器的SMA窗口不一致")
     sequences, _, _ = build_sequences(ordered, scaler, int(checkpoint["window_steps"]), require_target=False)
     model = build_model(len(scaler["feature_columns"]), tuple(checkpoint["channels"]), checkpoint["kernel_size"], checkpoint["dropout"])
     model.load_state_dict(checkpoint["state_dict"])
@@ -208,7 +216,7 @@ def predict_frame(frame: pd.DataFrame, cfg: ExperimentConfig, checkpoint_path: P
 
 
 def _train_one(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray, val_y: np.ndarray,
-               cfg: ExperimentConfig, window_steps: int, epochs: int) -> tuple[dict, list[dict]]:
+               cfg: ExperimentConfig, window_steps: int, epochs: int, sma_window_steps: int) -> tuple[dict, list[dict]]:
     """功能: 针对一个TCN时间窗完成指定轮数的GPU训练并保留最佳验证权重。
     参数: train_seq/train_y为训练数据，val_seq/val_y为验证数据，cfg为配置，window_steps为窗口步数，epochs为轮数。
     返回: 最佳检查点和逐轮训练日志。
@@ -230,10 +238,10 @@ def _train_one(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray, 
     for epoch in range(1, epochs + 1):
         train_loss = _run_epoch(model, train_loader, optimizer, device)
         val_loss = _run_epoch(model, val_loader, None, device)
-        log.append({"window_steps": window_steps, "epoch": epoch, "train_loss": train_loss,
+        log.append({"window_steps": window_steps, "sma_window_steps": sma_window_steps, "epoch": epoch, "train_loss": train_loss,
                     "val_loss": val_loss, "learning_rate": float(optimizer.param_groups[0]["lr"])})
         print(
-            f"\rTCN训练窗口={window_steps}步 | epoch {epoch}/{epochs} | "
+            f"\rTCN窗口={window_steps}步/SMA={sma_window_steps}步 | epoch {epoch}/{epochs} | "
             f"train={train_loss:.5f} | val={val_loss:.5f}",
             end="",
             flush=True,
@@ -247,6 +255,7 @@ def _train_one(train_seq: np.ndarray, train_y: np.ndarray, val_seq: np.ndarray, 
                 break
     print()
     return {"state_dict": best_state, "best_val_loss": best_loss, "window_steps": window_steps,
+            "sma_window_steps": sma_window_steps,
             "channels": list(cfg.tcn_channels), "kernel_size": cfg.tcn_kernel_size, "dropout": cfg.tcn_dropout}, log
 
 
@@ -307,12 +316,14 @@ def _training_scaler(train: pd.DataFrame, cfg: ExperimentConfig) -> dict:
     调用位置: tune_tcn、train_tcn。
     """
 
+    default_steps = max(1, int(round(cfg.sma_default_window_seconds / cfg.resample_seconds)))
     if cfg.scaler_json.exists():
         scaler = load_scaler(cfg)
         if (scaler.get("target_column") == TARGET_COLUMN
-                and list(scaler.get("feature_columns", [])) == FEATURE_COLUMNS):
+                and list(scaler.get("feature_columns", [])) == FEATURE_COLUMNS
+                and int(scaler.get("sma_window_steps", -1)) == default_steps):
             return scaler
-    return fit_scaler(train, cfg)
+    return fit_scaler(train, cfg, default_steps)
 
 
 def _uncertainty_design(frame: pd.DataFrame) -> np.ndarray:
@@ -323,13 +334,12 @@ def _uncertainty_design(frame: pd.DataFrame) -> np.ndarray:
     """
 
     return np.column_stack([
-        frame["wind_east_mps"].to_numpy(float),
-        frame["wind_north_mps"].to_numpy(float),
+        frame["wind_speed"].to_numpy(float),
+        frame["wind_angle"].to_numpy(float),
         frame["payload_g"].to_numpy(float),
         frame["task_duration_s"].to_numpy(float),
         frame["time_s"].to_numpy(float),
-        frame["planned_motor_on"].to_numpy(float),
-        frame["planned_airborne"].to_numpy(float),
+        frame["planned"].to_numpy(float),
     ])
 
 
@@ -396,9 +406,9 @@ def _fit_uncertainty_model(frame: pd.DataFrame, residual_w: np.ndarray, cfg: Exp
 
 
 def tune_tcn(cfg: ExperimentConfig) -> dict:
-    """功能: 搜索8个TCN时间窗候选并保存选择表。
+    """功能: 联合搜索TCN和五维SMA时间窗并保存验证选择表。
     参数: cfg为实验配置对象。
-    返回: 8个候选的验证指标和最优窗口摘要。
+    返回: 所有组合的验证指标和最优窗口摘要。
     调用位置: main.py。
     """
 
@@ -406,43 +416,49 @@ def tune_tcn(cfg: ExperimentConfig) -> dict:
     train, val, _ = load_tables(cfg)
     train = train.sort_values(["flight", "time"], kind="stable").reset_index(drop=True)
     val = val.sort_values(["flight", "time"], kind="stable").reset_index(drop=True)
-    scaler = _training_scaler(train, cfg)
     rows, logs = [], []
-    for seconds in cfg.tcn_window_seconds:
-        steps = max(1, int(round(seconds / cfg.resample_seconds)))
-        train_seq, train_y, _ = build_sequences(train, scaler, steps)
-        val_seq, val_y, _ = build_sequences(val, scaler, steps)
-        checkpoint, epoch_log = _train_one(train_seq, train_y, val_seq, val_y, cfg, steps, cfg.tune_epochs)
-        model = build_model(len(FEATURE_COLUMNS), cfg.tcn_channels, cfg.tcn_kernel_size, cfg.tcn_dropout)
-        model.load_state_dict(checkpoint["state_dict"])
-        predicted = _predict_array(model, val_seq, scaler, cfg)
-        actual = val[TARGET_COLUMN].to_numpy(float)
-        candidate_name = f"tcn_window_{seconds:g}s"
-        selection = _tcn_selection_metrics(val, predicted, cfg)
-        candidate_result = {
-            "candidate": candidate_name, "window_seconds": seconds, "window_steps": steps,
-            **selection, "val_mae_w": float(np.mean(np.abs(actual - predicted))),
-            "best_val_loss": checkpoint["best_val_loss"], "epochs_run": len(epoch_log),
-        }
-        rows.append(candidate_result)
-        print(
-            f"TCN候选 {candidate_name}：样本WAPE={selection['val_tcn_sample_power_wape']:.4f}% | "
-            f"1秒能耗WAPE={selection['val_tcn_second_energy_wape']:.4f}% | "
-            f"flight能耗WAPE={selection['val_tcn_flight_energy_wape']:.4f}% | "
-            f"选择分数={selection['tcn_selection_score']:.4f}"
-        )
-        log_result(f"TCN候选结果 {candidate_name}", candidate_result)
-        for item in epoch_log:
-            item.update({"phase": "tcn_tuning", "candidate": candidate_name,
-                         "window_seconds": float(seconds)})
-        logs.extend(epoch_log)
+    for sma_seconds in cfg.sma_window_seconds:
+        sma_steps = max(1, int(round(sma_seconds / cfg.resample_seconds)))
+        scaler = fit_scaler(train, cfg, sma_steps)
+        for seconds in cfg.tcn_window_seconds:
+            steps = max(1, int(round(seconds / cfg.resample_seconds)))
+            train_seq, train_y, _ = build_sequences(train, scaler, steps)
+            val_seq, val_y, _ = build_sequences(val, scaler, steps)
+            checkpoint, epoch_log = _train_one(train_seq, train_y, val_seq, val_y, cfg, steps, cfg.tune_epochs, sma_steps)
+            model = build_model(len(FEATURE_COLUMNS), cfg.tcn_channels, cfg.tcn_kernel_size, cfg.tcn_dropout)
+            model.load_state_dict(checkpoint["state_dict"])
+            predicted = _predict_array(model, val_seq, scaler, cfg)
+            actual = val[TARGET_COLUMN].to_numpy(float)
+            candidate_name = f"tcn_{seconds:g}s_sma_{sma_seconds:g}s"
+            selection = _tcn_selection_metrics(val, predicted, cfg)
+            candidate_result = {
+                "candidate": candidate_name, "window_seconds": seconds, "window_steps": steps,
+                "sma_window_seconds": float(sma_seconds), "sma_window_steps": sma_steps,
+                **selection, "val_mae_w": float(np.mean(np.abs(actual - predicted))),
+                "best_val_loss": checkpoint["best_val_loss"], "epochs_run": len(epoch_log),
+            }
+            rows.append(candidate_result)
+            print(
+                f"TCN候选 {candidate_name}：样本WAPE={selection['val_tcn_sample_power_wape']:.4f}% | "
+                f"1秒能耗WAPE={selection['val_tcn_second_energy_wape']:.4f}% | "
+                f"flight能耗WAPE={selection['val_tcn_flight_energy_wape']:.4f}% | "
+                f"选择分数={selection['tcn_selection_score']:.4f}"
+            )
+            log_result(f"TCN候选结果 {candidate_name}", candidate_result)
+            for item in epoch_log:
+                item.update({"phase": "tcn_tuning", "candidate": candidate_name,
+                             "window_seconds": float(seconds), "sma_window_seconds": float(sma_seconds),
+                             "sma_window_steps": sma_steps})
+            logs.extend(epoch_log)
     result = pd.DataFrame(rows).sort_values("tcn_selection_score").reset_index(drop=True)
     cfg.tcn_tuning_csv.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(cfg.tcn_tuning_csv, index=False, encoding="utf-8")
     pd.DataFrame(logs).to_csv(cfg.training_log_csv, index=False, encoding="utf-8")
-    return {"candidate_count": len(result), "best_window_seconds": float(result.iloc[0].window_seconds),
-            "best_window_steps": int(result.iloc[0].window_steps),
-            "best_tcn_selection_score": float(result.iloc[0].tcn_selection_score),
+    best = result.iloc[0]
+    return {"candidate_count": len(result), "best_window_seconds": float(best.window_seconds),
+            "best_window_steps": int(best.window_steps), "best_sma_window_seconds": float(best.sma_window_seconds),
+            "best_sma_window_steps": int(best.sma_window_steps),
+            "best_tcn_selection_score": float(best.tcn_selection_score),
             "tuning_file": str(cfg.tcn_tuning_csv)}
 
 
@@ -462,24 +478,34 @@ def train_tcn(cfg: ExperimentConfig) -> dict:
         tuning = pd.read_csv(cfg.tcn_tuning_csv)
         score_column = "tcn_selection_score" if "tcn_selection_score" in tuning else "val_wape_percent"
         tuning = tuning.sort_values(score_column)
-        seconds = float(tuning.iloc[0].window_seconds)
+        best = tuning.iloc[0]
+        seconds = float(best.window_seconds)
+        sma_seconds = float(best.get("sma_window_seconds", cfg.sma_default_window_seconds))
+        sma_steps = max(1, int(round(sma_seconds / cfg.resample_seconds)))
+        scaler = fit_scaler(train, cfg, sma_steps)
     else:
         seconds = cfg.tcn_window_seconds[0]
+        sma_seconds = cfg.sma_default_window_seconds
+        sma_steps = max(1, int(round(sma_seconds / cfg.resample_seconds)))
+        scaler = fit_scaler(train, cfg, sma_steps)
     steps = max(1, int(round(seconds / cfg.resample_seconds)))
     train_seq, train_y, _ = build_sequences(train, scaler, steps)
     val_seq, val_y, _ = build_sequences(val, scaler, steps)
-    checkpoint, logs = _train_one(train_seq, train_y, val_seq, val_y, cfg, steps, cfg.epochs)
+    checkpoint, logs = _train_one(train_seq, train_y, val_seq, val_y, cfg, steps, cfg.epochs, sma_steps)
     checkpoint["feature_columns"] = FEATURE_COLUMNS
     checkpoint["target_column"] = TARGET_COLUMN
     checkpoint["resample_seconds"] = cfg.resample_seconds
     checkpoint["window_seconds"] = seconds
+    checkpoint["sma_window_seconds"] = sma_seconds
+    checkpoint["sma_window_steps"] = sma_steps
     checkpoint["device_used"] = str(resolve_cuda_device(cfg))
     cfg.save_dir.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, cfg.best_model_file)
     torch.save(checkpoint, cfg.final_model_file)
     for item in logs:
         item.update({"phase": "final_tcn", "candidate": "final_tcn",
-                     "window_seconds": float(seconds)})
+                     "window_seconds": float(seconds), "sma_window_seconds": float(sma_seconds),
+                     "sma_window_steps": sma_steps})
     if cfg.training_log_csv.exists():
         previous = pd.read_csv(cfg.training_log_csv)
         if "phase" in previous:
@@ -495,7 +521,8 @@ def train_tcn(cfg: ExperimentConfig) -> dict:
     val_predicted = _predict_array(model, val_seq, scaler, cfg)
     uncertainty = _fit_uncertainty_model(val, val[TARGET_COLUMN].to_numpy(float) - val_predicted, cfg)
     save_json(cfg.uncertainty_json, uncertainty)
-    return {"window_seconds": seconds, "window_steps": steps, "epochs_run": len(logs),
+    return {"window_seconds": seconds, "window_steps": steps, "sma_window_seconds": sma_seconds,
+            "sma_window_steps": sma_steps, "epochs_run": len(logs),
             "best_val_loss": float(checkpoint["best_val_loss"]), "model_file": str(cfg.final_model_file)}
 
 
