@@ -84,3 +84,6 @@ output/
 !4.0/out/**/*
 4.0/out/data/processed_4.0/*.csv
 4.0/out/logs/*.log
+
+# 实验5.0完整目录仅保留本地，不再纳入Git跟踪。
+/5.0/
