@@ -87,3 +87,4 @@ output/
 
 # 实验5.0完整目录仅保留本地，不再纳入Git跟踪。
 /5.0/
+/TCN-comparison/TCN-AMOVFLY/improve.md
